@@ -34,7 +34,7 @@ Entity(model='cube', color=color.gray, collider='box', scale=(20, 10, 1), positi
 level_3_door = Entity(model='cube', color=color.orange, collider='box', scale=(20, 10, 1), position=(2000, 5, 2200.5)) 
 
 # Level 4 (Final Arena)
-ground_4 = Entity(model='cube', color=color.dark_gray, collider='box', scale=(60, 1, 60), position=(2000, 0, 2230))
+ground_4 = Entity(model='cube', color=color.white, collider='box', scale=(60, 1, 60), position=(2000, 0, 2230))
 Entity(model='cube', color=color.gray, collider='box', scale=(60, 10, 1), position=(2000, 5, 2260)) # Far wall
 Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), position=(1970, 5, 2230)) # Arena Left wall
 Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), position=(2030, 5, 2230)) # Arena Right wall
@@ -54,6 +54,7 @@ class Portal(Entity):
 
 portal = Portal()
 portal_2 = Portal()
+portal_3 = Portal()
 
 class Chef(Entity):
     def __init__(self):
@@ -125,6 +126,62 @@ class CannonSphere(Entity):
             if self in cannon_spheres: cannon_spheres.remove(self)
             destroy(self)
 
+class ShockwaveGrenade(Entity):
+    def __init__(self, position, rotation):
+        super().__init__(model='sphere', color=color.azure, scale=0.45, position=position, rotation=rotation)
+        self.speed = 28
+        self.life = 1.2
+        self.exploded = False
+
+    def update(self):
+        if player.is_teleporting or self.exploded:
+            return
+
+        self.position += self.forward * self.speed * time.dt
+        self.life -= time.dt
+
+        if self.life <= 0:
+            self.explode()
+            return
+
+        for enemy in enemies:
+            if distance(self.position, enemy.position) < 1.6:
+                self.explode()
+                return
+
+    def explode(self):
+        if self.exploded:
+            return
+
+        self.exploded = True
+        player.grenade_used = True
+        player.mission_ui.text = 'Grenade used! Talk to the Manager.'
+        player.mission_ui.color = color.cyan
+
+        shockwave = Entity(
+            model='sphere',
+            color=color.rgba(120, 240, 255, 110),
+            position=self.position,
+            scale=1.0
+        )
+        shockwave.animate_scale(8, duration=0.35)
+        shockwave.animate_color(color.rgba(120, 240, 255, 0), duration=0.35)
+        destroy(shockwave, delay=0.4)
+
+        for enemy in enemies:
+            dist = distance(self.position, enemy.position)
+            if dist <= player.grenade_shockwave_radius:
+                push_dir = enemy.position - self.position
+                if push_dir.length() > 0.001:
+                    push_dir = push_dir.normalized()
+                else:
+                    push_dir = self.forward
+                push_strength = player.grenade_shockwave_push * max(0.35, 1 - dist / player.grenade_shockwave_radius)
+                enemy.position += push_dir * push_strength
+                enemy.stun_timer = 0.45
+
+        destroy(self)
+
 class Arrow(Entity):
     def __init__(self, position, rotation):
         super().__init__(model='cube', color=color.white, scale=(0.05, 0.05, 1.5), position=position, rotation=rotation)
@@ -154,7 +211,7 @@ class Arrow(Entity):
                 return 
 
 black_screen = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(3, 3), z=-10)
-controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause', position=(-0.85, -0.38), scale=1.5, color=color.white, background=True)
+controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause\nE - Shockwave', position=(-0.85, -0.38), scale=1.5, color=color.white, background=True)
 
 class PauseHandler(Entity):
     def __init__(self):
@@ -176,6 +233,8 @@ class ThirdPersonPlayer(Entity):
         self.speed = 10
         self.spawn_point = (0, 1, 0) 
         self.has_bow = False 
+        self.has_grenade = False
+        self.grenade_used = False
         self.y_velocity = 0
         self.gravity = 25
         self.jump_force = 12
@@ -184,6 +243,8 @@ class ThirdPersonPlayer(Entity):
         
         # Phase 0 = Off, Phase 1 = Hallway, Phase 2 = Arena
         self.level_3_phase = 0 
+        self.level_3_cleared = False
+        self.level_4_portal_open = False
         
         self.max_hp = 100
         self.hp = self.max_hp
@@ -197,6 +258,9 @@ class ThirdPersonPlayer(Entity):
         self.attack_damage = 25 
         self.attack_range = 3.5 
         self.spawn_timer = 2.0 
+        self.grenade_cooldown = 0
+        self.grenade_shockwave_radius = 7
+        self.grenade_shockwave_push = 12
         mouse.locked = True
 
         camera.parent = self
@@ -225,6 +289,9 @@ class ThirdPersonPlayer(Entity):
                 self.reset_game_state()
 
     def add_kill(self):
+        if self.spawn_point != (0, 1, 0):
+            return
+
         self.enemies_killed += 1
         
         if self.enemies_killed == self.mission_target and self.spawn_point == (0, 1, 0):
@@ -248,6 +315,12 @@ class ThirdPersonPlayer(Entity):
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
         invoke(self.teleport_to_level_3, delay=1.0)
 
+    def enter_portal_3(self):
+        self.is_teleporting = True
+        portal_3.enabled = False
+        black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
+        invoke(self.teleport_to_level_4, delay=1.0)
+
     def clear_all_entities(self):
         global enemies, cannons, cannon_spheres
         for enemy in enemies: destroy(enemy)
@@ -270,6 +343,18 @@ class ThirdPersonPlayer(Entity):
         if not self.has_bow:
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
+        elif self.level_4_portal_open:
+            self.mission_ui.text = 'Enter the portal to Level 4!'
+            self.mission_ui.color = color.magenta
+        elif not self.has_grenade:
+            self.mission_ui.text = 'Talk to chef for a grenade'
+            self.mission_ui.color = color.yellow
+        elif not self.grenade_used:
+            self.mission_ui.text = 'Use the shockwave grenade'
+            self.mission_ui.color = color.yellow
+        else:
+            self.mission_ui.text = 'Talk to the Manager'
+            self.mission_ui.color = color.yellow
 
     def setup_level_3_cannons(self):
         self.clear_all_entities()
@@ -277,6 +362,9 @@ class ThirdPersonPlayer(Entity):
         cannons.append(Cannon(position=(1995, 1.5, 2120)))
         cannons.append(Cannon(position=(2005, 1.5, 2180)))
         level_3_door.y = 5 
+        self.level_3_cleared = False
+        portal.enabled = False
+        portal_3.enabled = False
 
     def teleport_to_level_3(self):
         self.spawn_point = (2000, 1, 2010)
@@ -292,11 +380,28 @@ class ThirdPersonPlayer(Entity):
         self.mission_ui.text = 'Destroy the Cannons!'
         self.mission_ui.color = color.red
 
+    def teleport_to_level_4(self):
+        self.spawn_point = (2000, 1, 2230)
+        self.position = self.spawn_point
+        self.y_velocity = 0
+        self.clear_all_entities()
+        self.level_3_phase = 0
+        self.level_3_cleared = True
+        self.level_4_portal_open = True
+
+        black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
+        invoke(setattr, self, 'is_teleporting', False, delay=1.0)
+
+        self.mission_ui.text = 'Level 4: white arena'
+        self.mission_ui.color = color.white
+
     def reset_mission(self):
         self.enemies_killed = 0
         self.mission_ui.color = color.yellow
         self.mission_ui.text = f'Defeat enemies: {self.enemies_killed} / {self.mission_target}'
         portal.enabled = False
+        portal_2.enabled = False
+        portal_3.enabled = False
 
     def reset_game_state(self):
         self.position = self.spawn_point
@@ -307,15 +412,28 @@ class ThirdPersonPlayer(Entity):
         
         if self.spawn_point == (0, 1, 0):
             self.has_bow = False
+            self.has_grenade = False
+            self.grenade_used = False
             chef.exclamation.enabled = True
             manager.exclamation.enabled = True
             self.level_3_phase = 0
+            self.level_3_cleared = False
+            self.level_4_portal_open = False
             self.reset_mission()
         elif self.spawn_point == (1000, 1, 990):
             self.level_3_phase = 0
             if not self.has_bow:
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
+            elif self.level_4_portal_open:
+                self.mission_ui.text = 'Enter the portal to Level 4!'
+                self.mission_ui.color = color.magenta
+            elif not self.has_grenade:
+                self.mission_ui.text = 'Talk to chef for a grenade'
+                self.mission_ui.color = color.yellow
+            elif not self.grenade_used:
+                self.mission_ui.text = 'Use the shockwave grenade'
+                self.mission_ui.color = color.yellow
             else:
                 self.mission_ui.text = 'Find the Manager'
                 self.mission_ui.color = color.yellow
@@ -324,12 +442,19 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.color = color.red
             self.level_3_phase = 1
             self.setup_level_3_cannons()
+        elif self.spawn_point == (2000, 1, 2230):
+            self.level_3_phase = 0
+            self.level_3_cleared = True
+            self.level_4_portal_open = True
+            self.mission_ui.text = 'Level 4: white arena'
+            self.mission_ui.color = color.white
             
     def update(self):
         if self.is_teleporting: return 
 
         if portal.enabled and distance(self.position, portal.position) < 2.5: self.enter_portal()
         if portal_2.enabled and distance(self.position, portal_2.position) < 2.5: self.enter_portal_2()
+        if portal_3.enabled and distance(self.position, portal_3.position) < 2.5: self.enter_portal_3()
 
         if self.y < self.spawn_point[1] - 20:
             self.take_damage(self.max_hp)
@@ -344,6 +469,14 @@ class ThirdPersonPlayer(Entity):
             
             cannons.append(Cannon(position=(1980, 1.5, 2250)))
             cannons.append(Cannon(position=(2020, 1.5, 2250)))
+
+        if self.level_3_phase == 2 and len(cannons) == 0 and len(enemies) == 0 and len(cannon_spheres) == 0 and not self.level_3_cleared:
+            self.level_3_cleared = True
+            self.mission_ui.text = 'Level 3 cleared! Enter the return portal.'
+            self.mission_ui.color = color.magenta
+            portal.position = self.position + self.forward * 4
+            portal.y = 1.5
+            portal.enabled = True
 
         # Spawning only happens in Level 1 OR in Level 3 Arena while Cannons are still alive
         if self.spawn_point == (0, 1, 0) or (self.level_3_phase == 2 and len(cannons) > 0): 
@@ -379,6 +512,7 @@ class ThirdPersonPlayer(Entity):
         if held_keys['space'] and self.grounded: self.y_velocity = self.jump_force
         if self.attack_cooldown > 0: self.attack_cooldown -= time.dt
         elif held_keys['left mouse']: self.perform_attack()
+        if self.grenade_cooldown > 0: self.grenade_cooldown -= time.dt
 
     def perform_attack(self):
         self.attack_cooldown = 0.4 
@@ -398,6 +532,11 @@ class ThirdPersonPlayer(Entity):
         spawn_pos = self.position + (0, 1, 0) + self.forward * 1.5
         Arrow(position=spawn_pos, rotation=self.rotation)
 
+    def throw_grenade(self):
+        self.grenade_cooldown = 1.25
+        spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.3
+        ShockwaveGrenade(position=spawn_pos, rotation=self.rotation)
+
     def save_game(self):
         save_data = {
             'x': self.x, 'y': self.y, 'z': self.z, 
@@ -406,10 +545,15 @@ class ThirdPersonPlayer(Entity):
             'enemies_killed': self.enemies_killed,
             'portal_enabled': portal.enabled, 'portal_x': portal.x, 'portal_y': portal.y, 'portal_z': portal.z,
             'portal_2_enabled': portal_2.enabled, 'portal_2_x': portal_2.x, 'portal_2_y': portal_2.y, 'portal_2_z': portal_2.z,
+            'portal_3_enabled': portal_3.enabled, 'portal_3_x': portal_3.x, 'portal_3_y': portal_3.y, 'portal_3_z': portal_3.z,
             'has_bow': self.has_bow,
+            'has_grenade': self.has_grenade,
+            'grenade_used': self.grenade_used,
             'exclamation_enabled': chef.exclamation.enabled,
             'manager_exclamation_enabled': manager.exclamation.enabled,
             'level_3_phase': self.level_3_phase,
+            'level_3_cleared': self.level_3_cleared,
+            'level_4_portal_open': self.level_4_portal_open,
             'door_y': level_3_door.y
         }
         with open('savegame.json', 'w') as f: json.dump(save_data, f)
@@ -434,11 +578,18 @@ class ThirdPersonPlayer(Entity):
             if 'portal_2_enabled' in save_data:
                 portal_2.enabled = save_data['portal_2_enabled']
                 portal_2.position = (save_data['portal_2_x'], save_data['portal_2_y'], save_data['portal_2_z'])
+            if 'portal_3_enabled' in save_data:
+                portal_3.enabled = save_data['portal_3_enabled']
+                portal_3.position = (save_data['portal_3_x'], save_data['portal_3_y'], save_data['portal_3_z'])
 
             self.has_bow = save_data.get('has_bow', False)
+            self.has_grenade = save_data.get('has_grenade', False)
+            self.grenade_used = save_data.get('grenade_used', False)
             chef.exclamation.enabled = save_data.get('exclamation_enabled', True)
             manager.exclamation.enabled = save_data.get('manager_exclamation_enabled', True)
             self.level_3_phase = save_data.get('level_3_phase', 0)
+            self.level_3_cleared = save_data.get('level_3_cleared', False)
+            self.level_4_portal_open = save_data.get('level_4_portal_open', False)
             level_3_door.y = save_data.get('door_y', 5)
 
             if self.spawn_point == (0, 1, 0):
@@ -450,8 +601,18 @@ class ThirdPersonPlayer(Entity):
                     self.mission_ui.color = color.yellow
             elif self.spawn_point == (1000, 1, 990):
                 if self.has_bow:
-                    self.mission_ui.text = 'Find the Manager'
-                    self.mission_ui.color = color.yellow
+                    if self.level_4_portal_open:
+                        self.mission_ui.text = 'Enter the portal to Level 4!'
+                        self.mission_ui.color = color.magenta
+                    elif not self.has_grenade:
+                        self.mission_ui.text = 'Talk to chef for a grenade'
+                        self.mission_ui.color = color.yellow
+                    elif not self.grenade_used:
+                        self.mission_ui.text = 'Use the shockwave grenade'
+                        self.mission_ui.color = color.yellow
+                    else:
+                        self.mission_ui.text = 'Find the Manager'
+                        self.mission_ui.color = color.yellow
                 else:
                     self.mission_ui.text = 'Talk to chef'
                     self.mission_ui.color = color.cyan
@@ -462,6 +623,9 @@ class ThirdPersonPlayer(Entity):
                 elif self.level_3_phase == 2:
                     self.mission_ui.text = 'Mission Completed! Enter the final arena!'
                     self.mission_ui.color = color.green
+            elif self.spawn_point == (2000, 1, 2230):
+                self.mission_ui.text = 'Level 4: white arena'
+                self.mission_ui.color = color.white
 
             self.y_velocity = 0 
             print("Game Loaded!")
@@ -478,6 +642,10 @@ class ThirdPersonPlayer(Entity):
         elif key == 'right mouse down':
             if self.has_bow and self.attack_cooldown <= 0:
                 self.shoot_arrow()
+
+        elif key == 'e':
+            if self.has_grenade and self.grenade_cooldown <= 0 and not self.is_teleporting:
+                self.throw_grenade()
             
         elif key == 'f':
             if distance(self.position, chef.position) < 3.5 and not self.has_bow:
@@ -487,22 +655,39 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Find the Manager'
                 self.mission_ui.color = color.yellow
                 invoke(setattr, chef.dialogue_ui, 'enabled', False, delay=4.0)
+            elif distance(self.position, chef.position) < 3.5 and self.has_bow and not self.has_grenade:
+                chef.dialogue_ui.text = 'Chef: here take my shockwave grenade, press E to use it'
+                chef.dialogue_ui.enabled = True
+                chef.exclamation.enabled = False
+                self.has_grenade = True
+                self.mission_ui.text = 'Use the shockwave grenade'
+                self.mission_ui.color = color.yellow
+                invoke(setattr, chef.dialogue_ui, 'enabled', False, delay=4.0)
             
             elif distance(self.position, manager.position) < 3.5:
                 if not self.has_bow:
                     manager.dialogue_ui.text = "Manager: Talk to the Chef first, you need a weapon!"
                     manager.dialogue_ui.enabled = True
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
+                elif not self.has_grenade:
+                    manager.dialogue_ui.text = "Manager: Talk to the Chef for the shockwave grenade."
+                    manager.dialogue_ui.enabled = True
+                    invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
+                elif not self.grenade_used:
+                    manager.dialogue_ui.text = "Manager: Use the grenade first, then come back."
+                    manager.dialogue_ui.enabled = True
+                    invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
                 else:
-                    manager.dialogue_ui.text = "Manager: Welcome. The portal to Level 3 is open."
+                    manager.dialogue_ui.text = "Manager: Great. The portal to Level 4 is open."
                     manager.dialogue_ui.enabled = True
                     manager.exclamation.enabled = False
-                    self.mission_ui.text = 'Enter the portal!'
+                    self.mission_ui.text = 'Enter the portal to Level 4!'
                     self.mission_ui.color = color.magenta
                     
-                    portal_2.position = manager.position + manager.forward * 4
-                    portal_2.y = 1.5
-                    portal_2.enabled = True
+                    portal_3.position = manager.position + manager.forward * 4
+                    portal_3.y = 1.5
+                    portal_3.enabled = True
+                    self.level_4_portal_open = True
                     
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
 
@@ -519,6 +704,7 @@ class Enemy(Entity):
         self.attack_range = 2.0
         self.attack_damage = 10
         self.attack_cooldown = 0
+        self.stun_timer = 0
         self.health_bar = Entity(parent=self, y=0.6, model='cube', color=color.green, scale=(1.2, 0.1, 0.1))
         
     def take_damage(self, amount):
@@ -533,6 +719,10 @@ class Enemy(Entity):
 
     def update(self):
         if self.target.is_teleporting: return 
+
+        if self.stun_timer > 0:
+            self.stun_timer -= time.dt
+            return
 
         dist = distance(self.position, self.target.position)
         for other in enemies:
