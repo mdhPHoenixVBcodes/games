@@ -2,6 +2,7 @@ from ursina import *
 import json
 import os
 import random
+from pathlib import Path
 
 # Initialize the Ursina application
 app = Ursina()
@@ -40,16 +41,40 @@ Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), positi
 Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), position=(2030, 5, 2230)) # Arena Right wall
 
 # Level 5 (White Arena)
-ground_5 = Entity(model='cube', color=color.white, collider='box', scale=(60, 1, 60), position=(3000, 0, 2230))
-Entity(model='cube', color=color.gray, collider='box', scale=(60, 10, 1), position=(3000, 5, 2260)) # Far wall
-Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), position=(2970, 5, 2230)) # Arena Left wall
-Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), position=(3030, 5, 2230)) # Arena Right wall
+ground_5 = Entity(model='cube', color=color.white, collider='box', scale=(100, 1, 100), position=(3000, 0, 2230))
 
 
 # Global tracking lists
 enemies = []
 cannons = []
 cannon_spheres = []
+archer_companion = None
+
+
+def get_active_party_targets():
+    targets = [player]
+    if archer_companion is not None and getattr(archer_companion, 'hp', 0) > 0:
+        targets.append(archer_companion)
+    return targets
+
+
+def get_nearest_party_target(origin):
+    targets = get_active_party_targets()
+    return min(targets, key=lambda target: distance(origin, target.position)) if targets else None
+
+
+def dismiss_archer_companion():
+    global archer_companion
+    if archer_companion is not None:
+        destroy(archer_companion)
+        archer_companion = None
+
+
+def spawn_archer_companion():
+    global archer_companion
+    if archer_companion is None:
+        archer_companion = ArcherCompanion()
+    return archer_companion
 
 # 2. Portals, NPCs, Cannons, Projectiles, and UI
 class Portal(Entity):
@@ -101,15 +126,17 @@ class Cannon(Entity):
         
         self.shoot_timer -= time.dt
         if self.shoot_timer <= 0:
-            sphere = CannonSphere(self.position + (0, 1, 0))
+            target = get_nearest_party_target(self.position)
+            sphere = CannonSphere(self.position + (0, 1, 0), target=target)
             cannon_spheres.append(sphere)
             self.shoot_timer = random.uniform(3.0, 5.0)
 
 class CannonSphere(Entity):
-    def __init__(self, position):
+    def __init__(self, position, target=None):
+        self.target = target or player
         super().__init__(model='sphere', color=color.orange, scale=2.5, position=position)
         self.speed = 10
-        self.look_at_2d(player, 'y') 
+        self.look_at_2d(self.target, 'y') 
         self.lifetime = 8.0 # Track lifespan manually
 
     def take_damage(self, amount):
@@ -128,10 +155,12 @@ class CannonSphere(Entity):
 
         self.position += self.forward * self.speed * time.dt
         
-        if distance(self.position, player.position) < 2.5:
-            player.take_damage(15) 
-            if self in cannon_spheres: cannon_spheres.remove(self)
-            destroy(self)
+        for target in get_active_party_targets():
+            if distance(self.position, target.position) < 2.5:
+                target.take_damage(15) 
+                if self in cannon_spheres: cannon_spheres.remove(self)
+                destroy(self)
+                return
 
 class ShockwaveGrenade(Entity):
     def __init__(self, position, rotation):
@@ -217,6 +246,58 @@ class Arrow(Entity):
                 destroy(self)
                 return 
 
+
+class ArcherCompanion(Entity):
+    def __init__(self):
+        super().__init__(
+            model='cube',
+            color=color.azure,
+            scale=(0.9, 1.8, 0.9),
+            position=player.position + (2, 0, -2),
+            collider='box'
+        )
+        self.max_hp = 150
+        self.hp = self.max_hp
+        self.speed = 7
+        self.follow_distance = 2.8
+        self.attack_range = 16
+        self.attack_cooldown = 0
+        self.health_bar = Entity(parent=self, y=1.1, model='cube', color=color.green, scale=(1.2, 0.12, 0.12))
+        self.bow = Entity(parent=self, model='cube', color=color.brown, scale=(0.12, 0.8, 0.12), position=(0.55, 0.05, 0.25), rotation=(0, 0, 25))
+
+    def take_damage(self, amount):
+        self.hp -= amount
+        self.health_bar.scale_x = max(self.hp / self.max_hp, 0) * 1.2
+        self.color = color.white
+        invoke(setattr, self, 'color', color.azure, delay=0.1)
+        if self.hp <= 0:
+            dismiss_archer_companion()
+
+    def update(self):
+        if player.is_teleporting:
+            return
+
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= time.dt
+
+        follow_target = player.position + player.right * 1.5 - player.forward * 2.5
+        follow_target.y = self.y
+        to_follow = follow_target - self.position
+        to_follow.y = 0
+        if to_follow.length() > self.follow_distance:
+            self.position += to_follow.normalized() * self.speed * time.dt
+
+        ray = raycast(self.position + (0, 2, 0), direction=(0, -1, 0), ignore=(self,), distance=4)
+        if ray.hit:
+            self.y = ray.world_point[1] + (self.scale_y / 2)
+
+        if self.attack_cooldown <= 0 and len(enemies) > 0:
+            target = min(enemies, key=lambda enemy: distance(self.position, enemy.position))
+            if distance(self.position, target.position) <= self.attack_range:
+                self.look_at_2d(target, 'y')
+                Arrow(position=self.position + self.forward * 1.3 + (0, 0.8, 0), rotation=self.rotation)
+                self.attack_cooldown = 0.9
+
 black_screen = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(3, 3), z=-10)
 controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause\nE - Shockwave', position=(-0.75, -0.38), scale=1.5, color=color.white, background=True)
 
@@ -254,6 +335,8 @@ class ThirdPersonPlayer(Entity):
         self.level_4_portal_open = False
         self.level_4_cleared = False
         self.level_5_portal_open = False
+        self.level_5_cleared = False
+        self.teammate_unlocked = False
         
         self.max_hp = 100
         self.hp = self.max_hp
@@ -334,7 +417,10 @@ class ThirdPersonPlayer(Entity):
         self.is_teleporting = True
         portal_4.enabled = False
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
-        invoke(self.teleport_to_level_5, delay=1.0)
+        if self.level_5_cleared:
+            invoke(self.teleport_to_level_2, delay=1.0)
+        else:
+            invoke(self.teleport_to_level_5, delay=1.0)
 
     def clear_all_entities(self):
         global enemies, cannons, cannon_spheres
@@ -361,6 +447,13 @@ class ThirdPersonPlayer(Entity):
         elif not self.has_grenade:
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
+        elif self.level_5_cleared:
+            if self.teammate_unlocked:
+                self.mission_ui.text = 'Travel with the archer.'
+                self.mission_ui.color = color.yellow
+            else:
+                self.mission_ui.text = 'Talk to chef'
+                self.mission_ui.color = color.yellow
         elif self.level_5_portal_open:
             self.mission_ui.text = 'Enter the portal!'
             self.mission_ui.color = color.magenta
@@ -400,16 +493,7 @@ class ThirdPersonPlayer(Entity):
 
     def setup_level_5_arena(self):
         self.clear_all_entities()
-        enemy_positions = [
-            (2992, 1, 2218),
-            (3008, 1, 2218),
-            (2988, 1, 2238),
-            (3012, 1, 2238),
-            (2996, 1, 2250),
-            (3004, 1, 2250),
-        ]
-        for pos in enemy_positions:
-            enemies.append(Enemy(target=self, spawn_pos=pos))
+        enemies.append(BossCube(target=self, spawn_pos=(3000, 1, 2240)))
 
     def teleport_to_level_3(self):
         self.spawn_point = (2000, 1, 2010)
@@ -437,7 +521,7 @@ class ThirdPersonPlayer(Entity):
         black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
-        self.mission_ui.text = 'Defeat the arena enemies!'
+        self.mission_ui.text = 'Defeat the boss cube!'
         self.mission_ui.color = color.red
 
     def teleport_to_level_5(self):
@@ -446,13 +530,14 @@ class ThirdPersonPlayer(Entity):
         self.y_velocity = 0
         self.level_3_phase = 0
         self.level_5_portal_open = True
+        self.level_5_cleared = False
         ground_4.color = color.dark_gray
         self.setup_level_5_arena()
 
         black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
-        self.mission_ui.text = 'Level 5: white arena'
+        self.mission_ui.text = 'Defeat the robo-guy'
         self.mission_ui.color = color.white
 
     def reset_mission(self):
@@ -475,6 +560,8 @@ class ThirdPersonPlayer(Entity):
             self.has_bow = False
             self.has_grenade = False
             self.grenade_used = False
+            self.teammate_unlocked = False
+            dismiss_archer_companion()
             chef.exclamation.enabled = True
             manager.exclamation.enabled = True
             self.level_3_phase = 0
@@ -482,6 +569,7 @@ class ThirdPersonPlayer(Entity):
             self.level_4_portal_open = False
             self.level_4_cleared = False
             self.level_5_portal_open = False
+            self.level_5_cleared = False
             self.reset_mission()
         elif self.spawn_point == (1000, 1, 990):
             self.level_3_phase = 0
@@ -510,14 +598,19 @@ class ThirdPersonPlayer(Entity):
             self.level_3_cleared = True
             self.level_4_portal_open = True
             self.setup_level_4_arena()
-            self.mission_ui.text = 'Defeat the arena enemies!'
+            self.mission_ui.text = 'Defeat the boss cube!'
             self.mission_ui.color = color.red
         elif self.spawn_point == (3000, 1, 2230):
             self.level_3_phase = 0
             self.level_5_portal_open = True
             self.setup_level_5_arena()
-            self.mission_ui.text = 'Level 5: white arena'
-            self.mission_ui.color = color.white
+            if self.level_5_cleared:
+                self.mission_ui.text = 'Boss defeated! Return portal open.'
+                self.mission_ui.color = color.cyan
+            else:
+                self.level_5_cleared = False
+                self.mission_ui.text = 'Defeat the boss cube!'
+                self.mission_ui.color = color.white
             
     def update(self):
         if self.is_teleporting: return 
@@ -557,6 +650,15 @@ class ThirdPersonPlayer(Entity):
             portal.position = self.position + self.forward * 4
             portal.y = 1.5
             portal.enabled = True
+
+        if self.spawn_point == (3000, 1, 2230) and not self.level_5_cleared and len(enemies) == 0:
+            self.level_5_cleared = True
+            self.level_5_portal_open = False
+            self.mission_ui.text = 'Boss defeated! Return portal open.'
+            self.mission_ui.color = color.cyan
+            portal_4.position = self.position + self.forward * 4
+            portal_4.y = 1.5
+            portal_4.enabled = True
 
         # Spawning only happens in Level 1 OR in Level 3 Arena while Cannons are still alive
         if self.spawn_point == (0, 1, 0) or (self.level_3_phase == 2 and len(cannons) > 0): 
@@ -637,6 +739,12 @@ class ThirdPersonPlayer(Entity):
             'level_4_portal_open': self.level_4_portal_open,
             'level_4_cleared': self.level_4_cleared,
             'level_5_portal_open': self.level_5_portal_open,
+            'level_5_cleared': self.level_5_cleared,
+            'teammate_unlocked': self.teammate_unlocked,
+            'teammate_hp': getattr(archer_companion, 'hp', 150),
+            'teammate_x': getattr(archer_companion, 'x', self.x),
+            'teammate_y': getattr(archer_companion, 'y', self.y),
+            'teammate_z': getattr(archer_companion, 'z', self.z),
             'door_y': level_3_door.y
         }
         with open('savegame.json', 'w') as f: json.dump(save_data, f)
@@ -678,7 +786,21 @@ class ThirdPersonPlayer(Entity):
             self.level_4_portal_open = save_data.get('level_4_portal_open', False)
             self.level_4_cleared = save_data.get('level_4_cleared', False)
             self.level_5_portal_open = save_data.get('level_5_portal_open', False)
+            self.level_5_cleared = save_data.get('level_5_cleared', False)
+            self.teammate_unlocked = save_data.get('teammate_unlocked', False)
             level_3_door.y = save_data.get('door_y', 5)
+
+            if self.teammate_unlocked:
+                companion = spawn_archer_companion()
+                companion.hp = save_data.get('teammate_hp', companion.max_hp)
+                companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
+                companion.position = (
+                    save_data.get('teammate_x', self.x + 2),
+                    save_data.get('teammate_y', self.y),
+                    save_data.get('teammate_z', self.z - 2),
+                )
+            else:
+                dismiss_archer_companion()
 
             if self.spawn_point == (0, 1, 0):
                 if self.enemies_killed >= self.mission_target:
@@ -692,6 +814,12 @@ class ThirdPersonPlayer(Entity):
                     if not self.has_grenade:
                         self.mission_ui.text = 'Talk to chef'
                         self.mission_ui.color = color.cyan
+                    elif self.level_5_cleared and not self.teammate_unlocked:
+                        self.mission_ui.text = 'Talk to chef'
+                        self.mission_ui.color = color.yellow
+                    elif self.teammate_unlocked:
+                        self.mission_ui.text = 'Travel with the archer.'
+                        self.mission_ui.color = color.yellow
                     elif self.level_5_portal_open:
                         self.mission_ui.text = 'Enter the portal!'
                         self.mission_ui.color = color.magenta
@@ -717,11 +845,15 @@ class ThirdPersonPlayer(Entity):
                     self.mission_ui.color = color.cyan
                 else:
                     self.setup_level_4_arena()
-                    self.mission_ui.text = 'Defeat the arena enemies!'
+                    self.mission_ui.text = 'Defeat the boss cube!'
                     self.mission_ui.color = color.red
             elif self.spawn_point == (3000, 1, 2230):
-                self.mission_ui.text = 'Level 5: white arena'
-                self.mission_ui.color = color.white
+                if self.level_5_cleared:
+                    self.mission_ui.text = 'Boss defeated! Return portal open.'
+                    self.mission_ui.color = color.cyan
+                else:
+                    self.mission_ui.text = 'Defeat the boss cube!'
+                    self.mission_ui.color = color.white
 
             self.y_velocity = 0 
             print("Game Loaded!")
@@ -757,6 +889,18 @@ class ThirdPersonPlayer(Entity):
                 chef.exclamation.enabled = False
                 self.has_grenade = True
                 self.mission_ui.text = 'Use the shockwave grenade'
+                self.mission_ui.color = color.yellow
+                invoke(setattr, chef.dialogue_ui, 'enabled', False, delay=4.0)
+            elif distance(self.position, chef.position) < 3.5 and self.level_5_cleared and not self.teammate_unlocked:
+                chef.dialogue_ui.text = 'Chef: This is my friend, the archer, he will help.'
+                chef.dialogue_ui.enabled = True
+                chef.exclamation.enabled = False
+                self.teammate_unlocked = True
+                teammate = spawn_archer_companion()
+                teammate.hp = teammate.max_hp
+                teammate.health_bar.scale_x = 1.2
+                teammate.position = self.position + (2, 0, -2)
+                self.mission_ui.text = 'Travel with the archer.'
                 self.mission_ui.color = color.yellow
                 invoke(setattr, chef.dialogue_ui, 'enabled', False, delay=4.0)
             
@@ -822,22 +966,77 @@ class Enemy(Entity):
     def update(self):
         if self.target.is_teleporting: return 
 
+        target = get_nearest_party_target(self.position) or self.target
+
         if self.stun_timer > 0:
             self.stun_timer -= time.dt
             return
 
-        dist = distance(self.position, self.target.position)
+        dist = distance(self.position, target.position)
         for other in enemies:
             if other != self and distance(self.position, other.position) < 1.5:
                 self.position += (self.position - other.position).normalized() * self.speed * 0.5 * time.dt
         
         if self.attack_cooldown > 0: self.attack_cooldown -= time.dt
         if dist > self.attack_range:
-            self.look_at_2d(self.target, 'y')
+            self.look_at_2d(target, 'y')
             self.position += self.forward * self.speed * time.dt
         elif self.attack_cooldown <= 0:
-            self.target.take_damage(self.attack_damage)
+            target.take_damage(self.attack_damage)
             self.attack_cooldown = 2.0 
+
+class BossCube(Entity):
+    def __init__(self, target, spawn_pos):
+        super().__init__(
+            model=load_model('boss_cube.bam', folder=Path(__file__).parent),
+            texture=load_texture('boss_texture1.png', folder=Path(__file__).parent),
+            color=color.white,
+            scale=2.5,
+            position=spawn_pos,
+            collider='box'
+        )
+        self.target = target
+        self.speed = 1.2
+        self.max_hp = 300
+        self.hp = self.max_hp
+        self.attack_range = 3.5
+        self.attack_damage = 20
+        self.attack_cooldown = 0
+        self.shoot_timer = random.uniform(2.5, 4.0)
+        self.health_bar = Entity(parent=self, y=1.4, model='cube', color=color.green, scale=(2.2, 0.15, 0.15))
+
+    def take_damage(self, amount):
+        self.hp -= amount
+        self.health_bar.scale_x = max(self.hp / self.max_hp, 0) * 2.2
+        self.color = color.gray
+        invoke(setattr, self, 'color', color.white, delay=0.1)
+        if self.hp <= 0:
+            if self in enemies: enemies.remove(self)
+            destroy(self)
+
+    def update(self):
+        if self.target.is_teleporting:
+            return
+
+        target = get_nearest_party_target(self.position) or self.target
+        dist = distance(self.position, target.position)
+        self.shoot_timer -= time.dt
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= time.dt
+
+        if dist > self.attack_range:
+            self.look_at_2d(target, 'y')
+            self.position += self.forward * self.speed * time.dt
+        elif self.attack_cooldown <= 0:
+            target.take_damage(self.attack_damage)
+            self.attack_cooldown = 2.0
+
+        if dist < 80 and self.shoot_timer <= 0:
+            sphere = CannonSphere(self.position + (0, 1.2, 0), target=target)
+            sphere.scale = 1.8
+            sphere.color = color.red
+            cannon_spheres.append(sphere)
+            self.shoot_timer = random.uniform(2.5, 4.0)
 
 player = ThirdPersonPlayer()
 
