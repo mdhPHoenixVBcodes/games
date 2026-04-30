@@ -316,7 +316,7 @@ class ThirdPersonPlayer(Entity):
         self.is_teleporting = True
         portal.enabled = False 
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
-        invoke(self.teleport_to_level_4, delay=1.0)
+        invoke(self.teleport_to_level_2, delay=1.0)
 
     def enter_portal_2(self):
         self.is_teleporting = True
@@ -356,6 +356,9 @@ class ThirdPersonPlayer(Entity):
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
         
         if not self.has_bow:
+            self.mission_ui.text = 'Talk to chef'
+            self.mission_ui.color = color.cyan
+        elif not self.has_grenade:
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
         elif self.level_5_portal_open:
@@ -686,16 +689,13 @@ class ThirdPersonPlayer(Entity):
                     self.mission_ui.color = color.yellow
             elif self.spawn_point == (1000, 1, 990):
                 if self.has_bow:
-                    if self.level_5_portal_open:
+                    if not self.has_grenade:
+                        self.mission_ui.text = 'Talk to chef'
+                        self.mission_ui.color = color.cyan
+                    elif self.level_5_portal_open:
                         self.mission_ui.text = 'Enter the portal!'
                         self.mission_ui.color = color.magenta
                     elif self.level_4_cleared:
-                        self.mission_ui.text = 'Talk to the Manager'
-                        self.mission_ui.color = color.yellow
-                    elif self.level_4_portal_open:
-                        self.mission_ui.text = 'Enter the portal!'
-                        self.mission_ui.color = color.magenta
-                    elif self.has_grenade:
                         self.mission_ui.text = 'Talk to the Manager'
                         self.mission_ui.color = color.yellow
                     else:
