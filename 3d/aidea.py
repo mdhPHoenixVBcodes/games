@@ -52,6 +52,7 @@ enemies = []
 cannons = []
 cannon_spheres = []
 archer_companion = None
+level_6_pillars = []
 
 
 def get_active_party_targets():
@@ -78,6 +79,41 @@ def spawn_archer_companion():
     if archer_companion is None:
         archer_companion = ArcherCompanion()
     return archer_companion
+
+
+def clear_level_6_pillars():
+    global level_6_pillars
+    for pillar in level_6_pillars:
+        destroy(pillar)
+    level_6_pillars.clear()
+
+
+def resolve_level_6_pillar_collision(entity, previous_position):
+    if not level_6_pillars:
+        return
+    for pillar in level_6_pillars:
+        if pillar.enabled and entity.intersects(pillar).hit:
+            entity.position = previous_position
+            if hasattr(pillar, 'touch_cooldown') and pillar.touch_cooldown <= 0 and entity is player:
+                spawn_level_6_sphere_enemy(pillar.position + (0, 1.5, 0))
+                pillar.touch_cooldown = 0.75
+            return
+
+
+def spawn_level_6_sphere_enemy(position):
+    burst = Entity(
+        model='sphere',
+        color=color.rgba(255, 235, 120, 180),
+        position=position,
+        scale=0.5
+    )
+    burst.animate_scale(4, duration=0.18)
+    burst.animate_color(color.rgba(255, 235, 120, 0), duration=0.18)
+    destroy(burst, delay=0.22)
+
+    sphere_enemy = SphereEnemy(target=player, spawn_pos=position)
+    enemies.append(sphere_enemy)
+    return sphere_enemy
 
 # 2. Portals, NPCs, Cannons, Projectiles, and UI
 class Portal(Entity):
@@ -112,7 +148,7 @@ manager = Manager()
 class Cannon(Entity):
     def __init__(self, position):
         super().__init__(model='cube', color=color.red, scale=(2, 2, 2), position=position, collider='box')
-        self.hp = 100
+        self.hp = 50
         self.shoot_timer = random.uniform(3.0, 5.0)
 
     def take_damage(self, amount):
@@ -222,14 +258,15 @@ class ShockwaveGrenade(Entity):
         destroy(self)
 
 class Arrow(Entity):
-    def __init__(self, position, rotation):
-        super().__init__(model='cube', color=color.white, scale=(0.05, 0.05, 1.5), position=position, rotation=rotation)
+    def __init__(self, position, rotation=None, direction=None):
+        super().__init__(model='cube', color=color.white, scale=(0.05, 0.05, 1.5), position=position, rotation=rotation or (0, 0, 0))
         self.speed = 60 
-        self.damage = 25
+        self.damage = 10
+        self.direction = (direction.normalized() if direction is not None else self.forward)
         destroy(self, delay=2.0) 
 
     def update(self):
-        self.position += self.forward * self.speed * time.dt
+        self.position += self.direction * self.speed * time.dt
         
         for s in cannon_spheres:
             if distance(self.position, s.position) < 2.5:
@@ -287,8 +324,10 @@ class ArcherCompanion(Entity):
         follow_target.y = self.y
         to_follow = follow_target - self.position
         to_follow.y = 0
+        previous_position = self.position
         if to_follow.length() > self.follow_distance:
             self.position += to_follow.normalized() * self.speed * time.dt
+            resolve_level_6_pillar_collision(self, previous_position)
 
         ray = raycast(self.position + (0, 2, 0), direction=(0, -1, 0), ignore=(self,), distance=4)
         if ray.hit:
@@ -297,8 +336,8 @@ class ArcherCompanion(Entity):
         if self.attack_cooldown <= 0 and len(enemies) > 0:
             target = min(enemies, key=lambda enemy: distance(self.position, enemy.position))
             if distance(self.position, target.position) <= self.attack_range:
-                self.look_at_2d(target, 'y')
-                Arrow(position=self.position + self.forward * 1.3 + (0, 0.8, 0), rotation=self.rotation)
+                self.look_at(target.position + (0, 0.5, 0))
+                Arrow(position=self.position + self.forward * 1.3 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward)
                 self.attack_cooldown = 0.9
 
 black_screen = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(3, 3), z=-10)
@@ -355,6 +394,8 @@ class ThirdPersonPlayer(Entity):
         self.attack_damage = 25 
         self.attack_range = 3.5 
         self.spawn_timer = 2.0 
+        self.autosave_interval = 30.0
+        self.autosave_timer = self.autosave_interval
         self.grenade_cooldown = 0
         self.grenade_shockwave_radius = 7
         self.grenade_shockwave_push = 12
@@ -403,31 +444,37 @@ class ThirdPersonPlayer(Entity):
     def enter_portal(self):
         self.is_teleporting = True
         portal.enabled = False 
+        self.save_game()
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
         invoke(self.teleport_to_level_2, delay=1.0)
 
     def enter_portal_2(self):
         self.is_teleporting = True
         portal_2.enabled = False 
+        self.save_game()
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
         invoke(self.teleport_to_level_3, delay=1.0)
 
     def enter_portal_3(self):
         self.is_teleporting = True
         portal_3.enabled = False
+        self.save_game()
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
         invoke(self.teleport_to_level_2, delay=1.0)
 
     def enter_portal_4(self):
         self.is_teleporting = True
         portal_4.enabled = False
+        self.save_game()
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
         if self.level_6_portal_open:
             invoke(self.teleport_to_level_6, delay=1.0)
         elif self.level_5_cleared:
             invoke(self.teleport_to_level_2, delay=1.0)
-        else:
+        elif self.level_5_portal_open:
             invoke(self.teleport_to_level_5, delay=1.0)
+        else:
+            invoke(self.teleport_to_level_6, delay=1.0)
 
     def clear_all_entities(self):
         global enemies, cannons, cannon_spheres
@@ -437,6 +484,7 @@ class ThirdPersonPlayer(Entity):
         cannons.clear()
         for s in cannon_spheres: destroy(s)
         cannon_spheres.clear()
+        clear_level_6_pillars()
 
     def teleport_to_level_2(self):
         self.spawn_point = (1000, 1, 990)
@@ -549,6 +597,7 @@ class ThirdPersonPlayer(Entity):
 
     def setup_level_6_arena(self):
         self.clear_all_entities()
+        clear_level_6_pillars()
         self.level_6_portal_open = True
         ground_6.enabled = True
         ground_6.position = (4000, 0, 2230)
@@ -558,13 +607,15 @@ class ThirdPersonPlayer(Entity):
             pillar_x = random.uniform(3930, 4070)
             pillar_z = random.uniform(2160, 2300)
             pillar_height = random.uniform(8, 20)
-            Entity(
+            pillar = Entity(
                 model='cube',
                 color=color.brown,
                 collider='box',
                 scale=(1.0, pillar_height, 1.0),
                 position=(pillar_x, pillar_height / 2, pillar_z)
             )
+            pillar.touch_cooldown = 0
+            level_6_pillars.append(pillar)
 
     def teleport_to_level_6(self):
         self.spawn_point = (4000, 2, 2230)
@@ -591,7 +642,7 @@ class ThirdPersonPlayer(Entity):
         black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
-        self.mission_ui.text = 'Explore Level 6'
+        self.mission_ui.text = 'Investigate a pillar'
         self.mission_ui.color = color.gray
 
     def reset_mission(self):
@@ -732,8 +783,11 @@ class ThirdPersonPlayer(Entity):
                     enemies.append(new_enemy)
                 self.spawn_timer = random.uniform(2.0, 5.0)
 
+        previous_position = self.position
         direction = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
         self.position += direction * self.speed * time.dt
+        if self.spawn_point == (4000, 2, 2230) or self.level_6_portal_open:
+            resolve_level_6_pillar_collision(self, previous_position)
         
         ray = raycast(self.position, direction=(0, -1, 0), ignore=(self,), distance=1.1)
         if ray.hit and self.y_velocity <= 0:
@@ -746,11 +800,23 @@ class ThirdPersonPlayer(Entity):
         self.y += self.y_velocity * time.dt
         
         self.rotation_y += mouse.velocity[0] * 150
+        if self.level_5_cleared:
+            camera.rotation_x = clamp(camera.rotation_x - mouse.velocity[1] * 150, -25, 45)
+        else:
+            camera.rotation_x = 15
 
         if held_keys['space'] and self.grounded: self.y_velocity = self.jump_force
         if self.attack_cooldown > 0: self.attack_cooldown -= time.dt
         elif held_keys['left mouse']: self.perform_attack()
         if self.grenade_cooldown > 0: self.grenade_cooldown -= time.dt
+        if self.level_6_portal_open:
+            for pillar in level_6_pillars:
+                if hasattr(pillar, 'touch_cooldown') and pillar.touch_cooldown > 0:
+                    pillar.touch_cooldown -= time.dt
+        self.autosave_timer -= time.dt
+        if self.autosave_timer <= 0 and not self.is_teleporting:
+            self.save_game()
+            self.autosave_timer = self.autosave_interval
 
     def perform_attack(self):
         self.attack_cooldown = 0.4 
@@ -768,7 +834,10 @@ class ThirdPersonPlayer(Entity):
     def shoot_arrow(self):
         self.attack_cooldown = 0.5 
         spawn_pos = self.position + (0, 1, 0) + self.forward * 1.5
-        Arrow(position=spawn_pos, rotation=self.rotation)
+        shot_direction = camera.forward if self.level_5_cleared else Vec3(camera.forward.x, 0, camera.forward.z)
+        if shot_direction.length() <= 0.001:
+            shot_direction = self.forward
+        Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction)
 
     def throw_grenade(self):
         self.grenade_cooldown = 1.25
@@ -806,6 +875,7 @@ class ThirdPersonPlayer(Entity):
             'door_y': level_3_door.y
         }
         with open('savegame.json', 'w') as f: json.dump(save_data, f)
+        self.autosave_timer = self.autosave_interval
         print("Game Saved!")
 
     def load_game(self):
@@ -878,7 +948,7 @@ class ThirdPersonPlayer(Entity):
                         self.mission_ui.text = 'Talk to chef'
                         self.mission_ui.color = color.yellow
                     elif self.teammate_unlocked:
-                        self.mission_ui.text = 'Travel with the archer.'
+                        self.mission_ui.text = 'Talk to the Manager'
                         self.mission_ui.color = color.yellow
                     elif self.level_5_portal_open:
                         self.mission_ui.text = 'Enter the portal!'
@@ -914,8 +984,12 @@ class ThirdPersonPlayer(Entity):
                 else:
                     self.mission_ui.text = 'Defeat the boss!'
                     self.mission_ui.color = color.white
+            elif self.spawn_point == (4000, 2, 2230):
+                self.mission_ui.text = 'Investigate a pillar'
+                self.mission_ui.color = color.gray
 
             self.y_velocity = 0 
+            self.autosave_timer = self.autosave_interval
             print("Game Loaded!")
         else:
             print("No save file found!")
@@ -960,7 +1034,7 @@ class ThirdPersonPlayer(Entity):
                 teammate.hp = teammate.max_hp
                 teammate.health_bar.scale_x = 1.2
                 teammate.position = self.position + (2, 0, -2)
-                self.mission_ui.text = 'Travel with the archer.'
+                self.mission_ui.text = 'Talk to the Manager'
                 self.mission_ui.color = color.yellow
                 invoke(setattr, chef.dialogue_ui, 'enabled', False, delay=4.0)
             
@@ -983,16 +1057,17 @@ class ThirdPersonPlayer(Entity):
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
 
                 else:
-                    manager.dialogue_ui.text = "Manager: Great. The portal is open."
+                    manager.dialogue_ui.text = "Manager: Great. The portal to Level 6 is open."
                     manager.dialogue_ui.enabled = True
                     manager.exclamation.enabled = False
-                    self.mission_ui.text = 'Enter the portal!'
+                    self.mission_ui.text = 'Enter Level 6!'
                     self.mission_ui.color = color.magenta
                     
                     ground_4.color = color.dark_gray
                     portal_4.position = manager.position + manager.forward * 4
                     portal_4.y = 1.5
                     portal_4.enabled = True
+                    self.level_5_portal_open = False
                     self.level_6_portal_open = True
                     
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
@@ -1044,6 +1119,50 @@ class Enemy(Entity):
         elif self.attack_cooldown <= 0:
             target.take_damage(self.attack_damage)
             self.attack_cooldown = 2.0 
+
+class SphereEnemy(Entity):
+    def __init__(self, target, spawn_pos):
+        super().__init__(
+            model='sphere',
+            color=color.gray,
+            scale=1.2,
+            position=spawn_pos,
+            collider='box'
+        )
+        self.target = target
+        self.speed = 9.0
+        self.max_hp = 120
+        self.hp = self.max_hp
+        self.attack_range = 22
+        self.attack_damage = 12
+        self.attack_cooldown = 0
+        self.health_bar = Entity(parent=self, y=0.9, model='cube', color=color.green, scale=(1.1, 0.1, 0.1))
+
+    def take_damage(self, amount):
+        self.hp -= amount
+        self.health_bar.scale_x = max(self.hp / self.max_hp, 0) * 1.1
+        self.color = color.white
+        invoke(setattr, self, 'color', color.red, delay=0.1)
+        if self.hp <= 0:
+            if self in enemies: enemies.remove(self)
+            destroy(self)
+
+    def update(self):
+        if self.target.is_teleporting:
+            return
+
+        target = get_nearest_party_target(self.position) or self.target
+        dist = distance(self.position, target.position)
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= time.dt
+
+        if dist > self.attack_range:
+            self.look_at(target.position + (0, 0.5, 0))
+            self.position += self.forward * self.speed * time.dt
+        elif self.attack_cooldown <= 0:
+            self.look_at(target.position + (0, 0.5, 0))
+            Arrow(position=self.position + self.forward * 1.2 + (0, 0.9, 0), rotation=self.rotation, direction=self.forward)
+            self.attack_cooldown = 1.1
 
 class BossCube(Entity):
     def __init__(self, target, spawn_pos):
