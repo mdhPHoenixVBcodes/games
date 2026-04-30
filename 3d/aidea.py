@@ -43,6 +43,9 @@ Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), positi
 # Level 5 (White Arena)
 ground_5 = Entity(model='cube', color=color.white, collider='box', scale=(100, 1, 100), position=(3000, 0, 2230))
 
+# Level 6 (Big Gray Ground)
+ground_6 = Entity(model='cube', color=color.gray, collider='box', scale=(150, 1, 150), position=(4000, 0, 2230))
+
 
 # Global tracking lists
 enemies = []
@@ -336,6 +339,8 @@ class ThirdPersonPlayer(Entity):
         self.level_4_cleared = False
         self.level_5_portal_open = False
         self.level_5_cleared = False
+        self.level_6_portal_open = False
+        self.level_6_broadcast_shown = False
         self.teammate_unlocked = False
         
         self.max_hp = 100
@@ -417,7 +422,9 @@ class ThirdPersonPlayer(Entity):
         self.is_teleporting = True
         portal_4.enabled = False
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
-        if self.level_5_cleared:
+        if self.level_6_portal_open:
+            invoke(self.teleport_to_level_6, delay=1.0)
+        elif self.level_5_cleared:
             invoke(self.teleport_to_level_2, delay=1.0)
         else:
             invoke(self.teleport_to_level_5, delay=1.0)
@@ -449,8 +456,12 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.color = color.cyan
         elif self.level_5_cleared:
             if self.teammate_unlocked:
-                self.mission_ui.text = 'Travel with the archer.'
-                self.mission_ui.color = color.yellow
+                if self.level_6_portal_open:
+                    self.mission_ui.text = 'Enter the portal!'
+                    self.mission_ui.color = color.magenta
+                else:
+                    self.mission_ui.text = 'Talk to the Manager'
+                    self.mission_ui.color = color.yellow
             else:
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.yellow
@@ -494,6 +505,21 @@ class ThirdPersonPlayer(Entity):
     def setup_level_5_arena(self):
         self.clear_all_entities()
         enemies.append(BossCube(target=self, spawn_pos=(3000, 1, 2240)))
+
+    def setup_level_6_arena(self):
+        self.clear_all_entities()
+        self.level_6_portal_open = True
+        for _ in range(18):
+            pillar_x = random.uniform(3930, 4070)
+            pillar_z = random.uniform(2160, 2300)
+            pillar_height = random.uniform(8, 20)
+            Entity(
+                model='cube',
+                color=color.brown,
+                collider='box',
+                scale=(1.0, pillar_height, 1.0),
+                position=(pillar_x, pillar_height / 2, pillar_z)
+            )
 
     def teleport_to_level_3(self):
         self.spawn_point = (2000, 1, 2010)
@@ -540,6 +566,33 @@ class ThirdPersonPlayer(Entity):
         self.mission_ui.text = 'Defeat the robo-guy'
         self.mission_ui.color = color.white
 
+    def teleport_to_level_6(self):
+        self.spawn_point = (4000, 1, 2230)
+        self.position = self.spawn_point
+        self.y_velocity = 0
+        self.level_3_phase = 0
+        self.level_6_portal_open = True
+        self.setup_level_6_arena()
+
+        if self.teammate_unlocked:
+            companion = spawn_archer_companion()
+            companion.position = self.position + (2, 0, -2)
+            companion.y = self.y + (companion.scale_y / 2) - 1
+            companion.hp = max(1, min(companion.hp, companion.max_hp))
+            companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
+
+        if not self.level_6_broadcast_shown:
+            chef.dialogue_ui.text = 'Chef: What is this place?'
+            chef.dialogue_ui.enabled = True
+            invoke(setattr, chef.dialogue_ui, 'enabled', False, delay=4.0)
+            self.level_6_broadcast_shown = True
+
+        black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
+        invoke(setattr, self, 'is_teleporting', False, delay=1.0)
+
+        self.mission_ui.text = 'Explore Level 6'
+        self.mission_ui.color = color.gray
+
     def reset_mission(self):
         self.enemies_killed = 0
         self.mission_ui.color = color.yellow
@@ -570,12 +623,19 @@ class ThirdPersonPlayer(Entity):
             self.level_4_cleared = False
             self.level_5_portal_open = False
             self.level_5_cleared = False
+            self.level_6_portal_open = False
             self.reset_mission()
         elif self.spawn_point == (1000, 1, 990):
             self.level_3_phase = 0
             if not self.has_bow:
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
+            elif self.level_5_cleared and self.teammate_unlocked and self.level_6_portal_open:
+                self.mission_ui.text = 'Enter the portal!'
+                self.mission_ui.color = color.magenta
+            elif self.level_5_cleared and self.teammate_unlocked:
+                self.mission_ui.text = 'Talk to the Manager'
+                self.mission_ui.color = color.yellow
             elif self.level_5_portal_open:
                 self.mission_ui.text = 'Enter the portal!'
                 self.mission_ui.color = color.magenta
@@ -740,6 +800,7 @@ class ThirdPersonPlayer(Entity):
             'level_4_cleared': self.level_4_cleared,
             'level_5_portal_open': self.level_5_portal_open,
             'level_5_cleared': self.level_5_cleared,
+            'level_6_portal_open': self.level_6_portal_open,
             'teammate_unlocked': self.teammate_unlocked,
             'teammate_hp': getattr(archer_companion, 'hp', 150),
             'teammate_x': getattr(archer_companion, 'x', self.x),
@@ -787,6 +848,7 @@ class ThirdPersonPlayer(Entity):
             self.level_4_cleared = save_data.get('level_4_cleared', False)
             self.level_5_portal_open = save_data.get('level_5_portal_open', False)
             self.level_5_cleared = save_data.get('level_5_cleared', False)
+            self.level_6_portal_open = save_data.get('level_6_portal_open', False)
             self.teammate_unlocked = save_data.get('teammate_unlocked', False)
             level_3_door.y = save_data.get('door_y', 5)
 
@@ -817,8 +879,11 @@ class ThirdPersonPlayer(Entity):
                     elif self.level_5_cleared and not self.teammate_unlocked:
                         self.mission_ui.text = 'Talk to chef'
                         self.mission_ui.color = color.yellow
+                    elif self.teammate_unlocked and self.level_6_portal_open:
+                        self.mission_ui.text = 'Enter the portal!'
+                        self.mission_ui.color = color.magenta
                     elif self.teammate_unlocked:
-                        self.mission_ui.text = 'Travel with the archer.'
+                        self.mission_ui.text = 'Talk to the Manager'
                         self.mission_ui.color = color.yellow
                     elif self.level_5_portal_open:
                         self.mission_ui.text = 'Enter the portal!'
@@ -854,6 +919,9 @@ class ThirdPersonPlayer(Entity):
                 else:
                     self.mission_ui.text = 'Defeat the boss cube!'
                     self.mission_ui.color = color.white
+            elif self.spawn_point == (4000, 1, 2230):
+                self.mission_ui.text = 'Explore Level 6'
+                self.mission_ui.color = color.gray
 
             self.y_velocity = 0 
             print("Game Loaded!")
@@ -923,17 +991,17 @@ class ThirdPersonPlayer(Entity):
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
 
                 else:
-                    manager.dialogue_ui.text = "Manager: Great. The portal is open."
+                    manager.dialogue_ui.text = "Manager: Great. The portal to Level 6 is open."
                     manager.dialogue_ui.enabled = True
                     manager.exclamation.enabled = False
-                    self.mission_ui.text = 'Enter the portal!'
+                    self.mission_ui.text = 'Enter Level 6!'
                     self.mission_ui.color = color.magenta
                     
                     ground_4.color = color.dark_gray
                     portal_4.position = manager.position + manager.forward * 4
                     portal_4.y = 1.5
                     portal_4.enabled = True
-                    self.level_5_portal_open = True
+                    self.level_6_portal_open = True
                     
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
 
