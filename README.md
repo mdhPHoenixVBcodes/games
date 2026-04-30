@@ -6,13 +6,13 @@ Welcome to this repository containing a collection of fun, interactive 2D and 3D
 
 ### 1. 3D Adventure Dungeon (`aidea.py`)
 A multi-phase 3D action-survival game built with the `ursina` engine. Progress through different dimensions, talk to NPCs, and defeat bosses.
-* **Features:** Multiple levels (Plains, Safe Zone, Final Arena), interactive NPCs (Chef, Manager), melee and ranged combat, health UI, and a functioning Save/Load system.
+* **Features:** Multiple levels (Plains, Safe Zone, Cannon Hallway, Final Arena, White Arena, and Gray Arena), interactive NPCs (Chef, Manager), an unlockable AI Archer Companion, melee and ranged combat, shockwave grenades, health UI, and a functioning Save/Load system.
 * **Controls:** * `W, A, S, D` - Move
   * `Space` - Jump
   * `Left Click` - Sword Attack
   * `Right Click` - Shoot Arrow (requires Bow)
   * `E` - Throw Shockwave Grenade
-  * `F` - Interact with NPCs
+  * `F` - Interact with NPCs / Enter Portals
   * `8` - Save Game
   * `9` - Load Game
   * `0` - Pause
