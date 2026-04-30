@@ -1,6 +1,15 @@
 # Python Mini-Games Collection
 
-Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project utilizing different libraries such as `pygame`, `ursina`, and the built-in `turtle` module.
+Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project using ***AI*** utilizing different libraries such as `pygame`, `ursina`, and the built-in `turtle` module.
+
+
+## ⚙️ Requirements & Installation
+
+To run these games, you will need **Python 3.x** installed on your system. You will also need to install the required external libraries. You can install them via pip:
+
+```bash
+pip install pygame ursina
+```
 
 ## 🎮 Included Projects
 
@@ -12,7 +21,7 @@ A multi-phase 3D action-survival game built with the `ursina` engine. Progress t
   * `Left Click` - Sword Attack
   * `Right Click` - Shoot Arrow (requires Bow)
   * `E` - Throw Shockwave Grenade
-  * `F` - Interact with NPCs / Enter Portals
+  * `F` - Interact with NPCs
   * `8` - Save Game
   * `9` - Load Game
   * `0` - Pause
@@ -45,10 +54,3 @@ A console-driven interactive drawing program using the `turtle` graphics module.
 * **Controls:** Follow the on-screen terminal prompts to enter movement distances and turning angles (`r` for right, `l` for left). Type `restart` to clear the canvas or `exit` to quit the program.
 
 ---
-
-## ⚙️ Requirements & Installation
-
-To run these games, you will need **Python 3.x** installed on your system. You will also need to install the required external libraries. You can install them via pip:
-
-```bash
-pip install pygame ursina
