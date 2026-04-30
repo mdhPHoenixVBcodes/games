@@ -54,3 +54,5 @@ A console-driven interactive drawing program using the `turtle` graphics module.
 * **Controls:** Follow the on-screen terminal prompts to enter movement distances and turning angles (`r` for right, `l` for left). Type `restart` to clear the canvas or `exit` to quit the program.
 
 ---
+Regards,
+*mdhPHoenixVBcodes* and *AI* (***Gemini 3.1 and Flash***)
