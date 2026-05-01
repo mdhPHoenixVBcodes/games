@@ -113,6 +113,7 @@ W_AXE = 102; S_AXE = 103; I_AXE = 111
 W_SHOVEL = 104; S_SHOVEL = 105; I_SHOVEL = 112
 W_SWORD = 106; S_SWORD = 107; I_SWORD = 113
 W_HOE = 108; S_HOE = 109; I_HOE = 114
+D_PICK = 115; D_AXE = 116; D_SHOVEL = 117; D_SWORD = 118; D_HOE = 119
 
 # Armor IDs
 I_HELMET = 120; I_CHEST = 121; I_LEGS = 122; I_BOOTS = 123
@@ -163,6 +164,8 @@ BLOCK_NAMES = {
     WATER: "Water", BOAT: "Boat",
     I_PICK: "Iron Pickaxe", I_AXE: "Iron Axe", I_SHOVEL: "Iron Shovel",
     I_SWORD: "Iron Sword", I_HOE: "Iron Hoe",
+    D_PICK: "Diamond Pickaxe", D_AXE: "Diamond Axe", D_SHOVEL: "Diamond Shovel",
+    D_SWORD: "Diamond Sword", D_HOE: "Diamond Hoe",
     I_HELMET: "Iron Helmet", I_CHEST: "Iron Chestplate",
     I_LEGS: "Iron Leggings", I_BOOTS: "Iron Boots",
     LADDER: "Ladder",
@@ -173,6 +176,7 @@ MAX_DURABILITY = {
     W_PICK: 60, W_AXE: 60, W_SHOVEL: 60, W_SWORD: 60, W_HOE: 60,
     S_PICK: 132, S_AXE: 132, S_SHOVEL: 132, S_SWORD: 132, S_HOE: 132,
     I_PICK: 250, I_AXE: 250, I_SHOVEL: 250, I_SWORD: 250, I_HOE: 250,
+    D_PICK: 1561, D_AXE: 1561, D_SHOVEL: 1561, D_SWORD: 1561, D_HOE: 1561,
     I_HELMET: 165, I_CHEST: 240, I_LEGS: 225, I_BOOTS: 195
 }
 
@@ -1022,20 +1026,21 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type >= 100: # Tools
         mat_c = (150, 110, 60) if b_type in (W_PICK, W_AXE, W_SHOVEL, W_SWORD, W_HOE) else (128, 128, 128)
         if b_type in (I_PICK, I_AXE, I_SHOVEL, I_SWORD, I_HOE, I_HELMET, I_CHEST, I_LEGS, I_BOOTS): mat_c = (200, 200, 220)
+        if b_type in (D_PICK, D_AXE, D_SHOVEL, D_SWORD, D_HOE): mat_c = COLOR_DIAMOND
         
-        if b_type in (W_PICK, S_PICK, I_PICK):
+        if b_type in (W_PICK, S_PICK, I_PICK, D_PICK):
             pygame.draw.rect(screen, mat_c, (x, y, size, size//4)) # Top
             pygame.draw.rect(screen, (101, 67, 33), (x + size//2 - 2, y + size//4, 4, size*3//4)) # Stick
-        elif b_type in (W_AXE, S_AXE, I_AXE):
+        elif b_type in (W_AXE, S_AXE, I_AXE, D_AXE):
             pygame.draw.rect(screen, mat_c, (x, y, size//2, size//2)) # Head
             pygame.draw.rect(screen, (101, 67, 33), (x + size//2 - 2, y, 4, size)) # Stick
-        elif b_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL):
+        elif b_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL, D_SHOVEL):
             pygame.draw.rect(screen, mat_c, (x + size//4, y, size//2, size//3)) # Head
             pygame.draw.rect(screen, (101, 67, 33), (x + size//2 - 2, y + size//3, 4, size*2//3)) # Stick
-        elif b_type in (W_SWORD, S_SWORD, I_SWORD):
+        elif b_type in (W_SWORD, S_SWORD, I_SWORD, D_SWORD):
             pygame.draw.rect(screen, mat_c, (x + size//2 - 4, y, 8, size*2//3)) # Blade
             pygame.draw.rect(screen, (101, 67, 33), (x + size//2 - 2, y + size*2//3, 4, size//3)) # Hilt
-        elif b_type in (W_HOE, S_HOE, I_HOE):
+        elif b_type in (W_HOE, S_HOE, I_HOE, D_HOE):
             pygame.draw.rect(screen, mat_c, (x, y, size*3//4, size//4)) # Top
             pygame.draw.rect(screen, (101, 67, 33), (x + size//2 - 2, y + size//4, 4, size*3//4)) # Stick
         # Armor
@@ -1215,29 +1220,35 @@ def update_crafting(player):
             res3 = result
 
     # Materials
-    W = PLANKS; S = COBBLESTONE; T = STICK; N = None; I = IRON_INGOT; ST = STICK
+    W = PLANKS; S = COBBLESTONE; T = STICK; N = None; I = IRON_INGOT; D = DIAMOND; ST = STICK
     # Pickaxes
     match([W,W,W, N,T,N, N,T,N], {"type": W_PICK, "count": 1, "durability": 60})
     match([S,S,S, N,T,N, N,T,N], {"type": S_PICK, "count": 1, "durability": 132})
     match([I,I,I, N,T,N, N,T,N], {"type": I_PICK, "count": 1, "durability": 250})
+    match([D,D,D, N,T,N, N,T,N], {"type": D_PICK, "count": 1, "durability": 1561})
     # Axes
     match([W,W,N, W,T,N, N,T,N], {"type": W_AXE, "count": 1, "durability": 60})
     match([S,S,N, S,T,N, N,T,N], {"type": S_AXE, "count": 1, "durability": 132})
     match([I,I,N, I,T,N, N,T,N], {"type": I_AXE, "count": 1, "durability": 250})
+    match([D,D,N, D,T,N, N,T,N], {"type": D_AXE, "count": 1, "durability": 1561})
     # Shovels
     match([N,W,N, N,T,N, N,T,N], {"type": W_SHOVEL, "count": 1, "durability": 60})
     match([N,S,N, N,T,N, N,T,N], {"type": S_SHOVEL, "count": 1, "durability": 132})
     match([N,I,N, N,T,N, N,T,N], {"type": I_SHOVEL, "count": 1, "durability": 250})
+    match([N,D,N, N,T,N, N,T,N], {"type": D_SHOVEL, "count": 1, "durability": 1561})
     # Swords
     match([N,W,N, N,W,N, N,T,N], {"type": W_SWORD, "count": 1, "durability": 60})
     match([N,S,N, N,S,N, N,T,N], {"type": S_SWORD, "count": 1, "durability": 132})
     match([N,I,N, N,I,N, N,T,N], {"type": I_SWORD, "count": 1, "durability": 250})
+    match([N,D,N, N,D,N, N,T,N], {"type": D_SWORD, "count": 1, "durability": 1561})
     # Hoes
     match([W,W,N, N,T,N, N,T,N], {"type": W_HOE, "count": 1, "durability": 60})
     match([S,S,N, N,T,N, N,T,N], {"type": S_HOE, "count": 1, "durability": 132})
     match([N,S,S, N,T,N, N,T,N], {"type": S_HOE, "count": 1, "durability": 132})
     match([I,I,N, N,T,N, N,T,N], {"type": I_HOE, "count": 1, "durability": 250})
     match([N,I,I, N,T,N, N,T,N], {"type": I_HOE, "count": 1, "durability": 250})
+    match([D,D,N, N,T,N, N,T,N], {"type": D_HOE, "count": 1, "durability": 1561})
+    match([N,D,D, N,T,N, N,T,N], {"type": D_HOE, "count": 1, "durability": 1561})
     # Armor
     match([I,I,I, I,N,I, N,N,N], {"type": I_HELMET, "count": 1, "durability": 165})
     match([I,N,I, I,I,I, I,I,I], {"type": I_CHEST, "count": 1, "durability": 240})
@@ -1723,20 +1734,23 @@ def main():
                 tool = player.inventory[player.selected_slot]
                 t_type = tool["type"] if tool else None
                 speed = 1.0
-                if b_type == DIAMOND_ORE and t_type != I_PICK:
+                if b_type == DIAMOND_ORE and t_type not in (I_PICK, D_PICK):
                     speed = 0.0
-                elif t_type in (W_PICK, S_PICK, I_PICK) and b_type in (STONE_BLOCK, COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
+                elif t_type in (W_PICK, S_PICK, I_PICK, D_PICK) and b_type in (STONE_BLOCK, COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
                     if t_type == W_PICK: speed = 3.0
                     elif t_type == S_PICK: speed = 6.0
-                    else: speed = 10.0 # Iron
-                elif t_type in (W_AXE, S_AXE, I_AXE) and b_type in (OAK_LOG, BIRCH_LOG, PLANKS, CRAFTING_TABLE, FURNACE, IRON_BLOCK_PROD):
+                    elif t_type == I_PICK: speed = 10.0
+                    else: speed = 12.0 # Diamond
+                elif t_type in (W_AXE, S_AXE, I_AXE, D_AXE) and b_type in (OAK_LOG, BIRCH_LOG, PLANKS, CRAFTING_TABLE, FURNACE, IRON_BLOCK_PROD):
                     if t_type == W_AXE: speed = 3.0
                     elif t_type == S_AXE: speed = 6.0
-                    else: speed = 10.0 # Iron
-                elif t_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL) and b_type in (GRASS_BLOCK, DIRT_BLOCK):
+                    elif t_type == I_AXE: speed = 10.0
+                    else: speed = 12.0 # Diamond
+                elif t_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL, D_SHOVEL) and b_type in (GRASS_BLOCK, DIRT_BLOCK):
                     if t_type == W_SHOVEL: speed = 3.0
                     elif t_type == S_SHOVEL: speed = 6.0
-                    else: speed = 10.0 # Iron
+                    elif t_type == I_SHOVEL: speed = 10.0
+                    else: speed = 12.0 # Diamond
                 
                 hardness = BLOCK_HARDNESS.get(b_type, 1.0)
                 if b_type == TALL_GRASS: hardness = 0.01 # Instant break
@@ -2015,11 +2029,11 @@ def main():
             
             # Base damage for hand
             dmg = 1
-            if t_type in (W_SWORD, S_SWORD, I_SWORD): dmg = 4 if t_type == W_SWORD else (5 if t_type == S_SWORD else 7)
-            elif t_type in (W_AXE, S_AXE, I_AXE): dmg = 3 if t_type == W_AXE else (4 if t_type == S_AXE else 6)
-            elif t_type in (W_PICK, S_PICK, I_PICK): dmg = 2 if t_type == W_PICK else (3 if t_type == S_PICK else 5)
-            elif t_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL): dmg = 1 if t_type == W_SHOVEL else (2 if t_type == S_SHOVEL else 4)
-            elif t_type in (W_HOE, S_HOE, I_HOE): dmg = 1 if t_type == W_HOE else (1 if t_type == S_HOE else 2)
+            if t_type in (W_SWORD, S_SWORD, I_SWORD, D_SWORD): dmg = 4 if t_type == W_SWORD else (5 if t_type == S_SWORD else (7 if t_type == I_SWORD else 8))
+            elif t_type in (W_AXE, S_AXE, I_AXE, D_AXE): dmg = 3 if t_type == W_AXE else (4 if t_type == S_AXE else (6 if t_type == I_AXE else 7))
+            elif t_type in (W_PICK, S_PICK, I_PICK, D_PICK): dmg = 2 if t_type == W_PICK else (3 if t_type == S_PICK else (5 if t_type == I_PICK else 6))
+            elif t_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL, D_SHOVEL): dmg = 1 if t_type == W_SHOVEL else (2 if t_type == S_SHOVEL else (4 if t_type == I_SHOVEL else 5))
+            elif t_type in (W_HOE, S_HOE, I_HOE, D_HOE): dmg = 1 if t_type == W_HOE else (1 if t_type == S_HOE else (2 if t_type == I_HOE else 3))
 
             if now - player.last_action_time > 300:
                 # Combat with Mobs (with wrap handling)
