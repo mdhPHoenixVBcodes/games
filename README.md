@@ -10,6 +10,7 @@ To run these games, you will need **Python 3.x** installed on your system. You w
 ```bash
 pip install pygame ursina
 ```
+***Pls delete the*** `savegame.json` ***cuz that's technically my data***
 
 ## 🎮 Included Projects
 
