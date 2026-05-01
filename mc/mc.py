@@ -106,6 +106,7 @@ DIAMOND = 69
 DOOR_TOP = 70
 DOOR_OPEN_TOP = 71
 BED_RIGHT = 72
+COAL_BLOCK_ITEM = 73
 
 # Tool IDs
 W_PICK = 100; S_PICK = 101; I_PICK = 110
@@ -169,7 +170,8 @@ BLOCK_NAMES = {
     I_HELMET: "Iron Helmet", I_CHEST: "Iron Chestplate",
     I_LEGS: "Iron Leggings", I_BOOTS: "Iron Boots",
     LADDER: "Ladder",
-    DIAMOND: "Diamond"
+    DIAMOND: "Diamond",
+    COAL_BLOCK_ITEM: "Coal Block"
 }
 
 MAX_DURABILITY = {
@@ -187,7 +189,7 @@ PLACEABLE_BLOCKS = {
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
     LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS,
     W_SLAB, C_SLAB, SS_SLAB, I_SLAB, FARMLAND, HAY_BALE, CHEST,
-    FENCE, FENCE_GATE, WOOL, BED, LADDER
+    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM
 }
 
 class Player:
@@ -711,6 +713,7 @@ class World:
                             IRON_BLOCK_PROD: (220, 220, 220), COBBLESTONE: (120, 120, 120),
                             SMOOTH_STONE: (180, 180, 180), OAK_LOG: (100, 70, 40),
                             BIRCH_LOG: (220, 220, 220), PLANKS: COLOR_PLANKS,
+                            COAL_BLOCK_ITEM: (20, 20, 20),
                             BOAT: (100, 70, 40)
                         }
                         color = block_colors.get(b_type, (255, 0, 255)) # Magenta for unknown
@@ -723,6 +726,8 @@ class World:
                                 sx = 4 + ((seed + i * 21) % 20)
                                 sy = 4 + ((seed + i * 37) % 20)
                                 pygame.draw.rect(surface, speckle_c, (draw_x + sx, draw_y + sy, 4, 4))
+                        elif b_type == COAL_BLOCK_ITEM:
+                            pygame.draw.rect(surface, (60, 60, 60), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
 
 
     def draw_cracks(self, surface, scroll_x, scroll_y, pos, progress):
@@ -1000,6 +1005,9 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type == COAL:
         pygame.draw.circle(screen, (20, 20, 20), (x+size//2, y+size//2), size//3)
         pygame.draw.circle(screen, (50, 50, 50), (x+size//3, y+size//3), 4) # Shine
+    elif b_type == COAL_BLOCK_ITEM:
+        pygame.draw.rect(screen, (20, 20, 20), (x, y, size, size))
+        pygame.draw.rect(screen, (60, 60, 60), (x + 2, y + 2, size - 4, size - 4), 1)
     elif b_type == DOOR:
         pygame.draw.rect(screen, (120, 80, 40), (x + size//4, y, size//2, size))
         pygame.draw.rect(screen, (0, 0, 0), (x + size//2 + 4, y + size//2, 4, 4)) # Handle
@@ -1281,6 +1289,7 @@ def update_crafting(player):
     WH = WHEAT_ITEM
     match([N,N,N, WH,WH,WH, N,N,N], {"type": BREAD, "count": 1})
     match([WH,WH,WH, WH,WH,WH, WH,WH,WH], {"type": HAY_BALE, "count": 1})
+    match([COAL,COAL,COAL, COAL,COAL,COAL, COAL,COAL,COAL], {"type": COAL_BLOCK_ITEM, "count": 1})
     # Chest
     match([W,W,W, W,N,W, W,W,W], {"type": CHEST, "count": 1})
     # Wooden Products
@@ -1511,7 +1520,7 @@ def update_furnaces(world):
             # Consume fuel
             f_type = data["fuel"]["type"]
             fuel_values = {
-                COAL_BLOCK: 720, COAL: 80, CHARCOAL: 80, 
+                COAL_BLOCK: 720, COAL_BLOCK_ITEM: 720, COAL: 80, CHARCOAL: 80, 
                 OAK_LOG: 15, BIRCH_LOG: 15, PLANKS: 15, STICK: 5,
                 CRAFTING_TABLE: 15, DOOR: 15, TRAPDOOR: 15, 
                 PRESSURE_PLATE: 15, BUTTON: 5, W_STAIRS: 15, W_SLAB: 7.5, 
@@ -1610,6 +1619,10 @@ def main():
     auto_save_timer = 0
     save_msg_timer = 0
     save_msg_text = "Game Saved!"
+    sleep_anim_timer = 0
+    sleep_anim_total = 90
+    sleep_wake_timer = 0
+    sleep_bed_pos = None
 
     running = True
     while running:
@@ -1628,6 +1641,18 @@ def main():
             
         scroll_x += (target_scroll_x - scroll_x) * 0.1
         scroll_y += (target_scroll_y - scroll_y) * 0.1
+
+        if sleep_anim_timer > 0:
+            sleep_anim_timer -= 1
+            if sleep_anim_timer == 0:
+                world.time = 0
+                save_game(world, player)
+                save_msg_text = "Slept until morning!"
+                save_msg_timer = 120
+                sleep_wake_timer = sleep_anim_total
+                sleep_bed_pos = None
+        elif sleep_wake_timer > 0:
+            sleep_wake_timer -= 1
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT: 
@@ -1641,7 +1666,7 @@ def main():
                         save_msg_text = "Game Saved!"
                     running = False
                 if event.key == pygame.K_r: player.respawn()
-                if event.key == pygame.K_e: 
+                if event.key == pygame.K_e and sleep_anim_timer == 0 and sleep_wake_timer == 0: 
                     player.show_inventory = not player.show_inventory
                     if not player.show_inventory: 
                         player.show_3x3 = False
@@ -1658,7 +1683,7 @@ def main():
                         save_game(world, player)
                         running = False
                 
-                if not player.show_inventory:
+                if not player.show_inventory and sleep_anim_timer == 0 and sleep_wake_timer == 0:
                     if event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]:
                         player.selected_slot = event.key - pygame.K_1
                     if event.key == pygame.K_z:
@@ -1950,10 +1975,8 @@ def main():
                     elif b_type == FENCE_GATE: world.data[(tx, ty)] = FENCE_GATE_OPEN
                     elif b_type == FENCE_GATE_OPEN: world.data[(tx, ty)] = FENCE_GATE
                     elif b_type in (BED, BED_RIGHT):
-                        world.time = 0 # 6:00 AM
-                        save_game(world, player)
-                        save_msg_text = "Slept until morning!"
-                        save_msg_timer = 120
+                        sleep_anim_timer = sleep_anim_total
+                        sleep_bed_pos = (tx, ty)
                         action_taken = True
                         break
                     action_taken = True
@@ -2067,58 +2090,60 @@ def main():
                         if tool["durability"] <= 0:
                             player.inventory[player.selected_slot] = None
 
-        player.update(world)
-        update_furnaces(world)
-        world.time = (world.time + 1) % 24000
-        
-        # Mob Spawning
-        t = world.time
-        # Zombies at Night
-        if (t > 14000 or t < 1000) and len([m for m in world.mobs if m.m_type == "zombie"]) < 6:
-            if random.random() < 0.005:
-                world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "zombie"))
-        # Cows during Day
-        if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "cow"]) < 4:
-            if random.random() < 0.003:
-                world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "cow"))
-        if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "sheep"]) < 4:
-            if random.random() < 0.003:
-                world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "sheep"))
+        sleeping_visual = sleep_anim_timer > 0 or sleep_wake_timer > 0
+        if not sleeping_visual:
+            player.update(world)
+            update_furnaces(world)
+            world.time = (world.time + 1) % 24000
             
-        for mob in world.mobs[:]:
-            mob.update(world, player)
-            if mob.health <= 0:
-                def spawn_drop(item_type, count=1):
-                    for _ in range(count):
-                        world.dropped_items.append(DroppedItem(mob.rect.centerx, mob.rect.centery, item_type))
+            # Mob Spawning
+            t = world.time
+            # Zombies at Night
+            if (t > 14000 or t < 1000) and len([m for m in world.mobs if m.m_type == "zombie"]) < 6:
+                if random.random() < 0.005:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "zombie"))
+            # Cows during Day
+            if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "cow"]) < 4:
+                if random.random() < 0.003:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "cow"))
+            if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "sheep"]) < 4:
+                if random.random() < 0.003:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "sheep"))
+                
+            for mob in world.mobs[:]:
+                mob.update(world, player)
+                if mob.health <= 0:
+                    def spawn_drop(item_type, count=1):
+                        for _ in range(count):
+                            world.dropped_items.append(DroppedItem(mob.rect.centerx, mob.rect.centery, item_type))
 
-                if mob.m_type == "cow":
-                    spawn_drop(RAW_BEEF, random.randint(2, 4))
-                elif mob.m_type == "zombie":
-                    spawn_drop(ROTTEN_FLESH, random.randint(1, 2))
-                    spawn_drop(BONE, random.randint(1, 2))
-                elif mob.m_type == "sheep":
-                    spawn_drop(WOOL, random.randint(1, 2))
-                    spawn_drop(RAW_MUTTON, random.randint(1, 3))
-                world.mobs.remove(mob)
+                    if mob.m_type == "cow":
+                        spawn_drop(RAW_BEEF, random.randint(2, 4))
+                    elif mob.m_type == "zombie":
+                        spawn_drop(ROTTEN_FLESH, random.randint(1, 2))
+                        spawn_drop(BONE, random.randint(1, 2))
+                    elif mob.m_type == "sheep":
+                        spawn_drop(WOOL, random.randint(1, 2))
+                        spawn_drop(RAW_MUTTON, random.randint(1, 3))
+                    world.mobs.remove(mob)
+                    
+            # --- Farming Growth ---
+            if random.random() < 0.01: # Growth tick
+                crops = [pos for pos, b in world.data.items() if WHEAT_STG0 <= b < WHEAT_STG3]
+                if crops:
+                    cp = random.choice(crops)
+                    world.data[cp] += 1
+                    
+            # Auto-Save
+            auto_save_timer += 1
+            if auto_save_timer >= 1800: # 30 seconds
+                save_game(world, player)
+                auto_save_timer = 0
+                save_msg_timer = 120 # Show for 2 seconds
+                save_msg_text = "Game Saved!"
                 
-        # --- Farming Growth ---
-        if random.random() < 0.01: # Growth tick
-            crops = [pos for pos, b in world.data.items() if WHEAT_STG0 <= b < WHEAT_STG3]
-            if crops:
-                cp = random.choice(crops)
-                world.data[cp] += 1
-                
-        # Auto-Save
-        auto_save_timer += 1
-        if auto_save_timer >= 1800: # 30 seconds
-            save_game(world, player)
-            auto_save_timer = 0
-            save_msg_timer = 120 # Show for 2 seconds
-            save_msg_text = "Game Saved!"
-            
         world.draw(screen, scroll_x, scroll_y)
-        
+
         # Update and Draw Dropped Items
         for di in world.dropped_items[:]:
             di.update(world)
@@ -2453,6 +2478,27 @@ def main():
                         count_str = str(slot["count"])
                         c_text = font.render(count_str, True, COLOR_WHITE)
                         screen.blit(c_text, (slot_x + 24, hotbar_y + 22))
+
+        if sleep_anim_timer > 0 or sleep_wake_timer > 0:
+            sleep_progress = 1.0 - (sleep_anim_timer / sleep_anim_total if sleep_anim_timer > 0 else sleep_wake_timer / sleep_anim_total)
+            if sleep_anim_timer > 0:
+                sleep_alpha = int(220 * sleep_progress)
+            else:
+                sleep_alpha = int(220 * (sleep_wake_timer / sleep_anim_total))
+            sleep_overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            sleep_overlay.fill((10, 10, 20, sleep_alpha))
+            screen.blit(sleep_overlay, (0, 0))
+
+            if sleep_bed_pos is not None and sleep_anim_timer > 0:
+                bx, by = sleep_bed_pos
+                bed_x = bx * TILE_SIZE - int(scroll_x)
+                bed_y = by * TILE_SIZE - int(scroll_y)
+                for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
+                    dx = bed_x + offset
+                    if -TILE_SIZE < dx < SCREEN_WIDTH and -TILE_SIZE < bed_y < SCREEN_HEIGHT:
+                        z_txt = font.render("Zzz", True, (220, 220, 255))
+                        screen.blit(z_txt, (dx + 4, bed_y - 20))
+                        break
 
         pygame.display.flip()
         clock.tick(60)

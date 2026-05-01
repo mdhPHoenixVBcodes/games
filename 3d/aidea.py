@@ -6,6 +6,7 @@ from pathlib import Path
 
 # Initialize the Ursina application
 app = Ursina()
+SAVE_FILE = Path(__file__).with_name('savegame.json')
 
 # 1. Create the Environments
 # --- Level 1 ---
@@ -419,7 +420,7 @@ class ThirdPersonPlayer(Entity):
         
         if self.hp <= 0:
             print("You died!")
-            if os.path.exists('savegame.json'):
+            if SAVE_FILE.exists():
                 print("Loading last save...")
                 self.load_game()
             else:
@@ -467,14 +468,14 @@ class ThirdPersonPlayer(Entity):
         portal_4.enabled = False
         self.save_game()
         black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
-        if self.level_6_portal_open:
+        if self.level_6_portal_open or (self.teammate_unlocked and self.level_5_cleared):
             invoke(self.teleport_to_level_6, delay=1.0)
         elif self.level_5_cleared:
             invoke(self.teleport_to_level_2, delay=1.0)
         elif self.level_5_portal_open:
             invoke(self.teleport_to_level_5, delay=1.0)
         else:
-            invoke(self.teleport_to_level_6, delay=1.0)
+            invoke(self.teleport_to_level_2, delay=1.0)
 
     def clear_all_entities(self):
         global enemies, cannons, cannon_spheres
@@ -874,125 +875,134 @@ class ThirdPersonPlayer(Entity):
             'teammate_z': getattr(archer_companion, 'z', self.z),
             'door_y': level_3_door.y
         }
-        with open('savegame.json', 'w') as f: json.dump(save_data, f)
+        tmp_file = SAVE_FILE.with_suffix('.json.tmp')
+        with open(tmp_file, 'w') as f:
+            json.dump(save_data, f)
+        os.replace(tmp_file, SAVE_FILE)
         self.autosave_timer = self.autosave_interval
         print("Game Saved!")
 
     def load_game(self):
-        if os.path.exists('savegame.json'):
-            with open('savegame.json', 'r') as f: save_data = json.load(f)
-            
-            self.x, self.y, self.z = save_data['x'], save_data['y'], save_data['z']
-            if 'hp' in save_data:
-                self.hp = save_data['hp']
-                self.health_ui.text = f'HP: {self.hp} / {self.max_hp}'
-            if 'spawn_x' in save_data:
-                self.spawn_point = (save_data['spawn_x'], save_data['spawn_y'], save_data['spawn_z'])
-            
-            if 'enemies_killed' in save_data: self.enemies_killed = save_data['enemies_killed']
-            
-            if 'portal_enabled' in save_data:
-                portal.enabled = save_data['portal_enabled']
-                portal.position = (save_data['portal_x'], save_data['portal_y'], save_data['portal_z'])
-            if 'portal_2_enabled' in save_data:
-                portal_2.enabled = save_data['portal_2_enabled']
-                portal_2.position = (save_data['portal_2_x'], save_data['portal_2_y'], save_data['portal_2_z'])
-            if 'portal_3_enabled' in save_data:
-                portal_3.enabled = save_data['portal_3_enabled']
-                portal_3.position = (save_data['portal_3_x'], save_data['portal_3_y'], save_data['portal_3_z'])
-            if 'portal_4_enabled' in save_data:
-                portal_4.enabled = save_data['portal_4_enabled']
-                portal_4.position = (save_data['portal_4_x'], save_data['portal_4_y'], save_data['portal_4_z'])
+        if not SAVE_FILE.exists() or SAVE_FILE.stat().st_size == 0:
+            print("No valid save file found; starting fresh.")
+            return
 
-            self.has_bow = save_data.get('has_bow', False)
-            self.has_grenade = save_data.get('has_grenade', False)
-            self.grenade_used = save_data.get('grenade_used', False)
-            chef.exclamation.enabled = save_data.get('exclamation_enabled', True)
-            manager.exclamation.enabled = save_data.get('manager_exclamation_enabled', True)
-            self.level_3_phase = save_data.get('level_3_phase', 0)
-            self.level_3_cleared = save_data.get('level_3_cleared', False)
-            self.level_4_portal_open = save_data.get('level_4_portal_open', False)
-            self.level_4_cleared = save_data.get('level_4_cleared', False)
-            self.level_5_portal_open = save_data.get('level_5_portal_open', False)
-            self.level_5_cleared = save_data.get('level_5_cleared', False)
-            self.level_6_portal_open = save_data.get('level_6_portal_open', False)
-            self.level_6_broadcast_shown = save_data.get('level_6_broadcast_shown', False)
-            self.teammate_unlocked = save_data.get('teammate_unlocked', False)
-            level_3_door.y = save_data.get('door_y', 5)
+        try:
+            with open(SAVE_FILE, 'r') as f:
+                save_data = json.load(f)
+        except json.JSONDecodeError:
+            print("Save file is empty or corrupted; starting fresh.")
+            return
+        
+        self.x, self.y, self.z = save_data['x'], save_data['y'], save_data['z']
+        if 'hp' in save_data:
+            self.hp = save_data['hp']
+            self.health_ui.text = f'HP: {self.hp} / {self.max_hp}'
+        if 'spawn_x' in save_data:
+            self.spawn_point = (save_data['spawn_x'], save_data['spawn_y'], save_data['spawn_z'])
+        
+        if 'enemies_killed' in save_data: self.enemies_killed = save_data['enemies_killed']
+        
+        if 'portal_enabled' in save_data:
+            portal.enabled = save_data['portal_enabled']
+            portal.position = (save_data['portal_x'], save_data['portal_y'], save_data['portal_z'])
+        if 'portal_2_enabled' in save_data:
+            portal_2.enabled = save_data['portal_2_enabled']
+            portal_2.position = (save_data['portal_2_x'], save_data['portal_2_y'], save_data['portal_2_z'])
+        if 'portal_3_enabled' in save_data:
+            portal_3.enabled = save_data['portal_3_enabled']
+            portal_3.position = (save_data['portal_3_x'], save_data['portal_3_y'], save_data['portal_3_z'])
+        if 'portal_4_enabled' in save_data:
+            portal_4.enabled = save_data['portal_4_enabled']
+            portal_4.position = (save_data['portal_4_x'], save_data['portal_4_y'], save_data['portal_4_z'])
 
-            if self.teammate_unlocked:
-                companion = spawn_archer_companion()
-                companion.hp = save_data.get('teammate_hp', companion.max_hp)
-                companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
-                companion.position = (
-                    save_data.get('teammate_x', self.x + 2),
-                    save_data.get('teammate_y', self.y),
-                    save_data.get('teammate_z', self.z - 2),
-                )
+        self.has_bow = save_data.get('has_bow', False)
+        self.has_grenade = save_data.get('has_grenade', False)
+        self.grenade_used = save_data.get('grenade_used', False)
+        chef.exclamation.enabled = save_data.get('exclamation_enabled', True)
+        manager.exclamation.enabled = save_data.get('manager_exclamation_enabled', True)
+        self.level_3_phase = save_data.get('level_3_phase', 0)
+        self.level_3_cleared = save_data.get('level_3_cleared', False)
+        self.level_4_portal_open = save_data.get('level_4_portal_open', False)
+        self.level_4_cleared = save_data.get('level_4_cleared', False)
+        self.level_5_portal_open = save_data.get('level_5_portal_open', False)
+        self.level_5_cleared = save_data.get('level_5_cleared', False)
+        self.level_6_portal_open = save_data.get('level_6_portal_open', False)
+        self.level_6_broadcast_shown = save_data.get('level_6_broadcast_shown', False)
+        self.teammate_unlocked = save_data.get('teammate_unlocked', False)
+        level_3_door.y = save_data.get('door_y', 5)
+
+        if self.teammate_unlocked:
+            companion = spawn_archer_companion()
+            companion.hp = save_data.get('teammate_hp', companion.max_hp)
+            companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
+            companion.position = (
+                save_data.get('teammate_x', self.x + 2),
+                save_data.get('teammate_y', self.y),
+                save_data.get('teammate_z', self.z - 2),
+            )
+        else:
+            dismiss_archer_companion()
+
+        if self.spawn_point == (0, 1, 0):
+            if self.enemies_killed >= self.mission_target:
+                self.mission_ui.text = 'Portal Opened Nearby!'
+                self.mission_ui.color = color.magenta
             else:
-                dismiss_archer_companion()
-
-            if self.spawn_point == (0, 1, 0):
-                if self.enemies_killed >= self.mission_target:
-                    self.mission_ui.text = 'Portal Opened Nearby!'
-                    self.mission_ui.color = color.magenta
-                else:
-                    self.mission_ui.text = f'Defeat enemies: {self.enemies_killed} / {self.mission_target}'
-                    self.mission_ui.color = color.yellow
-            elif self.spawn_point == (1000, 1, 990):
-                if self.has_bow:
-                    if not self.has_grenade:
-                        self.mission_ui.text = 'Talk to chef'
-                        self.mission_ui.color = color.cyan
-                    elif self.level_5_cleared and not self.teammate_unlocked:
-                        self.mission_ui.text = 'Talk to chef'
-                        self.mission_ui.color = color.yellow
-                    elif self.teammate_unlocked:
-                        self.mission_ui.text = 'Talk to the Manager'
-                        self.mission_ui.color = color.yellow
-                    elif self.level_5_portal_open:
-                        self.mission_ui.text = 'Enter the portal!'
-                        self.mission_ui.color = color.magenta
-                    elif self.level_4_cleared:
-                        self.mission_ui.text = 'Talk to the Manager'
-                        self.mission_ui.color = color.yellow
-                    else:
-                        self.mission_ui.text = 'Find the Manager'
-                        self.mission_ui.color = color.yellow
-                else:
+                self.mission_ui.text = f'Defeat enemies: {self.enemies_killed} / {self.mission_target}'
+                self.mission_ui.color = color.yellow
+        elif self.spawn_point == (1000, 1, 990):
+            if self.has_bow:
+                if not self.has_grenade:
                     self.mission_ui.text = 'Talk to chef'
                     self.mission_ui.color = color.cyan
-            elif self.spawn_point == (2000, 1, 2010):
-                if self.level_3_phase == 1:
-                    self.mission_ui.text = 'Destroy the Cannons!'
-                    self.mission_ui.color = color.red
-                elif self.level_3_phase == 2:
-                    self.mission_ui.text = 'Enter the arena!'
-                    self.mission_ui.color = color.green
-            elif self.spawn_point == (2000, 1, 2230):
-                if self.level_4_cleared:
-                    self.mission_ui.text = 'Return portal open! Talk to the chef.'
-                    self.mission_ui.color = color.cyan
+                elif self.level_5_cleared and not self.teammate_unlocked:
+                    self.mission_ui.text = 'Talk to chef'
+                    self.mission_ui.color = color.yellow
+                elif self.teammate_unlocked:
+                    self.mission_ui.text = 'Talk to the Manager'
+                    self.mission_ui.color = color.yellow
+                elif self.level_5_portal_open:
+                    self.mission_ui.text = 'Enter the portal!'
+                    self.mission_ui.color = color.magenta
+                elif self.level_4_cleared:
+                    self.mission_ui.text = 'Talk to the Manager'
+                    self.mission_ui.color = color.yellow
                 else:
-                    self.setup_level_4_arena()
-                    self.mission_ui.text = 'Defeat the boss cube!'
-                    self.mission_ui.color = color.red
-            elif self.spawn_point == (3000, 1, 2230):
-                if self.level_5_cleared:
-                    self.mission_ui.text = 'Boss defeated! Return portal open.'
-                    self.mission_ui.color = color.cyan
-                else:
-                    self.mission_ui.text = 'Defeat the boss!'
-                    self.mission_ui.color = color.white
-            elif self.spawn_point == (4000, 2, 2230):
-                self.mission_ui.text = 'Investigate a pillar'
-                self.mission_ui.color = color.gray
+                    self.mission_ui.text = 'Find the Manager'
+                    self.mission_ui.color = color.yellow
+            else:
+                self.mission_ui.text = 'Talk to chef'
+                self.mission_ui.color = color.cyan
+        elif self.spawn_point == (2000, 1, 2010):
+            if self.level_3_phase == 1:
+                self.mission_ui.text = 'Destroy the Cannons!'
+                self.mission_ui.color = color.red
+            elif self.level_3_phase == 2:
+                self.mission_ui.text = 'Enter the arena!'
+                self.mission_ui.color = color.green
+        elif self.spawn_point == (2000, 1, 2230):
+            if self.level_4_cleared:
+                self.mission_ui.text = 'Return portal open! Talk to the chef.'
+                self.mission_ui.color = color.cyan
+            else:
+                self.setup_level_4_arena()
+                self.mission_ui.text = 'Defeat the boss cube!'
+                self.mission_ui.color = color.red
+        elif self.spawn_point == (3000, 1, 2230):
+            if self.level_5_cleared:
+                self.mission_ui.text = 'Boss defeated! Return portal open.'
+                self.mission_ui.color = color.cyan
+            else:
+                self.mission_ui.text = 'Defeat the boss!'
+                self.mission_ui.color = color.white
+        elif self.spawn_point == (4000, 2, 2230):
+            self.mission_ui.text = 'Investigate a pillar'
+            self.mission_ui.color = color.gray
 
-            self.y_velocity = 0 
-            self.autosave_timer = self.autosave_interval
-            print("Game Loaded!")
-        else:
-            print("No save file found!")
+        self.y_velocity = 0 
+        self.autosave_timer = self.autosave_interval
+        print("Game Loaded!")
 
     def input(self, key):
         if key == '8': self.save_game()
@@ -1057,18 +1067,23 @@ class ThirdPersonPlayer(Entity):
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
 
                 else:
-                    manager.dialogue_ui.text = "Manager: Great. The portal to Level 6 is open."
+                    if self.teammate_unlocked and self.level_5_cleared:
+                        manager.dialogue_ui.text = "Manager: Great. The Level 6 portal is open."
+                        self.mission_ui.text = 'Enter Level 6!'
+                        self.level_5_portal_open = False
+                        self.level_6_portal_open = True
+                    else:
+                        manager.dialogue_ui.text = "Manager: Great. The boss arena is open."
+                        self.mission_ui.text = 'Enter the portal!'
+                        self.level_5_portal_open = True
+                        self.level_6_portal_open = False
                     manager.dialogue_ui.enabled = True
                     manager.exclamation.enabled = False
-                    self.mission_ui.text = 'Enter Level 6!'
-                    self.mission_ui.color = color.magenta
-                    
                     ground_4.color = color.dark_gray
                     portal_4.position = manager.position + manager.forward * 4
                     portal_4.y = 1.5
                     portal_4.enabled = True
-                    self.level_5_portal_open = False
-                    self.level_6_portal_open = True
+                    self.mission_ui.color = color.magenta
                     
                     invoke(setattr, manager.dialogue_ui, 'enabled', False, delay=4.0)
 
