@@ -1,12 +1,21 @@
 # Python Mini-Games Collection
 
-Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project utilizing different libraries such as `pygame`, `ursina`, and the built-in `turtle` module.
+Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project using ***AI*** utilizing different libraries such as `pygame`, `ursina`, and the built-in `turtle` module.
+
+
+## ⚙️ Requirements & Installation
+
+To run these games, you will need **Python 3.x** installed on your system. You will also need to install the required external libraries. You can install them via pip:
+
+```bash
+pip install pygame ursina
+```
 
 ## 🎮 Included Projects
 
 ### 1. 3D Adventure Dungeon (`aidea.py`)
 A multi-phase 3D action-survival game built with the `ursina` engine. Progress through different dimensions, talk to NPCs, and defeat bosses.
-* **Features:** Multiple levels (Plains, Safe Zone, Final Arena), interactive NPCs (Chef, Manager), melee and ranged combat, health UI, and a functioning Save/Load system.
+* **Features:** Multiple levels (Plains, Safe Zone, Final Arena etc.), interactive NPCs, an unlockable companions, melee and ranged combat, powers, health UI, and a functioning Save/Load system.
 * **Controls:** * `W, A, S, D` - Move
   * `Space` - Jump
   * `Left Click` - Sword Attack
@@ -45,10 +54,5 @@ A console-driven interactive drawing program using the `turtle` graphics module.
 * **Controls:** Follow the on-screen terminal prompts to enter movement distances and turning angles (`r` for right, `l` for left). Type `restart` to clear the canvas or `exit` to quit the program.
 
 ---
-
-## ⚙️ Requirements & Installation
-
-To run these games, you will need **Python 3.x** installed on your system. You will also need to install the required external libraries. You can install them via pip:
-
-```bash
-pip install pygame ursina
+Regards,
+*mdhPHoenixVBcodes* and *AI* (***Gemini 3.1 and Flash***)

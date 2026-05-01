@@ -20,6 +20,7 @@ COLOR_GRASS = (34, 139, 34)
 COLOR_STONE = (160, 160, 175)
 COLOR_COAL = (40, 40, 40)
 COLOR_IRON = (219, 192, 171)
+COLOR_DIAMOND = (80, 220, 220)
 COLOR_OAK_BROWN = (101, 67, 33)
 COLOR_BIRCH_WHITE = (220, 220, 220)
 COLOR_PLANKS = (210, 180, 140)
@@ -100,6 +101,11 @@ MILK_BUCKET = 64
 WATER = 65
 BOAT = 66
 LADDER = 67
+DIAMOND_ORE = 68
+DIAMOND = 69
+DOOR_TOP = 70
+DOOR_OPEN_TOP = 71
+BED_RIGHT = 72
 
 # Tool IDs
 W_PICK = 100; S_PICK = 101; I_PICK = 110
@@ -113,7 +119,7 @@ I_HELMET = 120; I_CHEST = 121; I_LEGS = 122; I_BOOTS = 123
 
 BLOCK_HARDNESS = {
     GRASS_BLOCK: 0.6, DIRT_BLOCK: 0.5, STONE_BLOCK: 1.5, 
-    COAL_BLOCK: 3.0, IRON_BLOCK: 3.0, OAK_LOG: 2.0, BIRCH_LOG: 2.0,
+    COAL_BLOCK: 3.0, IRON_BLOCK: 3.0, DIAMOND_ORE: 4.0, OAK_LOG: 2.0, BIRCH_LOG: 2.0,
     OAK_LEAVES: 0.2, BIRCH_LEAVES: 0.2, PLANKS: 2.0, CRAFTING_TABLE: 2.5,
     FURNACE: 3.5, SMOKER: 3.5, BLAST_FURNACE: 3.5, COBBLESTONE: 2.0, SMOOTH_STONE: 2.0, IRON_BLOCK_PROD: 5.0,
     CHEST: 2.5, HAY_BALE: 0.5, FARMLAND: 0.6, FENCE: 2.0, FENCE_GATE: 2.0,
@@ -123,7 +129,7 @@ BLOCK_HARDNESS = {
 
 BLOCK_NAMES = {
     GRASS_BLOCK: "Grass", DIRT_BLOCK: "Dirt", STONE_BLOCK: "Stone",
-    COAL_BLOCK: "Coal Ore", IRON_BLOCK: "Iron Ore", OAK_LOG: "Oak Log",
+    COAL_BLOCK: "Coal Ore", IRON_BLOCK: "Iron Ore", DIAMOND_ORE: "Diamond Ore", OAK_LOG: "Oak Log",
     BIRCH_LOG: "Birch Log", OAK_LEAVES: "Oak Leaves", BIRCH_LEAVES: "Birch Leaves",
     PLANKS: "Planks", STICK: "Stick", CRAFTING_TABLE: "Crafting Table",
     W_PICK: "Wooden Pickaxe", S_PICK: "Stone Pickaxe",
@@ -159,7 +165,8 @@ BLOCK_NAMES = {
     I_SWORD: "Iron Sword", I_HOE: "Iron Hoe",
     I_HELMET: "Iron Helmet", I_CHEST: "Iron Chestplate",
     I_LEGS: "Iron Leggings", I_BOOTS: "Iron Boots",
-    LADDER: "Ladder"
+    LADDER: "Ladder",
+    DIAMOND: "Diamond"
 }
 
 MAX_DURABILITY = {
@@ -450,6 +457,16 @@ class World:
                 vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
                 vy = max(40, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
 
+        # Diamond Veins - rare and deep
+        for _ in range(max(8, WORLD_WIDTH // 24)):
+            vx = random.randint(0, WORLD_WIDTH - 1)
+            vy = random.randint(80, WORLD_HEIGHT - 8)
+            for _ in range(random.randint(3, 6)):
+                if (vx, vy) in self.data and self.data[(vx, vy)] == STONE_BLOCK:
+                    self.data[(vx, vy)] = DIAMOND_ORE
+                vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
+                vy = max(80, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
+
         # Generate Trees
         for x in range(WORLD_WIDTH):
             h = 0
@@ -507,7 +524,7 @@ class World:
                 tx, ty = (p_x + x_off) % WORLD_WIDTH, p_y + y_off
                 if (tx, ty) in self.data:
                     b_type = self.data[(tx, ty)]
-                    if b_type == TALL_GRASS or WHEAT_STG0 <= b_type <= WHEAT_STG3 or b_type in (FENCE_GATE_OPEN, DOOR_OPEN, TRAPDOOR_OPEN, WATER, LADDER): continue # Non-solid
+                    if b_type == TALL_GRASS or WHEAT_STG0 <= b_type <= WHEAT_STG3 or b_type in (FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR_OPEN, WATER, LADDER): continue # Non-solid
                     bx, by = (p_x + x_off) * TILE_SIZE, ty * TILE_SIZE
                     if b_type == FARMLAND:
                         blocks.append(pygame.Rect(bx, by + 4, TILE_SIZE, TILE_SIZE - 4))
@@ -553,9 +570,9 @@ class World:
                 draw_y = y * TILE_SIZE - scroll_y
                 # Only draw blocks that are visible on screen
                 if -TILE_SIZE < draw_x < SCREEN_WIDTH and -TILE_SIZE < draw_y < SCREEN_HEIGHT:
-                    if b_type in (COAL_BLOCK, IRON_BLOCK):
+                    if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
                         pygame.draw.rect(surface, COLOR_STONE, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        ore_color = COLOR_COAL if b_type == COAL_BLOCK else COLOR_IRON
+                        ore_color = COLOR_COAL if b_type == COAL_BLOCK else (COLOR_IRON if b_type == IRON_BLOCK else COLOR_DIAMOND)
                         # Chunky ore shapes
                         pygame.draw.rect(surface, ore_color, (draw_x + 4, draw_y + 6, 10, 8))
                         pygame.draw.rect(surface, ore_color, (draw_x + 16, draw_y + 18, 12, 10))
@@ -625,6 +642,13 @@ class World:
                         pygame.draw.rect(surface, (220, 200, 50), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
                         pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 8, TILE_SIZE, 3)) # Rope
                         pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 22, TILE_SIZE, 3)) # Rope
+                    elif b_type == BED:
+                        pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                        pygame.draw.rect(surface, COLOR_WHITE, (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE // 4))
+                        pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
+                    elif b_type == BED_RIGHT:
+                        pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                        pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
                     elif b_type in (FENCE, FENCE_GATE, FENCE_GATE_OPEN):
                         pygame.draw.rect(surface, (120, 80, 40), (draw_x + 12, draw_y, 8, TILE_SIZE)) # Post
                         if b_type == FENCE_GATE:
@@ -645,7 +669,12 @@ class World:
                         pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
                         pygame.draw.rect(surface, (80, 40, 10), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
                         pygame.draw.circle(surface, (200, 150, 50), (draw_x + 24, draw_y + 16), 3) # Knob
+                    elif b_type == DOOR_TOP:
+                        pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                        pygame.draw.rect(surface, (80, 40, 10), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
                     elif b_type == DOOR_OPEN:
+                        pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, 6, TILE_SIZE))
+                    elif b_type == DOOR_OPEN_TOP:
                         pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, 6, TILE_SIZE))
                     elif b_type == TRAPDOOR:
                         pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 4, TILE_SIZE, 8))
@@ -682,8 +711,8 @@ class World:
                         }
                         color = block_colors.get(b_type, (255, 0, 255)) # Magenta for unknown
                         pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        if b_type in (COAL_BLOCK, IRON_BLOCK): # Add speckles for ores
-                            speckle_c = (0,0,0) if b_type == COAL_BLOCK else (140, 100, 60)
+                        if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE): # Add speckles for ores
+                            speckle_c = (0,0,0) if b_type == COAL_BLOCK else ((140, 100, 60) if b_type == IRON_BLOCK else (120, 240, 240))
                             # Deterministic speckles based on block pos
                             seed = (x * 7 + y * 13) % 100
                             for i in range(4):
@@ -923,11 +952,24 @@ class Mob:
 def draw_block_icon(screen, b_type, x, y, size, font):
     if b_type == STICK:
         pygame.draw.line(screen, (101, 67, 33), (x + size//4, y + size - 4), (x + size - 4, y + size//4), 3)
-    elif b_type in (COAL_BLOCK, IRON_BLOCK):
+    elif b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
         pygame.draw.rect(screen, COLOR_STONE, (x, y, size, size))
-        ore_c = COLOR_COAL if b_type == COAL_BLOCK else COLOR_IRON
+        ore_c = COLOR_COAL if b_type == COAL_BLOCK else (COLOR_IRON if b_type == IRON_BLOCK else COLOR_DIAMOND)
         pygame.draw.rect(screen, ore_c, (x + 3, y + 5, 8, 6))
         pygame.draw.rect(screen, ore_c, (x + 12, y + 14, 10, 8))
+    elif b_type == DIAMOND:
+        pygame.draw.polygon(screen, COLOR_DIAMOND, [
+            (x + size//2, y + 3),
+            (x + size - 4, y + size//2),
+            (x + size//2, y + size - 3),
+            (x + 4, y + size//2),
+        ])
+        pygame.draw.polygon(screen, (180, 255, 255), [
+            (x + size//2, y + 3),
+            (x + size - 4, y + size//2),
+            (x + size//2, y + size//2),
+            (x + 6, y + size//2),
+        ], 1)
     elif b_type == OAK_LOG:
         pygame.draw.rect(screen, COLOR_OAK_BROWN, (x, y, size, size))
     elif b_type == BIRCH_LOG:
@@ -1058,8 +1100,12 @@ def draw_block_icon(screen, b_type, x, y, size, font):
         pygame.draw.rect(screen, (240, 240, 240), (x, y, size, size), 0, 4)
         pygame.draw.rect(screen, (200, 200, 200), (x, y, size, size), 1, 4)
     elif b_type == BED:
-        pygame.draw.rect(screen, COLOR_RED, (x, y + size//2, size, size//2)) # Base
-        pygame.draw.rect(screen, COLOR_WHITE, (x + 2, y + size//2 + 2, size - 4, size//4)) # Pillow
+        pygame.draw.rect(screen, COLOR_RED, (x, y, size, size))
+        pygame.draw.rect(screen, COLOR_WHITE, (x + 2, y + 2, size - 4, size//4)) # Pillow
+        pygame.draw.rect(screen, (180, 60, 60), (x, y + size//2, size, size//2), 2)
+    elif b_type == BED_RIGHT:
+        pygame.draw.rect(screen, COLOR_RED, (x, y, size, size))
+        pygame.draw.rect(screen, (180, 60, 60), (x, y + size//2, size, size//2), 2)
     elif b_type == RAW_MUTTON:
         pygame.draw.ellipse(screen, (255, 150, 150), (x + 4, y + 8, size - 8, size - 16))
     elif b_type == COOKED_MUTTON:
@@ -1512,6 +1558,15 @@ def load_game(world, player):
             world.chest_data = {tuple(map(int, k.split(','))): v for k, v in sd["chest_data"].items()}
             world.furnace_data = {tuple(map(int, k.split(','))): v for k, v in sd["furnace_data"].items()}
             world.time = sd["time"]
+            if DIAMOND_ORE not in world.data.values():
+                for _ in range(max(8, WORLD_WIDTH // 24)):
+                    vx = random.randint(0, WORLD_WIDTH - 1)
+                    vy = random.randint(80, WORLD_HEIGHT - 8)
+                    for _ in range(random.randint(3, 6)):
+                        if (vx, vy) in world.data and world.data[(vx, vy)] == STONE_BLOCK:
+                            world.data[(vx, vy)] = DIAMOND_ORE
+                        vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
+                        vy = max(80, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
             # Restore Player
             p_data = sd.get("player", {})
             player.rect.x = p_data.get("x", 100)
@@ -1543,6 +1598,7 @@ def main():
     target_mode = 0
     auto_save_timer = 0
     save_msg_timer = 0
+    save_msg_text = "Game Saved!"
 
     running = True
     while running:
@@ -1571,6 +1627,7 @@ def main():
                 if event.key == pygame.K_q: 
                     if save_game(world, player):
                         save_msg_timer = 120
+                        save_msg_text = "Game Saved!"
                     running = False
                 if event.key == pygame.K_r: player.respawn()
                 if event.key == pygame.K_e: 
@@ -1666,7 +1723,9 @@ def main():
                 tool = player.inventory[player.selected_slot]
                 t_type = tool["type"] if tool else None
                 speed = 1.0
-                if t_type in (W_PICK, S_PICK, I_PICK) and b_type in (STONE_BLOCK, COAL_BLOCK, IRON_BLOCK):
+                if b_type == DIAMOND_ORE and t_type != I_PICK:
+                    speed = 0.0
+                elif t_type in (W_PICK, S_PICK, I_PICK) and b_type in (STONE_BLOCK, COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
                     if t_type == W_PICK: speed = 3.0
                     elif t_type == S_PICK: speed = 6.0
                     else: speed = 10.0 # Iron
@@ -1689,6 +1748,27 @@ def main():
                     for bx, by in valid_targets:
                         if (bx, by) in world.data:
                             drop_type = world.data[(bx, by)]
+                            to_remove = [(bx, by)]
+                            if drop_type in (DOOR_TOP, DOOR_OPEN_TOP):
+                                base_pos = (bx, by + 1)
+                                if base_pos in world.data:
+                                    to_remove.append(base_pos)
+                                drop_type = DOOR
+                            elif drop_type in (DOOR, DOOR_OPEN):
+                                top_pos = (bx, by - 1)
+                                if top_pos in world.data:
+                                    to_remove.append(top_pos)
+                                drop_type = DOOR
+                            elif drop_type == BED_RIGHT:
+                                left_pos = ((bx - 1) % WORLD_WIDTH, by)
+                                if left_pos in world.data:
+                                    to_remove.append(left_pos)
+                                drop_type = BED
+                            elif drop_type == BED:
+                                right_pos = ((bx + 1) % WORLD_WIDTH, by)
+                                if right_pos in world.data:
+                                    to_remove.append(right_pos)
+                                drop_type = BED
                             if drop_type == TALL_GRASS:
                                 if random.random() < 0.15: drop_type = SEEDS
                                 else: drop_type = None # Usually nothing drops
@@ -1713,9 +1793,12 @@ def main():
                                     drop_type = SEEDS # Young wheat drops seeds
                             elif drop_type == GRASS_BLOCK: drop_type = DIRT_BLOCK
                             elif drop_type == COAL_BLOCK: drop_type = COAL
+                            elif drop_type == DIAMOND_ORE: drop_type = DIAMOND
                             elif drop_type == STONE_BLOCK: drop_type = COBBLESTONE
                             
-                            if (bx, by) in world.data: del world.data[(bx, by)]
+                            for pos in to_remove:
+                                if pos in world.data:
+                                    del world.data[pos]
                             
                             if drop_type and drop_type not in (OAK_LEAVES, BIRCH_LEAVES):
                                 world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, drop_type))
@@ -1836,17 +1919,26 @@ def main():
                         world.chest_data[master_pos] = [None] * size
                     action_taken = True
                     break
-                elif (tx, ty) in world.data and world.data[(tx, ty)] in (DOOR, DOOR_OPEN, TRAPDOOR, TRAPDOOR_OPEN, FENCE_GATE, FENCE_GATE_OPEN):
+                elif (tx, ty) in world.data and world.data[(tx, ty)] in (DOOR, DOOR_TOP, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR, TRAPDOOR_OPEN, FENCE_GATE, FENCE_GATE_OPEN, BED, BED_RIGHT):
                     b_type = world.data[(tx, ty)]
-                    if b_type == DOOR: world.data[(tx, ty)] = DOOR_OPEN
-                    elif b_type == DOOR_OPEN: world.data[(tx, ty)] = DOOR
+                    if b_type in (DOOR, DOOR_TOP):
+                        base = (tx, ty) if b_type == DOOR else (tx, ty + 1)
+                        top = (base[0], base[1] - 1)
+                        world.data[base] = DOOR_OPEN
+                        world.data[top] = DOOR_OPEN_TOP
+                    elif b_type in (DOOR_OPEN, DOOR_OPEN_TOP):
+                        base = (tx, ty) if b_type == DOOR_OPEN else (tx, ty + 1)
+                        top = (base[0], base[1] - 1)
+                        world.data[base] = DOOR
+                        world.data[top] = DOOR_TOP
                     elif b_type == TRAPDOOR: world.data[(tx, ty)] = TRAPDOOR_OPEN
                     elif b_type == TRAPDOOR_OPEN: world.data[(tx, ty)] = TRAPDOOR
                     elif b_type == FENCE_GATE: world.data[(tx, ty)] = FENCE_GATE_OPEN
                     elif b_type == FENCE_GATE_OPEN: world.data[(tx, ty)] = FENCE_GATE
-                    elif b_type == BED:
+                    elif b_type in (BED, BED_RIGHT):
                         world.time = 0 # 6:00 AM
                         save_game(world, player)
+                        save_msg_text = "Slept until morning!"
                         save_msg_timer = 120
                         action_taken = True
                         break
@@ -1854,7 +1946,37 @@ def main():
                     break
                 elif (tx, ty) not in world.data:
                     slot = player.inventory[player.selected_slot]
-                    if slot is not None and slot["type"] in PLACEABLE_BLOCKS:
+                    if slot is not None and slot["type"] == DOOR:
+                        if ty > 0 and (tx, ty - 1) not in world.data:
+                            bottom_rect = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                            top_rect = pygame.Rect(tx * TILE_SIZE, (ty - 1) * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                            p_placement_rect = player.rect.inflate(-6, -6)
+                            p_placement_rect.x %= WORLD_PIXELS
+                            if not p_placement_rect.colliderect(bottom_rect) and not p_placement_rect.colliderect(top_rect):
+                                world.data[(tx, ty)] = slot["type"]
+                                world.data[(tx, ty - 1)] = DOOR_TOP
+                                slot["count"] -= 1
+                                action_taken = True
+                                if slot["count"] <= 0:
+                                    player.inventory[player.selected_slot] = None
+                                    break
+                    elif slot is not None and slot["type"] == BED:
+                        bed_dx = 1 if player.direction > 0 else -1
+                        tx2 = (tx + bed_dx) % WORLD_WIDTH
+                        if (tx2, ty) not in world.data:
+                            bed_rect_1 = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                            bed_rect_2 = pygame.Rect(tx2 * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                            p_placement_rect = player.rect.inflate(-6, -6)
+                            p_placement_rect.x %= WORLD_PIXELS
+                            if not p_placement_rect.colliderect(bed_rect_1) and not p_placement_rect.colliderect(bed_rect_2):
+                                world.data[(tx, ty)] = BED
+                                world.data[(tx2, ty)] = BED_RIGHT
+                                slot["count"] -= 1
+                                action_taken = True
+                                if slot["count"] <= 0:
+                                    player.inventory[player.selected_slot] = None
+                                    break
+                    elif slot is not None and slot["type"] in PLACEABLE_BLOCKS:
                         tr = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                         p_placement_rect = player.rect.inflate(-6, -6)
                         p_placement_rect.x %= WORLD_PIXELS
@@ -1979,6 +2101,7 @@ def main():
             save_game(world, player)
             auto_save_timer = 0
             save_msg_timer = 120 # Show for 2 seconds
+            save_msg_text = "Game Saved!"
             
         world.draw(screen, scroll_x, scroll_y)
         
@@ -2291,7 +2414,7 @@ def main():
             
             # --- Save Message ---
             if save_msg_timer > 0:
-                msg = font.render("Game Saved!", True, (100, 255, 100))
+                msg = font.render(save_msg_text, True, (100, 255, 100))
                 screen.blit(msg, (SCREEN_WIDTH - 120, 20))
                 save_msg_timer -= 1
             
