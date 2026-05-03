@@ -1711,6 +1711,15 @@ def main():
         if net.start(world):
             discovery_service = discovery.DiscoveryBroadcaster(world_name)
             discovery_service.start()
+            import socket
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+                s.close()
+                print(f"\n{'='*30}\n[SERVER] HOSTING WORLD '{world_name}'\n[SERVER] YOUR IP ADDRESS: {local_ip}\n{'='*30}\n")
+            except:
+                pass
         else:
             print("Failed to start server. Switching to singleplayer.")
             mode = "single"
