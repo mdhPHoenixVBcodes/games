@@ -262,6 +262,7 @@ class Player:
         self.max_hunger = 20
         self.hunger_timer = 0
         self.regen_timer = 0
+        self.show_inventory = False # Ensure movement isn't locked on start
 
     def update(self, world):
         # Hunger Logic
@@ -548,6 +549,21 @@ class World:
                         ctx, cty = (cur_x + dx) % WORLD_WIDTH, max(0, min(WORLD_HEIGHT-1, cur_y + dy))
                         if (ctx, cty) in self.data:
                             del self.data[(ctx, cty)]
+
+    def find_safe_spawn(self, player):
+        """Finds a safe Y level for the player at their current X to prevent getting stuck."""
+        start_x = int(player.rect.centerx // TILE_SIZE) % WORLD_WIDTH
+        # Start from top and go down
+        for y in range(0, WORLD_HEIGHT - 2):
+            if (start_x, y) not in self.data and (start_x, y+1) not in self.data:
+                # Found 2 empty blocks. Check if there is ground below
+                if (start_x, y+2) in self.data:
+                    player.rect.y = y * TILE_SIZE
+                    player.vel_y = 0
+                    print(f"Spawned safely at {start_x}, {y}")
+                    return
+        # Fallback: if no ground found, just find any empty space
+        player.rect.y = 10 * TILE_SIZE
 
     def get_surrounding_blocks(self, player_rect):
         blocks = []
@@ -1690,6 +1706,7 @@ def main():
 
     if mode == "host":
         load_game(world, player, save_filename)
+        world.find_safe_spawn(player)
         net = mc_network.GameServer(world_name)
         if net.start(world):
             discovery_service = discovery.DiscoveryBroadcaster(world_name)
@@ -1711,6 +1728,7 @@ def main():
             return
     else:
         load_game(world, player, save_filename)
+        world.find_safe_spawn(player)
 
     scroll_x, scroll_y = 0, player.rect.centery - SCREEN_HEIGHT // 2
     target_mode = 0
@@ -1749,9 +1767,18 @@ def main():
             while net.messages:
                 msg = net.messages.pop(0)
                 if msg["type"] == "INIT" and mode == "join":
-                    # Load world data from server
-                    world.data = {tuple(map(int, k.split(','))): v for k, v in msg["world_data"].items()}
-                    world.time = msg["time"]
+                    # Faster world data loading
+                    new_data = {}
+                    raw_data = msg["world_data"]
+                    for k, v in raw_data.items():
+                        try:
+                            coords = k.split(',')
+                            new_data[(int(coords[0]), int(coords[1]))] = v
+                        except: continue
+                    world.data = new_data
+                    world.time = msg.get("time", 0)
+                    world.find_safe_spawn(player)
+                    print("World Sync Complete!")
                 elif msg["type"] == "POS":
                     p_id = msg["id"]
                     if p_id != getattr(net, 'client_id', None):

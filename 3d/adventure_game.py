@@ -21,6 +21,7 @@ class ThirdPersonPlayer(Entity):
         self.jump_force = 12
         self.grounded = False
         self.is_teleporting = False
+        self.boss_music = None
 
         self.level_3_phase = 0
         self.level_3_cleared = False
@@ -149,6 +150,8 @@ class ThirdPersonPlayer(Entity):
         self.level_3_phase = 0
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
+        if self.boss_music:
+            self.boss_music.stop()
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
         if not self.has_bow:
@@ -256,6 +259,10 @@ class ThirdPersonPlayer(Entity):
 
         self.mission_ui.text = 'Defeat the robo-guy'
         self.mission_ui.color = color.white
+        
+        if self.boss_music:
+            self.boss_music.stop()
+        self.boss_music = Audio('boss.mp3', loop=True, autoplay=True, volume=0.6)
 
     def setup_level_6_arena(self):
         self.clear_all_entities()
@@ -321,6 +328,8 @@ class ThirdPersonPlayer(Entity):
         self.hp = self.max_hp
         self.health_ui.text = f'HP: {self.hp} / {self.max_hp}'
         self.y_velocity = 0
+        if self.boss_music:
+            self.boss_music.stop()
         self.clear_all_entities()
 
         if self.spawn_point == (0, 1, 0):
@@ -440,6 +449,8 @@ class ThirdPersonPlayer(Entity):
             ent.portal_4.position = self.position + self.forward * 4
             ent.portal_4.y = 1.5
             ent.portal_4.enabled = True
+            if self.boss_music:
+                self.boss_music.fade_out(duration=2)
 
         if self.spawn_point == (0, 1, 0) or (self.level_3_phase == 2 and len(state.cannons) > 0):
             self.spawn_timer -= time.dt
