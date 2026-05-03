@@ -4,8 +4,8 @@ import json
 import time
 
 # Constants for Networking
-PORT = 8080
-DISCOVERY_PORT = 8081
+PORT = 25565
+DISCOVERY_PORT = 25566
 BUFFER_SIZE = 4096
 
 class NetworkManager:
@@ -125,12 +125,14 @@ class GameClient(NetworkManager):
     def connect(self, ip):
         self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
+            self.conn.settimeout(10.0) # 10 second timeout for connecting
             self.conn.connect((ip, PORT))
+            self.conn.settimeout(None) # Back to blocking for threads
             self.running = True
             threading.Thread(target=self.receive_loop, daemon=True).start()
             return True
         except Exception as e:
-            print(f"[CLIENT] Connection failed: {e}")
+            print(f"[CLIENT] Connection failed to {ip}:{PORT} - Error: {e}")
             return False
 
     def receive_loop(self):

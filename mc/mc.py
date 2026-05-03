@@ -1721,10 +1721,18 @@ def main():
             if net.connect(host_ip):
                 print(f"Connected to {world_name}!")
             else:
-                print("Failed to connect.")
+                screen.fill((50, 0, 0))
+                txt = font.render(f"Failed to connect to {host_ip}", True, (255, 255, 255))
+                screen.blit(txt, (SCREEN_WIDTH//2 - txt.get_width()//2, SCREEN_HEIGHT//2))
+                pygame.display.flip()
+                time.sleep(3)
                 return
         else:
-            print("World not found on network.")
+            screen.fill((50, 0, 0))
+            txt = font.render(f"World '{world_name}' not found on LAN.", True, (255, 255, 255))
+            screen.blit(txt, (SCREEN_WIDTH//2 - txt.get_width()//2, SCREEN_HEIGHT//2))
+            pygame.display.flip()
+            time.sleep(3)
             return
     else:
         load_game(world, player, save_filename)
