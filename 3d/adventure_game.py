@@ -61,9 +61,8 @@ class ThirdPersonPlayer(Entity):
         self.grenade_overlay = Entity(parent=self.grenade_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         self.attack_max_cooldown = 0.5
-        self.bow_icon = Entity(parent=camera.ui, model='quad', texture='bow_icon.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
+        self.bow_icon = Entity(parent=camera.ui, model='quad', texture='image1.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
         self.bow_overlay = Entity(parent=self.bow_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
-        self.bow_label = Text(parent=self.bow_icon, text='RMB', scale=10, position=(0, -0.6), origin=(0, 0))
         
         mouse.locked = True
 
