@@ -581,20 +581,23 @@ class ThirdPersonPlayer(Entity):
                 self.grenade_icon.color = color.white
 
         # Hub (Level 2) logic: Regeneration and safe zone music overrides
-        if self.spawn_point == (1000, 1, 990):
+        is_hub = self.spawn_point == (1000, 1, 990)
+        
+        if is_hub:
             if self.hp < self.max_hp:
                 self.hp += 15 * time.dt
                 if self.hp > self.max_hp:
                     self.hp = self.max_hp
                 self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
-            
-            if self.low_health_music and self.low_health_music.playing:
-                self.low_health_music.stop()
-        else:
-            # Dynamic low health music for other levels
-            if self.hp > 0 and self.hp <= 30 and self.low_health_music and not self.low_health_music.playing:
+        
+        # Low Health Music Management
+        should_play_low_health = self.hp > 0 and self.hp <= 35 and not is_hub
+        
+        if should_play_low_health:
+            if self.low_health_music and not self.low_health_music.playing:
                 self.low_health_music.play()
-            elif (self.hp > 30 or self.hp <= 0) and self.low_health_music and self.low_health_music.playing:
+        else:
+            if self.low_health_music and self.low_health_music.playing:
                 self.low_health_music.stop()
 
     def perform_dash(self):
