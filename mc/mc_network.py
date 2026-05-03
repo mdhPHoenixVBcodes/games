@@ -81,8 +81,12 @@ class GameServer(NetworkManager):
                 buffer += data
                 while b'|END|' in buffer:
                     msg_raw, buffer = buffer.split(b'|END|', 1)
-                    msg = json.loads(msg_raw.decode('utf-8'))
-                    self.process_message(client_id, msg)
+                    try:
+                        msg = json.loads(msg_raw.decode('utf-8'))
+                        self.process_message(client_id, msg, conn) # Pass conn to exclude it
+                    except Exception as e:
+                        print(f"[SERVER] Packet error: {e}")
+                        continue
             except:
                 break
         
@@ -93,20 +97,19 @@ class GameServer(NetworkManager):
         self.broadcast({"type": "QUIT", "id": client_id})
         conn.close()
 
-    def process_message(self, client_id, msg):
-        msg["id"] = client_id # Ensure ID is correct
+    def process_message(self, client_id, msg, sender_conn):
+        msg["id"] = client_id 
         if msg["type"] == "POS":
             self.player_data[client_id] = msg
         elif msg["type"] == "BLOCK":
-            # Update server-side world
             pos = tuple(map(int, msg["pos"].split(',')))
             if msg["b_type"] is None:
                 if pos in self.world_ref.data: del self.world_ref.data[pos]
             else:
                 self.world_ref.data[pos] = msg["b_type"]
         
-        # Relay to all other clients
-        self.broadcast(msg, exclude_conn=None)
+        # Relay to all OTHER clients
+        self.broadcast(msg, exclude_conn=sender_conn)
 
     def broadcast(self, data, exclude_conn=None):
         for conn in list(self.clients.keys()):
@@ -140,10 +143,13 @@ class GameClient(NetworkManager):
                 buffer += data
                 while b'|END|' in buffer:
                     msg_raw, buffer = buffer.split(b'|END|', 1)
-                    msg = json.loads(msg_raw.decode('utf-8'))
-                    if msg["type"] == "INIT":
-                        self.client_id = msg["id"]
-                    self.messages.append(msg)
+                    try:
+                        msg = json.loads(msg_raw.decode('utf-8'))
+                        if msg["type"] == "INIT":
+                            self.client_id = msg["id"]
+                        self.messages.append(msg)
+                    except:
+                        continue
             except:
                 break
         self.running = False

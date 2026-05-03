@@ -1715,7 +1715,7 @@ def main():
             print("Failed to start server. Switching to singleplayer.")
             mode = "single"
     elif mode == "join":
-        host_ip = discovery.DiscoveryListener.find_host(world_name)
+        host_ip = discovery.DiscoveryListener.find_host(world_name, screen=screen, font=font)
         if host_ip:
             net = mc_network.GameClient()
             if net.connect(host_ip):
@@ -1740,6 +1740,7 @@ def main():
     sleep_wake_timer = 0
     sleep_bed_pos = None
 
+    network_timer = 0
     running = True
     while running:
         screen.fill(COLOR_SKY_BLUE)
@@ -1758,10 +1759,35 @@ def main():
         scroll_x += (target_scroll_x - scroll_x) * 0.1
         scroll_y += (target_scroll_y - scroll_y) * 0.1
 
+        # --- Join Loading Screen ---
+        if mode == "join" and not world.data:
+            screen.fill((15, 15, 30))
+            txt = font.render(f"Downloading World '{world_name}'...", True, (255, 255, 255))
+            screen.blit(txt, (SCREEN_WIDTH//2 - txt.get_width()//2, SCREEN_HEIGHT//2))
+            pygame.display.flip()
+            # Process network messages while showing loading
+            if net:
+                while net.messages:
+                    msg = net.messages.pop(0)
+                    if msg["type"] == "INIT":
+                        new_data = {}
+                        for k, v in msg["world_data"].items():
+                            try:
+                                coords = k.split(',')
+                                new_data[(int(coords[0]), int(coords[1]))] = v
+                            except: continue
+                        world.data = new_data
+                        world.time = msg.get("time", 0)
+                        world.find_safe_spawn(player)
+                        print("World Sync Complete!")
+            continue # Don't run game logic until world is loaded
+
         # --- Network Updates ---
         if net:
-            # Send our position
-            net.send({"type": "POS", "x": player.rect.x, "y": player.rect.y, "dir": player.direction})
+            network_timer += 1
+            if network_timer >= 3: # Send 20 times per second (at 60fps)
+                net.send({"type": "POS", "x": player.rect.x, "y": player.rect.y, "dir": player.direction})
+                network_timer = 0
             
             # Process received messages
             while net.messages:
