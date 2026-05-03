@@ -1,0 +1,4 @@
+# Ignore game save files
+savegame*.json
+__pycache__/
+*.pyc
