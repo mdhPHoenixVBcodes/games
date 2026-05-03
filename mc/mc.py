@@ -32,10 +32,10 @@ COLOR_RED = (255, 0, 0)
 COLOR_DARK_RED = (200, 0, 0)
 
 class RemotePlayer:
-    def __init__(self, p_id):
+    def __init__(self, p_id, x, y):
         self.id = p_id
-        self.x = 0
-        self.y = 0
+        self.x = x
+        self.y = y
         self.direction = 1
         self.anim_timer = 0
         self.armor = [None]*4
@@ -1737,6 +1737,7 @@ def main():
         elif diff_x < -WORLD_PIXELS / 2:
             scroll_x -= WORLD_PIXELS
             
+        scroll_x += (target_scroll_x - scroll_x) * 0.1
         scroll_y += (target_scroll_y - scroll_y) * 0.1
 
         # --- Network Updates ---
@@ -1755,7 +1756,7 @@ def main():
                     p_id = msg["id"]
                     if p_id != getattr(net, 'client_id', None):
                         if p_id not in remote_players:
-                            remote_players[p_id] = RemotePlayer(p_id)
+                            remote_players[p_id] = RemotePlayer(p_id, msg["x"], msg["y"])
                         rp = remote_players[p_id]
                         rp.x, rp.y, rp.direction = msg["x"], msg["y"], msg["dir"]
                 elif msg["type"] == "BLOCK":

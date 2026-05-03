@@ -4,8 +4,8 @@ import json
 import time
 
 # Constants for Networking
-PORT = 5555
-DISCOVERY_PORT = 5556
+PORT = 8080
+DISCOVERY_PORT = 8081
 BUFFER_SIZE = 4096
 
 class NetworkManager:
@@ -30,6 +30,10 @@ class GameServer(NetworkManager):
         self.clients = {} # conn -> player_id
         self.player_data = {} # id -> data
         self.world_ref = None
+
+    def send(self, data):
+        """Unified send method for both Client and Server."""
+        self.broadcast(data)
 
     def start(self, world):
         self.world_ref = world

@@ -2,7 +2,7 @@ import socket
 import threading
 import time
 
-DISCOVERY_PORT = 5556
+DISCOVERY_PORT = 8081
 MAGIC_WORD = "MC2D_DISCOVERY"
 
 class DiscoveryBroadcaster:
