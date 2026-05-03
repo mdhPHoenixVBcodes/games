@@ -22,6 +22,8 @@ class ThirdPersonPlayer(Entity):
         self.grounded = False
         self.is_teleporting = False
         self.boss_music = None
+        self.safezone_music = None
+        self.low_health_music = Audio('lowhealth.mp3', loop=True, autoplay=False)
         self.dash_cooldown = 0
         self.dash_duration = 0.15
         self.dash_speed = 45
@@ -82,9 +84,11 @@ class ThirdPersonPlayer(Entity):
         ent.DamageMarker(amount, self.world_position + (0, 2, 0))
         self.color = color.red
         invoke(setattr, self, 'color', color.azure, delay=0.2)
-        self.health_ui.text = f'HP: {self.hp} / {self.max_hp}'
+        self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
 
         if self.hp <= 0:
+            if self.low_health_music and self.low_health_music.playing:
+                self.low_health_music.stop()
             print("You died!")
             if state.SAVE_FILE.exists():
                 print("Loading last save...")
@@ -165,6 +169,10 @@ class ThirdPersonPlayer(Entity):
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         if self.boss_music:
             self.boss_music.stop()
+        if not self.safezone_music or not self.safezone_music.playing:
+            if self.safezone_music: self.safezone_music.stop()
+            self.safezone_music = Audio('safezone.mp3', loop=True, autoplay=True, volume=0.5)
+        
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
         if not self.has_bow:
@@ -238,6 +246,9 @@ class ThirdPersonPlayer(Entity):
 
         self.level_3_phase = 1
         self.setup_level_3_cannons()
+        
+        if self.safezone_music:
+            self.safezone_music.stop()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -253,6 +264,9 @@ class ThirdPersonPlayer(Entity):
         self.level_3_cleared = True
         self.level_4_portal_open = True
         self.setup_level_4_arena()
+        
+        if self.safezone_music:
+            self.safezone_music.stop()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -269,6 +283,9 @@ class ThirdPersonPlayer(Entity):
         self.level_5_cleared = False
         world.ground_4.color = color.dark_gray
         self.setup_level_5_arena()
+        
+        if self.safezone_music:
+            self.safezone_music.stop()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -324,6 +341,9 @@ class ThirdPersonPlayer(Entity):
             invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
             self.level_6_broadcast_shown = True
 
+        if self.safezone_music:
+            self.safezone_music.stop()
+
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
@@ -343,6 +363,8 @@ class ThirdPersonPlayer(Entity):
         self.position = self.spawn_point
         self.hp = self.max_hp
         self.health_ui.text = f'HP: {self.hp} / {self.max_hp}'
+        if self.low_health_music and self.low_health_music.playing:
+            self.low_health_music.stop()
         self.y_velocity = 0
         if self.boss_music:
             self.boss_music.stop()
@@ -365,6 +387,8 @@ class ThirdPersonPlayer(Entity):
             self.level_6_portal_open = False
             self.level_6_broadcast_shown = False
             self.crosshair.enabled = False
+            self.bow_icon.enabled = False
+            self.grenade_icon.enabled = False
             self.reset_mission()
         elif self.spawn_point == (1000, 1, 990):
             self.level_3_phase = 0
@@ -460,11 +484,12 @@ class ThirdPersonPlayer(Entity):
         if self.spawn_point == (3000, 1, 2230) and not self.level_5_cleared and len(state.enemies) == 0:
             self.level_5_cleared = True
             self.level_5_portal_open = False
-            self.mission_ui.text = 'Boss defeated! Return portal open.'
+            self.mission_ui.text = 'Boss defeated! Talk to the chef.'
             self.mission_ui.color = color.cyan
             ent.portal_4.position = self.position + self.forward * 4
             ent.portal_4.y = 1.5
             ent.portal_4.enabled = True
+            ent.chef.exclamation.enabled = True
             if self.boss_music:
                 self.boss_music.fade_out(duration=2)
 
@@ -554,6 +579,23 @@ class ThirdPersonPlayer(Entity):
             else:
                 self.grenade_overlay.scale_y = 0
                 self.grenade_icon.color = color.white
+
+        # Hub (Level 2) logic: Regeneration and safe zone music overrides
+        if self.spawn_point == (1000, 1, 990):
+            if self.hp < self.max_hp:
+                self.hp += 15 * time.dt
+                if self.hp > self.max_hp:
+                    self.hp = self.max_hp
+                self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
+            
+            if self.low_health_music and self.low_health_music.playing:
+                self.low_health_music.stop()
+        else:
+            # Dynamic low health music for other levels
+            if self.hp > 0 and self.hp <= 30 and self.low_health_music and not self.low_health_music.playing:
+                self.low_health_music.play()
+            elif (self.hp > 30 or self.hp <= 0) and self.low_health_music and self.low_health_music.playing:
+                self.low_health_music.stop()
 
     def perform_dash(self):
         self.dash_cooldown = 0.8
@@ -645,7 +687,7 @@ class ThirdPersonPlayer(Entity):
         self.x, self.y, self.z = save_data['x'], save_data['y'], save_data['z']
         if 'hp' in save_data:
             self.hp = save_data['hp']
-            self.health_ui.text = f'HP: {self.hp} / {self.max_hp}'
+            self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
         if 'spawn_x' in save_data:
             self.spawn_point = (save_data['spawn_x'], save_data['spawn_y'], save_data['spawn_z'])
 
@@ -704,6 +746,10 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = f'Defeat enemies: {self.enemies_killed} / {self.mission_target}'
                 self.mission_ui.color = color.yellow
         elif self.spawn_point == (1000, 1, 990):
+            if not self.safezone_music or not self.safezone_music.playing:
+                if self.safezone_music: self.safezone_music.stop()
+                self.safezone_music = Audio('safezone.mp3', loop=True, autoplay=True, volume=0.5)
+
             if self.has_bow:
                 if not self.has_grenade:
                     self.mission_ui.text = 'Talk to chef'
@@ -780,7 +826,7 @@ class ThirdPersonPlayer(Entity):
                 self.crosshair.enabled = True
                 self.bow_icon.enabled = True
                 invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
-            elif distance(self.position, ent.chef.position) < 5.0 and self.has_bow and not self.has_grenade:
+            elif distance(self.position, ent.chef.position) < 5.0 and self.level_4_cleared and not self.has_grenade:
                 ent.chef.dialogue_ui.text = 'Chef: Here take this shockwave grenade, press E to use it'
                 ent.chef.dialogue_ui.enabled = True
                 ent.chef.exclamation.enabled = False
@@ -789,7 +835,7 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.color = color.yellow
                 self.grenade_icon.enabled = True
                 invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
-            elif distance(self.position, ent.chef.position) < 5.0 and self.level_4_cleared and not self.teammate_unlocked:
+            elif distance(self.position, ent.chef.position) < 5.0 and self.level_5_cleared and not self.teammate_unlocked:
                 ent.chef.dialogue_ui.text = 'Chef: This is my friend, the archer, he will help.'
                 ent.chef.dialogue_ui.enabled = True
                 ent.chef.exclamation.enabled = False
