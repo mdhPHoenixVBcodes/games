@@ -290,6 +290,11 @@ class Player:
         dx = 0
         keys = pygame.key.get_pressed()
         
+        # Debug Logging for movement
+        if keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_SPACE]:
+            if random.random() < 0.05: # Don't flood terminal
+                print(f"[DEBUG] Input Detected: A={keys[pygame.K_a]}, D={keys[pygame.K_d]}, Space={keys[pygame.K_SPACE]}")
+        
         # Physics Check: Water
         in_water = False
         px, py = self.rect.centerx // TILE_SIZE, self.rect.centery // TILE_SIZE
@@ -1870,6 +1875,16 @@ def main():
                     else:
                         save_game(world, player, save_filename)
                         running = False
+                
+                if event.key == pygame.K_u: # Emergency Unlock Key
+                    print("[DEBUG] Force Unlocking Player...")
+                    player.show_inventory = False
+                    player.show_3x3 = False
+                    player.active_furnace_pos = None
+                    player.active_chest_pos = None
+                    world.find_safe_spawn(player)
+                    sleep_anim_timer = 0
+                    sleep_wake_timer = 0
                 
                 if not player.show_inventory and sleep_anim_timer == 0 and sleep_wake_timer == 0:
                     if event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]:
