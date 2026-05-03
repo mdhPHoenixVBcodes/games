@@ -151,10 +151,12 @@ class ShockwaveGrenade(Entity):
             dist = distance(self.position, enemy.position)
             if dist <= state.player.grenade_shockwave_radius:
                 push_dir = enemy.position - self.position
+                push_dir.y = 0 # Ensure push is horizontal
                 if push_dir.length() > 0.001:
                     push_dir = push_dir.normalized()
                 else:
                     push_dir = self.forward
+                    push_dir.y = 0
                 push_strength = state.player.grenade_shockwave_push * max(0.35, 1 - dist / state.player.grenade_shockwave_radius)
                 enemy.position += push_dir * push_strength
                 enemy.stun_timer = 0.45
@@ -414,7 +416,7 @@ class BossCube(Entity):
 
 
 black_screen = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(3, 3), z=-10)
-controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause\nE - Shockwave', position=(-0.75, -0.38), scale=1.5, color=color.white, background=True)
+controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause\nE - Shockwave', position=(-0.82, -0.35), scale=2.5, color=color.white, background=True)
 
 
 class DamageMarker(Text):

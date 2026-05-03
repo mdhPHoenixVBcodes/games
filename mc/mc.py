@@ -290,11 +290,6 @@ class Player:
         dx = 0
         keys = pygame.key.get_pressed()
         
-        # Debug Logging for movement
-        if keys[pygame.K_a] or keys[pygame.K_d] or keys[pygame.K_SPACE]:
-            if random.random() < 0.05: # Don't flood terminal
-                print(f"[DEBUG] Input Detected: A={keys[pygame.K_a]}, D={keys[pygame.K_d]}, Space={keys[pygame.K_SPACE]}")
-        
         # Physics Check: Water
         in_water = False
         px, py = self.rect.centerx // TILE_SIZE, self.rect.centery // TILE_SIZE
@@ -1686,7 +1681,7 @@ def main():
         if world_name.lower() == "create":
             world_name = input("Enter name for new world: ").strip() or f"world_{int(time.time())}"
     else:
-        world_name = input("\nEnter World Name to Join: ").strip()
+        world_name = input("\nEnter World Name OR Host IP Address to Join: ").strip()
         if not world_name: return
 
     # Resolve filename

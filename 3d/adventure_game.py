@@ -22,6 +22,9 @@ class ThirdPersonPlayer(Entity):
         self.grounded = False
         self.is_teleporting = False
         self.boss_music = None
+        self.dash_cooldown = 0
+        self.dash_duration = 0.15
+        self.dash_speed = 45
 
         self.level_3_phase = 0
         self.level_3_cleared = False
@@ -49,8 +52,19 @@ class ThirdPersonPlayer(Entity):
         self.autosave_timer = self.autosave_interval
         self.grenade_cooldown = 0
         self.grenade_shockwave_radius = 7
-        self.grenade_shockwave_push = 12
+        self.grenade_shockwave_push = 28
         self.crosshair = Text(parent=camera.ui, text='+', origin=(0, 0), position=(0, 0.19), scale=2, color=color.white, enabled=False)
+        
+        # --- Ability HUD ---
+        self.grenade_max_cooldown = 1.25
+        self.grenade_icon = Entity(parent=camera.ui, model='quad', texture='image.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
+        self.grenade_overlay = Entity(parent=self.grenade_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        
+        self.attack_max_cooldown = 0.5
+        self.bow_icon = Entity(parent=camera.ui, model='quad', texture='bow_icon.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
+        self.bow_overlay = Entity(parent=self.bow_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        self.bow_label = Text(parent=self.bow_icon, text='RMB', scale=10, position=(0, -0.6), origin=(0, 0))
+        
         mouse.locked = True
 
         camera.parent = self
@@ -170,6 +184,9 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.yellow
             self.crosshair.enabled = True
+            self.bow_icon.enabled = True
+            if self.has_grenade:
+                self.grenade_icon.enabled = True
         elif self.level_5_portal_open:
             self.mission_ui.text = 'Enter the portal!'
             self.mission_ui.color = color.magenta
@@ -501,6 +518,11 @@ class ThirdPersonPlayer(Entity):
 
         if held_keys['space'] and self.grounded:
             self.y_velocity = self.jump_force
+        if self.dash_cooldown > 0:
+            self.dash_cooldown -= time.dt
+        elif held_keys['left control'] and self.grounded:
+            self.perform_dash()
+
         if self.attack_cooldown > 0:
             self.attack_cooldown -= time.dt
         elif held_keys['left mouse']:
@@ -511,10 +533,40 @@ class ThirdPersonPlayer(Entity):
             for pillar in state.level_6_pillars:
                 if hasattr(pillar, 'touch_cooldown') and pillar.touch_cooldown > 0:
                     pillar.touch_cooldown -= time.dt
-        self.autosave_timer -= time.dt
         if self.autosave_timer <= 0 and not self.is_teleporting:
             self.save_game()
             self.autosave_timer = self.autosave_interval
+
+        # Update HUD
+        if self.has_bow:
+            self.bow_icon.enabled = True
+            if self.attack_cooldown > 0:
+                self.bow_overlay.scale_y = self.attack_cooldown / self.attack_max_cooldown
+                self.bow_icon.color = color.gray
+            else:
+                self.bow_overlay.scale_y = 0
+                self.bow_icon.color = color.white
+        
+        if self.has_grenade:
+            self.grenade_icon.enabled = True
+            if self.grenade_cooldown > 0:
+                self.grenade_overlay.scale_y = self.grenade_cooldown / self.grenade_max_cooldown
+                self.grenade_icon.color = color.gray
+            else:
+                self.grenade_overlay.scale_y = 0
+                self.grenade_icon.color = color.white
+
+    def perform_dash(self):
+        self.dash_cooldown = 0.8
+        dash_dir = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+        if dash_dir.length() <= 0.001:
+            dash_dir = self.forward
+        else:
+            dash_dir = dash_dir.normalized()
+            
+        self.animate_position(self.position + dash_dir * 8, duration=self.dash_duration, curve=curve.out_expo)
+        self.color = color.white
+        invoke(setattr, self, 'color', color.azure, delay=0.2)
 
     def perform_attack(self):
         self.attack_cooldown = 0.4
@@ -618,6 +670,8 @@ class ThirdPersonPlayer(Entity):
         self.has_grenade = save_data.get('has_grenade', False)
         self.grenade_used = save_data.get('grenade_used', False)
         self.crosshair.enabled = self.has_bow
+        self.bow_icon.enabled = self.has_bow
+        self.grenade_icon.enabled = self.has_grenade
         ent.chef.exclamation.enabled = save_data.get('exclamation_enabled', True)
         ent.manager.exclamation.enabled = save_data.get('manager_exclamation_enabled', True)
         self.level_3_phase = save_data.get('level_3_phase', 0)
@@ -725,6 +779,7 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Find the Manager'
                 self.mission_ui.color = color.yellow
                 self.crosshair.enabled = True
+                self.bow_icon.enabled = True
                 invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
             elif distance(self.position, ent.chef.position) < 5.0 and self.has_bow and not self.has_grenade:
                 ent.chef.dialogue_ui.text = 'Chef: Here take this shockwave grenade, press E to use it'
@@ -733,6 +788,7 @@ class ThirdPersonPlayer(Entity):
                 self.has_grenade = True
                 self.mission_ui.text = 'Use the shockwave grenade'
                 self.mission_ui.color = color.yellow
+                self.grenade_icon.enabled = True
                 invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
             elif distance(self.position, ent.chef.position) < 5.0 and self.level_4_cleared and not self.teammate_unlocked:
                 ent.chef.dialogue_ui.text = 'Chef: This is my friend, the archer, he will help.'

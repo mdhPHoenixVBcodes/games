@@ -39,6 +39,10 @@ class DiscoveryListener:
     """Utility to find a host on the local network by world name."""
     @staticmethod
     def find_host(target_name, timeout=5, screen=None, font=None):
+        import re
+        if re.match(r"^[0-9]{1,3}(\.[0-9]{1,3}){3}$", target_name.strip()):
+            return target_name.strip()
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(('', DISCOVERY_PORT))
         sock.settimeout(0.5)
