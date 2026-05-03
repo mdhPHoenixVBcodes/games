@@ -3,6 +3,8 @@ import random
 import math
 import json
 import os
+import mc_network
+import discovery
 
 # --- Configuration & Specs ---
 SCREEN_WIDTH = 800
@@ -28,6 +30,32 @@ COLOR_LEAVES_G = (34, 100, 34)
 COLOR_LEAVES_B = (50, 120, 50)
 COLOR_RED = (255, 0, 0)
 COLOR_DARK_RED = (200, 0, 0)
+
+class RemotePlayer:
+    def __init__(self, p_id):
+        self.id = p_id
+        self.x = 0
+        self.y = 0
+        self.direction = 1
+        self.anim_timer = 0
+        self.armor = [None]*4
+
+    def draw(self, surface, scroll_x, scroll_y, font):
+        for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
+            dx = self.x - int(scroll_x) + offset
+            if dx < -50 or dx > SCREEN_WIDTH + 50: continue
+            dy = self.y - int(scroll_y)
+            
+            # Body
+            pygame.draw.rect(surface, (50, 100, 200), (dx, dy, 24, 64))
+            # Head
+            pygame.draw.rect(surface, (255, 220, 180), (dx, dy - 20, 24, 24))
+            # Eyes
+            eye_off = 14 if self.direction > 0 else 2
+            pygame.draw.rect(surface, (0, 0, 0), (dx + eye_off, dy - 14, 4, 4))
+            # Name tag
+            txt = font.render(self.id[:8], True, (255, 255, 255))
+            surface.blit(txt, (dx, dy - 45))
 COLOR_WHITE = (255, 255, 255)
 COLOR_GRAY = (100, 100, 100)
 COLOR_BLACK = (0, 0, 0)
@@ -120,7 +148,7 @@ D_PICK = 115; D_AXE = 116; D_SHOVEL = 117; D_SWORD = 118; D_HOE = 119
 I_HELMET = 120; I_CHEST = 121; I_LEGS = 122; I_BOOTS = 123
 
 BLOCK_HARDNESS = {
-    GRASS_BLOCK: 0.6, DIRT_BLOCK: 0.5, STONE_BLOCK: 1.5, 
+    GRASS_BLOCK: 0.1, DIRT_BLOCK: 0.5, STONE_BLOCK: 1.5, 
     COAL_BLOCK: 3.0, IRON_BLOCK: 3.0, DIAMOND_ORE: 4.0, OAK_LOG: 2.0, BIRCH_LOG: 2.0,
     OAK_LEAVES: 0.2, BIRCH_LEAVES: 0.2, PLANKS: 2.0, CRAFTING_TABLE: 2.5,
     FURNACE: 3.5, SMOKER: 3.5, BLAST_FURNACE: 3.5, COBBLESTONE: 2.0, SMOOTH_STONE: 2.0, IRON_BLOCK_PROD: 5.0,
@@ -1550,7 +1578,7 @@ def update_furnaces(world):
             data["fuel_time"] -= 1.0/60.0
             if data["fuel_time"] < 0: data["fuel_time"] = 0
 
-def save_game(world, player):
+def save_game(world, player, filename):
     save_data = {
         "world_data": {f"{k[0]},{k[1]}": v for k, v in world.data.items()},
         "chest_data": {f"{k[0]},{k[1]}": v for k, v in world.chest_data.items()},
@@ -1564,14 +1592,14 @@ def save_game(world, player):
         },
         "mobs": [{"x": m.rect.x, "y": m.rect.y, "type": m.m_type, "hp": m.health} for m in world.mobs]
     }
-    with open("savegame.json", "w") as f:
+    with open(filename, "w") as f:
         json.dump(save_data, f)
     return True
 
-def load_game(world, player):
-    if not os.path.exists("savegame.json"): return
+def load_game(world, player, filename):
+    if not os.path.exists(filename): return
     try:
-        with open("savegame.json", "r") as f:
+        with open(filename, "r") as f:
             sd = json.load(f)
             # Restore World
             world.data = {tuple(map(int, k.split(','))): v for k, v in sd["world_data"].items()}
@@ -1607,13 +1635,83 @@ def load_game(world, player):
         print(f"Load error: {e}")
 
 def main():
+    print("="*30)
+    print("   MINECRAFT 2D - MAIN MENU")
+    print("="*30)
+    print("1. Play Singleplayer")
+    print("2. Host LAN Game")
+    print("3. Join LAN Game")
+    
+    choice = input("\nSelect option (1-3): ").strip()
+    
+    mode = "single"
+    if choice == "2": mode = "host"
+    elif choice == "3": mode = "join"
+    
+    world_name = "world1"
+    if mode != "join":
+        # List existing worlds
+        saves = [f for f in os.listdir('.') if f.startswith("savegame") and f.endswith(".json")]
+        if saves:
+            print("\nExisting Worlds:")
+            for s in saves:
+                if s == "savegame.json": name = "default"
+                elif s.startswith("savegame_"): name = s[9:-5]
+                else: name = s[8:-5]
+                print(f" - {name}")
+        
+        print("\n(Type a world name to load, or 'create' for a new world)")
+        world_name = input("Enter world name: ").strip() or "world1"
+        if world_name.lower() == "create":
+            world_name = input("Enter name for new world: ").strip() or f"world_{int(time.time())}"
+    else:
+        world_name = input("\nEnter World Name to Join: ").strip()
+        if not world_name: return
+
+    # Resolve filename
+    save_filename = f"savegame_{world_name}.json"
+    if world_name == "default":
+        save_filename = "savegame.json"
+    elif os.path.exists(f"savegame{world_name}.json"):
+        save_filename = f"savegame{world_name}.json"
+    elif os.path.exists(f"savegame_{world_name}.json"):
+        save_filename = f"savegame_{world_name}.json"
+    
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 24)
 
     world, player = World(), Player()
-    load_game(world, player)
+    
+    net = None
+    discovery_service = None
+    remote_players = {}
+
+    if mode == "host":
+        load_game(world, player, save_filename)
+        net = mc_network.GameServer(world_name)
+        if net.start(world):
+            discovery_service = discovery.DiscoveryBroadcaster(world_name)
+            discovery_service.start()
+        else:
+            print("Failed to start server. Switching to singleplayer.")
+            mode = "single"
+    elif mode == "join":
+        host_ip = discovery.DiscoveryListener.find_host(world_name)
+        if host_ip:
+            net = mc_network.GameClient()
+            if net.connect(host_ip):
+                print(f"Connected to {world_name}!")
+            else:
+                print("Failed to connect.")
+                return
+        else:
+            print("World not found on network.")
+            return
+    else:
+        load_game(world, player, save_filename)
+
     scroll_x, scroll_y = 0, player.rect.centery - SCREEN_HEIGHT // 2
     target_mode = 0
     auto_save_timer = 0
@@ -1639,14 +1737,42 @@ def main():
         elif diff_x < -WORLD_PIXELS / 2:
             scroll_x -= WORLD_PIXELS
             
-        scroll_x += (target_scroll_x - scroll_x) * 0.1
         scroll_y += (target_scroll_y - scroll_y) * 0.1
+
+        # --- Network Updates ---
+        if net:
+            # Send our position
+            net.send({"type": "POS", "x": player.rect.x, "y": player.rect.y, "dir": player.direction})
+            
+            # Process received messages
+            while net.messages:
+                msg = net.messages.pop(0)
+                if msg["type"] == "INIT" and mode == "join":
+                    # Load world data from server
+                    world.data = {tuple(map(int, k.split(','))): v for k, v in msg["world_data"].items()}
+                    world.time = msg["time"]
+                elif msg["type"] == "POS":
+                    p_id = msg["id"]
+                    if p_id != getattr(net, 'client_id', None):
+                        if p_id not in remote_players:
+                            remote_players[p_id] = RemotePlayer(p_id)
+                        rp = remote_players[p_id]
+                        rp.x, rp.y, rp.direction = msg["x"], msg["y"], msg["dir"]
+                elif msg["type"] == "BLOCK":
+                    pos = tuple(map(int, msg["pos"].split(',')))
+                    if msg["b_type"] is None:
+                        if pos in world.data: del world.data[pos]
+                    else:
+                        world.data[pos] = msg["b_type"]
+                elif msg["type"] == "QUIT":
+                    p_id = msg["id"]
+                    if p_id in remote_players: del remote_players[p_id]
 
         if sleep_anim_timer > 0:
             sleep_anim_timer -= 1
             if sleep_anim_timer == 0:
                 world.time = 0
-                save_game(world, player)
+                save_game(world, player, save_filename)
                 save_msg_text = "Slept until morning!"
                 save_msg_timer = 120
                 sleep_wake_timer = sleep_anim_total
@@ -1656,12 +1782,12 @@ def main():
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT: 
-                save_game(world, player)
+                save_game(world, player, save_filename)
                 running = False
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_f: target_mode = (target_mode + 1) % 5
                 if event.key == pygame.K_q: 
-                    if save_game(world, player):
+                    if save_game(world, player, save_filename):
                         save_msg_timer = 120
                         save_msg_text = "Game Saved!"
                     running = False
@@ -1680,7 +1806,7 @@ def main():
                         player.active_furnace_pos = None
                         player.active_chest_pos = None
                     else:
-                        save_game(world, player)
+                        save_game(world, player, save_filename)
                         running = False
                 
                 if not player.show_inventory and sleep_anim_timer == 0 and sleep_wake_timer == 0:
@@ -1838,6 +1964,8 @@ def main():
                             for pos in to_remove:
                                 if pos in world.data:
                                     del world.data[pos]
+                                    if net:
+                                        net.send({"type": "BLOCK", "pos": f"{pos[0]},{pos[1]}", "b_type": None})
                             
                             if drop_type and drop_type not in (OAK_LEAVES, BIRCH_LEAVES):
                                 world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, drop_type))
@@ -2008,6 +2136,9 @@ def main():
                             if not p_placement_rect.colliderect(bed_rect_1) and not p_placement_rect.colliderect(bed_rect_2):
                                 world.data[(tx, ty)] = BED
                                 world.data[(tx2, ty)] = BED_RIGHT
+                                if net:
+                                    net.send({"type": "BLOCK", "pos": f"{tx},{ty}", "b_type": BED})
+                                    net.send({"type": "BLOCK", "pos": f"{tx2},{ty}", "b_type": BED_RIGHT})
                                 slot["count"] -= 1
                                 action_taken = True
                                 if slot["count"] <= 0:
@@ -2019,6 +2150,8 @@ def main():
                         p_placement_rect.x %= WORLD_PIXELS
                         if not p_placement_rect.colliderect(tr): 
                             world.data[(tx, ty)] = slot["type"]
+                            if net:
+                                net.send({"type": "BLOCK", "pos": f"{tx},{ty}", "b_type": slot["type"]})
                             if slot["type"] == CHEST:
                                 # New chest placed - check if it merges with a neighbor
                                 if (tx-1, ty) in world.data and world.data[(tx-1, ty)] == CHEST:
@@ -2137,7 +2270,7 @@ def main():
             # Auto-Save
             auto_save_timer += 1
             if auto_save_timer >= 1800: # 30 seconds
-                save_game(world, player)
+                save_game(world, player, save_filename)
                 auto_save_timer = 0
                 save_msg_timer = 120 # Show for 2 seconds
                 save_msg_text = "Game Saved!"
@@ -2172,6 +2305,10 @@ def main():
 
         for mob in world.mobs:
             mob.draw(screen, scroll_x, scroll_y)
+            
+        # Draw Remote Players
+        for rp in remote_players.values():
+            rp.draw(screen, scroll_x, scroll_y, font)
             
         if player.breaking_block:
             world.draw_cracks(screen, scroll_x, scroll_y, player.breaking_block, player.breaking_progress)
