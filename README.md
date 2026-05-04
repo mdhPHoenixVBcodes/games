@@ -15,6 +15,7 @@ pip install pygame ursina
 ## 🎮 Included Projects
 
 ### 1. 3D Adventure Dungeon (`aidea.py`)
+#### ***This game is still in production so bugs may occur.***
 A multi-phase 3D action-survival game built with the `ursina` engine. Progress through different dimensions, talk to NPCs, and defeat bosses.
 * **Features:** Multiple levels (Plains, Safe Zone, Final Arena etc.), interactive NPCs, an unlockable companions, melee and ranged combat, powers, health UI, and a functioning Save/Load system.
 * **Controls:** * `W, A, S, D` - Move
@@ -25,7 +26,8 @@ A multi-phase 3D action-survival game built with the `ursina` engine. Progress t
   * `F` - Interact with NPCs
   * `8` - Save Game
   * `9` - Load Game
-  * `0` - Pause
+  * `0` - Pause/Main Menu
+  * `Esc` - Main Menu
 
 ### 2. 2D PyCraft (`mc.py`)
 A 2D Minecraft-style sandbox game built using `pygame`.
