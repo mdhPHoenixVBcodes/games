@@ -476,7 +476,7 @@ class ThirdPersonPlayer(Entity):
         if self.y < self.spawn_point[1] - 20:
             self.take_damage(self.max_hp)
 
-        if self.level_3_phase == 1 and len(state.cannons) == 0:
+        if self.spawn_point == (2000, 1, 2010) and self.level_3_phase == 1 and len(state.cannons) == 0:
             self.level_3_phase = 2
             self.mission_ui.text = 'Enter the arena!'
             self.mission_ui.color = color.green
@@ -484,7 +484,7 @@ class ThirdPersonPlayer(Entity):
             state.cannons.append(ent.Cannon(position=(1980, 1.5, 2250)))
             state.cannons.append(ent.Cannon(position=(2020, 1.5, 2250)))
 
-        if self.level_3_phase == 2 and len(state.cannons) == 0 and len(state.enemies) == 0 and len(state.cannon_spheres) == 0 and not self.level_3_cleared:
+        if self.spawn_point == (2000, 1, 2010) and self.level_3_phase == 2 and len(state.cannons) == 0 and len(state.enemies) == 0 and len(state.cannon_spheres) == 0 and not self.level_3_cleared:
             self.level_3_cleared = True
             self.mission_ui.text = 'Hallway portal open!'
             self.mission_ui.color = color.magenta
