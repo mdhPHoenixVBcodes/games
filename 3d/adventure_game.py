@@ -466,11 +466,11 @@ class ThirdPersonPlayer(Entity):
 
         if ent.portal.enabled and distance(self.position, ent.portal.position) < 2.5:
             self.enter_portal()
-        if ent.portal_2.enabled and distance(self.position, ent.portal_2.position) < 2.5:
+        elif ent.portal_2.enabled and distance(self.position, ent.portal_2.position) < 2.5:
             self.enter_portal_2()
-        if ent.portal_3.enabled and distance(self.position, ent.portal_3.position) < 2.5:
+        elif ent.portal_3.enabled and distance(self.position, ent.portal_3.position) < 2.5:
             self.enter_portal_3()
-        if ent.portal_4.enabled and distance(self.position, ent.portal_4.position) < 2.5:
+        elif ent.portal_4.enabled and distance(self.position, ent.portal_4.position) < 2.5:
             self.enter_portal_4()
 
         if self.y < self.spawn_point[1] - 20:
