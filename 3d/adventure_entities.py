@@ -365,7 +365,7 @@ class BossCube(Entity):
             model='cube',
             texture=load_texture('boss_texture1.png', folder=Path(__file__).parent),
             color=color.white,
-            scale=2.5,
+            scale=4.5,
             position=spawn_pos,
             collider='box'
         )
@@ -373,11 +373,11 @@ class BossCube(Entity):
         self.speed = 1.2
         self.max_hp = 300
         self.hp = self.max_hp
-        self.attack_range = 3.5
-        self.attack_damage = 20
+        self.attack_range = 5.0
+        self.attack_damage = 25
         self.attack_cooldown = 0
         self.shoot_timer = random.uniform(2.5, 4.0)
-        self.health_bar = Entity(parent=self, y=1.4, model='cube', color=color.green, scale=(2.2, 0.15, 0.15))
+        self.health_bar = Entity(parent=self, y=0.6, model='cube', color=color.green, scale=(1.2, 0.08, 0.08))
 
     def take_damage(self, amount):
         self.hp -= amount

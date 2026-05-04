@@ -294,7 +294,7 @@ class ThirdPersonPlayer(Entity):
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
-        self.mission_ui.text = 'Defeat the robo-guy'
+        self.mission_ui.text = 'Defeat The Iron Revenant'
         self.mission_ui.color = color.white
         
         if self.boss_music:
