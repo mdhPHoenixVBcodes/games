@@ -363,7 +363,7 @@ class BossCube(Entity):
     def __init__(self, target, spawn_pos):
         super().__init__(
             model='cube',
-            texture=load_texture('boss_texture1.png', folder=Path(__file__).parent),
+            texture='Logo/boss_texture1.png',
             color=color.white,
             scale=4.5,
             position=spawn_pos,

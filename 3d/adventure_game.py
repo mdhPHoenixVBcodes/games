@@ -24,10 +24,11 @@ class ThirdPersonPlayer(Entity):
         self.is_teleporting = False
         self.boss_music = None
         self.safezone_music = None
-        self.low_health_music = Audio('lowhealth.mp3', loop=True, autoplay=False)
+        self.low_health_music = Audio('Music/lowhealth.mp3', loop=True, autoplay=False)
         self.dash_cooldown = 0
         self.dash_duration = 0.15
         self.dash_speed = 45
+        self.is_dashing = False
 
         self.level_3_phase = 0
         self.level_3_cleared = False
@@ -60,15 +61,16 @@ class ThirdPersonPlayer(Entity):
         
         # --- Ability HUD ---
         self.grenade_max_cooldown = 1.25
-        self.grenade_icon = Entity(parent=camera.ui, model='quad', texture='image.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
+        self.grenade_icon = Entity(parent=camera.ui, model='quad', texture='Logo/image.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
         self.grenade_overlay = Entity(parent=self.grenade_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         self.dash_max_cooldown = 0.8
-        self.dash_icon = Entity(parent=camera.ui, model='quad', texture='image2.png', color=color.white, scale=(0.14, 0.14), position=(0.44, -0.4), enabled=True)
+        self.dash_icon_shadow = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 180), scale=(0.14, 0.14), position=(0.44, -0.4), z=0.1, enabled=True)
+        self.dash_icon = Entity(parent=camera.ui, model='quad', texture='Logo/image2.png', color=color.white, scale=(0.14, 0.14), position=(0.44, -0.4), enabled=True)
         self.dash_overlay = Entity(parent=self.dash_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         self.attack_max_cooldown = 0.5
-        self.bow_icon = Entity(parent=camera.ui, model='quad', texture='image1.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
+        self.bow_icon = Entity(parent=camera.ui, model='quad', texture='Logo/image1.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
         self.bow_overlay = Entity(parent=self.bow_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         mouse.locked = True
@@ -186,7 +188,7 @@ class ThirdPersonPlayer(Entity):
             self.boss_music.stop()
         if not hasattr(self, 'safezone_music') or not self.safezone_music or not self.safezone_music.playing:
             if hasattr(self, 'safezone_music') and self.safezone_music: self.safezone_music.stop()
-            self.safezone_music = Audio('safezone.mp3', loop=True, autoplay=True, volume=0.5)
+            self.safezone_music = Audio('Music/safezone.mp3', loop=True, autoplay=True, volume=0.5)
         
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
         
@@ -316,7 +318,7 @@ class ThirdPersonPlayer(Entity):
         
         if self.boss_music:
             self.boss_music.stop()
-        self.boss_music = Audio('boss.mp3', loop=True, autoplay=True, volume=0.6)
+        self.boss_music = Audio('Music/boss.mp3', loop=True, autoplay=True, volume=0.6)
 
     def setup_level_6_arena(self):
         self.clear_all_entities()
@@ -548,8 +550,9 @@ class ThirdPersonPlayer(Entity):
         
         camera.fov = lerp(camera.fov, target_fov, 5 * time.dt)
         
-        direction = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
-        self.position += direction * current_speed * time.dt
+        if not self.is_dashing:
+            direction = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+            self.position += direction * current_speed * time.dt
         if self.spawn_point == (4000, 2, 2230) or self.level_6_portal_open:
             state.resolve_level_6_pillar_collision(self, previous_position)
 
@@ -573,7 +576,7 @@ class ThirdPersonPlayer(Entity):
             self.y_velocity = self.jump_force
         if self.dash_cooldown > 0:
             self.dash_cooldown -= time.dt
-        elif held_keys['left shift'] and self.grounded:
+        elif (held_keys['left shift'] or held_keys['shift']):
             self.perform_dash()
 
         if self.attack_cooldown > 0:
@@ -639,7 +642,8 @@ class ThirdPersonPlayer(Entity):
                 self.low_health_music.stop()
 
     def perform_dash(self):
-        self.dash_cooldown = 0.8
+        self.dash_cooldown = self.dash_max_cooldown
+        self.is_dashing = True
         dash_dir = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
         if dash_dir.length() <= 0.001:
             dash_dir = self.forward
@@ -649,6 +653,7 @@ class ThirdPersonPlayer(Entity):
         self.animate_position(self.position + dash_dir * 8, duration=self.dash_duration, curve=curve.out_expo)
         self.color = color.white
         invoke(setattr, self, 'color', color.azure, delay=0.2)
+        invoke(setattr, self, 'is_dashing', False, delay=self.dash_duration)
 
     def perform_attack(self):
         self.attack_cooldown = 0.4
@@ -801,7 +806,7 @@ class ThirdPersonPlayer(Entity):
         elif self.spawn_point == (1000, 1, 990):
             if not self.safezone_music or not self.safezone_music.playing:
                 if self.safezone_music: self.safezone_music.stop()
-                self.safezone_music = Audio('safezone.mp3', loop=True, autoplay=True, volume=0.5)
+                self.safezone_music = Audio('Music/safezone.mp3', loop=True, autoplay=True, volume=0.5)
 
             if not self.has_bow:
                 self.mission_ui.text = 'Talk to chef'
