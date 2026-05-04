@@ -33,6 +33,7 @@ class GameServer(NetworkManager):
 
     def send(self, data):
         """Unified send method for both Client and Server."""
+        data["id"] = "host"
         self.broadcast(data)
 
     def start(self, world):
@@ -53,26 +54,15 @@ class GameServer(NetworkManager):
         while self.running:
             try:
                 conn, addr = self.socket.accept()
-                client_id = f"player_{int(time.time() * 1000)}"
-                print(f"[SERVER] New connection from {addr} (ID: {client_id})")
-                
-                # Send initial world data
-                initial_sync = {
-                    "type": "INIT",
-                    "id": client_id,
-                    "world_data": {f"{k[0]},{k[1]}": v for k, v in self.world_ref.data.items()},
-                    "time": self.world_ref.time
-                }
-                self.send_json(conn, initial_sync)
-                
-                self.clients[conn] = client_id
+                # Just wait for the client to send a JOIN packet with their persistent ID
+                print(f"[SERVER] New connection from {addr}, waiting for JOIN packet...")
                 threading.Thread(target=self.handle_client, args=(conn,), daemon=True).start()
             except:
                 break
 
     def handle_client(self, conn):
-        client_id = self.clients[conn]
         buffer = b""
+        client_id = None
         while self.running:
             try:
                 data = conn.recv(BUFFER_SIZE)
@@ -98,6 +88,24 @@ class GameServer(NetworkManager):
         conn.close()
 
     def process_message(self, client_id, msg, sender_conn):
+        if msg["type"] == "JOIN":
+            p_id = msg["p_id"]
+            print(f"[SERVER] Player {p_id} joined from {sender_conn.getpeername()}")
+            self.clients[sender_conn] = p_id
+            self.player_data[p_id] = msg.get("player_data", {})
+            
+            # Now send the INIT packet with their specific data
+            p_save = self.world_ref.remote_players_data.get(p_id, {})
+            init_msg = {
+                "type": "INIT",
+                "id": p_id,
+                "world_data": {f"{k[0]},{k[1]}": v for k, v in self.world_ref.data.items()},
+                "time": self.world_ref.time,
+                "player_data": p_save # Send back their saved inventory/pos
+            }
+            self.send_json(sender_conn, init_msg)
+            return
+
         msg["id"] = client_id 
         if msg["type"] == "POS":
             self.player_data[client_id] = msg

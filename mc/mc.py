@@ -5,6 +5,7 @@ import json
 import os
 import mc_network
 import discovery
+import time
 
 # --- Configuration & Specs ---
 SCREEN_WIDTH = 800
@@ -46,17 +47,19 @@ class RemotePlayer:
             if dx < -50 or dx > SCREEN_WIDTH + 50: continue
             dy = self.y - int(scroll_y)
             
-            # Body
-            pygame.draw.rect(surface, (50, 100, 200), (dx, dy, 24, 64))
-            # Head
-            pygame.draw.rect(surface, (255, 220, 180), (dx, dy - 20, 24, 24))
-            # Eyes
-            eye_off = 14 if self.direction > 0 else 2
-            pygame.draw.rect(surface, (0, 0, 0), (dx + eye_off, dy - 14, 4, 4))
+            # Body (Blue)
+            pygame.draw.rect(surface, (50, 100, 200), (dx, dy, 24, 62))
+            pygame.draw.rect(surface, (0, 0, 150), (dx-2, dy, 28, 32))
+            
+            # Hand/Tool indicator
+            ax_end = dx + 12 + (self.direction * 10)
+            pygame.draw.line(surface, (255, 255, 255), (dx+12, dy+16), (ax_end, dy+16), 2)
+
             # Name tag
             txt = font.render(self.id[:8], True, (255, 255, 255))
-            surface.blit(txt, (dx, dy - 45))
+            surface.blit(txt, (dx, dy - 20))
 COLOR_WHITE = (255, 255, 255)
+
 COLOR_GRAY = (100, 100, 100)
 COLOR_BLACK = (0, 0, 0)
 
@@ -146,6 +149,8 @@ D_PICK = 115; D_AXE = 116; D_SHOVEL = 117; D_SWORD = 118; D_HOE = 119
 
 # Armor IDs
 I_HELMET = 120; I_CHEST = 121; I_LEGS = 122; I_BOOTS = 123
+D_HELMET = 124; D_CHEST = 125; D_LEGS = 126; D_BOOTS = 127
+SHIELD = 134
 
 BLOCK_HARDNESS = {
     GRASS_BLOCK: 0.1, DIRT_BLOCK: 0.5, STONE_BLOCK: 1.5, 
@@ -197,6 +202,9 @@ BLOCK_NAMES = {
     D_SWORD: "Diamond Sword", D_HOE: "Diamond Hoe",
     I_HELMET: "Iron Helmet", I_CHEST: "Iron Chestplate",
     I_LEGS: "Iron Leggings", I_BOOTS: "Iron Boots",
+    D_HELMET: "Diamond Helmet", D_CHEST: "Diamond Chestplate",
+    D_LEGS: "Diamond Leggings", D_BOOTS: "Diamond Boots",
+    SHIELD: "Shield",
     LADDER: "Ladder",
     DIAMOND: "Diamond",
     COAL_BLOCK_ITEM: "Coal Block"
@@ -207,7 +215,9 @@ MAX_DURABILITY = {
     S_PICK: 132, S_AXE: 132, S_SHOVEL: 132, S_SWORD: 132, S_HOE: 132,
     I_PICK: 250, I_AXE: 250, I_SHOVEL: 250, I_SWORD: 250, I_HOE: 250,
     D_PICK: 1561, D_AXE: 1561, D_SHOVEL: 1561, D_SWORD: 1561, D_HOE: 1561,
-    I_HELMET: 165, I_CHEST: 240, I_LEGS: 225, I_BOOTS: 195
+    I_HELMET: 165, I_CHEST: 240, I_LEGS: 225, I_BOOTS: 195,
+    D_HELMET: 363, D_CHEST: 528, D_LEGS: 495, D_BOOTS: 429,
+    SHIELD: 336
 }
 
 PLACEABLE_BLOCKS = {
@@ -222,6 +232,17 @@ PLACEABLE_BLOCKS = {
 
 class Player:
     def __init__(self):
+        # Persistent ID for multiplayer saves
+        self.persistent_id = "player_" + str(random.randint(1000, 9999))
+        try:
+            if os.path.exists("player_id.json"):
+                with open("player_id.json", "r") as f:
+                    self.persistent_id = json.load(f).get("id", self.persistent_id)
+            else:
+                with open("player_id.json", "w") as f:
+                    json.dump({"id": self.persistent_id}, f)
+        except: pass
+
         self.rect = pygame.Rect(100, 50, 24, (TILE_SIZE * 2) - 2) 
         self.vel_y = 0
         self.speed = 5
@@ -245,6 +266,9 @@ class Player:
         self.crafting_output = None
         self.crafting_3x3 = [None] * 9 # 3x3
         self.output_3x3 = None
+        
+        self.offhand = None
+        self.blocking = False
         
         self.held_item = None
         self.show_inventory = False
@@ -308,6 +332,14 @@ class Player:
         if keys[pygame.K_d]:
             dx += self.speed * (0.5 if in_water else speed_mult)
             self.direction = 1
+        
+        # Blocking
+        self.blocking = False
+        if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
+            item_in_hand = self.inventory[self.selected_slot]
+            if (item_in_hand and item_in_hand["type"] == SHIELD) or (self.offhand and self.offhand["type"] == SHIELD):
+                self.blocking = True
+                dx *= 0.3 # Slow down while blocking
         
         if keys[pygame.K_SPACE]:
             if in_water:
@@ -398,7 +430,27 @@ class Player:
         # Armor reduction
         reduction = 0
         for part in self.armor:
-            if part: reduction += 0.15 # 15% per piece
+            if part:
+                if part["type"] in (D_HELMET, D_CHEST, D_LEGS, D_BOOTS):
+                    reduction += 0.20 # 20% per diamond piece
+                else:
+                    reduction += 0.15 # 15% per iron piece
+        
+        if self.blocking:
+            reduction = 1.0 # 100% block
+            # Damage the shield
+            shield_slot = None
+            if self.offhand and self.offhand["type"] == SHIELD:
+                shield_slot = self.offhand
+            elif self.inventory[self.selected_slot] and self.inventory[self.selected_slot]["type"] == SHIELD:
+                shield_slot = self.inventory[self.selected_slot]
+            
+            if shield_slot:
+                shield_slot["durability"] -= amount
+                if shield_slot["durability"] <= 0:
+                    if shield_slot == self.offhand: self.offhand = None
+                    else: self.inventory[self.selected_slot] = None
+
         final_dmg = amount * (1.0 - reduction)
         self.health -= final_dmg
         self.invincible_until = pygame.time.get_ticks() + 500 # Brief i-frames
@@ -409,6 +461,7 @@ class World:
         self.data = {}
         self.furnace_data = {} # (tx, ty) -> {"input": slot, "fuel": slot, "output": slot, "cook_time": float, "fuel_time": float}
         self.chest_data = {} # (tx, ty) -> [slots]
+        self.remote_players_data = {} # persistent_id -> player_stats
         self.mobs = []
         self.dropped_items = [] # (DroppedItem instances)
         self.time = 0 # 0 corresponds to 6:00 AM (Sunrise)
@@ -1078,7 +1131,7 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type >= 100: # Tools
         mat_c = (150, 110, 60) if b_type in (W_PICK, W_AXE, W_SHOVEL, W_SWORD, W_HOE) else (128, 128, 128)
         if b_type in (I_PICK, I_AXE, I_SHOVEL, I_SWORD, I_HOE, I_HELMET, I_CHEST, I_LEGS, I_BOOTS): mat_c = (200, 200, 220)
-        if b_type in (D_PICK, D_AXE, D_SHOVEL, D_SWORD, D_HOE): mat_c = COLOR_DIAMOND
+        if b_type in (D_PICK, D_AXE, D_SHOVEL, D_SWORD, D_HOE, D_HELMET, D_CHEST, D_LEGS, D_BOOTS): mat_c = COLOR_DIAMOND
         
         if b_type in (W_PICK, S_PICK, I_PICK, D_PICK):
             pygame.draw.rect(screen, mat_c, (x, y, size, size//4)) # Top
@@ -1096,20 +1149,24 @@ def draw_block_icon(screen, b_type, x, y, size, font):
             pygame.draw.rect(screen, mat_c, (x, y, size*3//4, size//4)) # Top
             pygame.draw.rect(screen, (101, 67, 33), (x + size//2 - 2, y + size//4, 4, size*3//4)) # Stick
         # Armor
-        elif b_type == I_HELMET:
+        elif b_type in (I_HELMET, D_HELMET):
             pygame.draw.rect(screen, mat_c, (x+4, y+4, size-8, size-8))
             pygame.draw.rect(screen, (0,0,0), (x+8, y+16, 4, 4)) # Eyes
             pygame.draw.rect(screen, (0,0,0), (x+20, y+16, 4, 4))
-        elif b_type == I_CHEST:
+        elif b_type in (I_CHEST, D_CHEST):
             pygame.draw.rect(screen, mat_c, (x+2, y+8, size-4, size-10))
             pygame.draw.rect(screen, mat_c, (x+size//4, y+2, size//2, 8)) # Neck
-        elif b_type == I_LEGS:
+        elif b_type in (I_LEGS, D_LEGS):
             pygame.draw.rect(screen, mat_c, (x+4, y+4, size-8, size-12))
             pygame.draw.rect(screen, mat_c, (x+4, y+size-12, size//3, 8)) # Left leg
             pygame.draw.rect(screen, mat_c, (x+size-12, y+size-12, size//3, 8)) # Right leg
-        elif b_type == I_BOOTS:
+        elif b_type in (I_BOOTS, D_BOOTS):
             pygame.draw.rect(screen, mat_c, (x+4, y+size-16, size//3, 12))
             pygame.draw.rect(screen, mat_c, (x+size-12, y+size-16, size//3, 12))
+        elif b_type == SHIELD:
+            pygame.draw.rect(screen, (120, 80, 40), (x+4, y+2, size-8, size-4))
+            pygame.draw.rect(screen, (200, 200, 200), (x+4, y+2, size-8, size-4), 2)
+            pygame.draw.rect(screen, (150, 150, 150), (x+size//2-2, y+4, 4, size-8))
     elif b_type == IRON_BLOCK_PROD:
         pygame.draw.rect(screen, (200, 200, 220), (x, y, size, size))
         pygame.draw.rect(screen, (150, 150, 170), (x, y, size, size), 1)
@@ -1306,6 +1363,11 @@ def update_crafting(player):
     match([I,N,I, I,I,I, I,I,I], {"type": I_CHEST, "count": 1, "durability": 240})
     match([I,I,I, I,N,I, I,N,I], {"type": I_LEGS, "count": 1, "durability": 225})
     match([I,N,I, I,N,I, N,N,N], {"type": I_BOOTS, "count": 1, "durability": 195})
+    match([D,D,D, D,N,D, N,N,N], {"type": D_HELMET, "count": 1, "durability": 363})
+    match([D,N,D, D,D,D, D,D,D], {"type": D_CHEST, "count": 1, "durability": 528})
+    match([D,D,D, D,N,D, D,N,D], {"type": D_LEGS, "count": 1, "durability": 495})
+    match([D,N,D, D,N,D, N,N,N], {"type": D_BOOTS, "count": 1, "durability": 429})
+    match([W,W,W, W,I,W, W,W,W], {"type": SHIELD, "count": 1, "durability": 336})
     # Furnace
     match([S,S,S, S,N,S, S,S,S], {"type": FURNACE, "count": 1})
     # Iron Products
@@ -1489,14 +1551,20 @@ def handle_inventory_click(player, mx, my, button, world=None):
             if player.held_item is None: valid = True
             else:
                 t = player.held_item["type"]
-                if i == 0 and t == I_HELMET: valid = True
-                if i == 1 and t == I_CHEST: valid = True
-                if i == 2 and t == I_LEGS: valid = True
-                if i == 3 and t == I_BOOTS: valid = True
+                if i == 0 and t in (I_HELMET, D_HELMET): valid = True
+                if i == 1 and t in (I_CHEST, D_CHEST): valid = True
+                if i == 2 and t in (I_LEGS, D_LEGS): valid = True
+                if i == 3 and t in (I_BOOTS, D_BOOTS): valid = True
             
             if valid:
                 player.armor[i], player.held_item = player.held_item, player.armor[i]
             return
+
+    # Check Offhand Slot
+    ox, oy = inv_x - 50, inv_y + 4 * 44 + 10
+    if ox <= mx <= ox + 40 and oy <= my <= oy + 40:
+        player.offhand, player.held_item = player.held_item, player.offhand
+        return
 
     if slot_list is not None:
         slot = slot_list[slot_idx]
@@ -1604,8 +1672,10 @@ def save_game(world, player, filename):
             "x": player.rect.x, "y": player.rect.y,
             "health": player.health, "hunger": player.hunger,
             "h_timer": player.hunger_timer, "r_timer": player.regen_timer,
-            "inventory": player.inventory, "armor": player.armor
+            "inventory": player.inventory, "armor": player.armor,
+            "offhand": getattr(player, 'offhand', None)
         },
+        "remote_players": world.remote_players_data,
         "mobs": [{"x": m.rect.x, "y": m.rect.y, "type": m.m_type, "hp": m.health} for m in world.mobs]
     }
     with open(filename, "w") as f:
@@ -1641,6 +1711,10 @@ def load_game(world, player, filename):
             player.regen_timer = p_data.get("r_timer", 0)
             player.inventory = p_data.get("inventory", [None]*36)
             player.armor = p_data.get("armor", [None]*4)
+            player.offhand = p_data.get("offhand", None)
+
+            # Restore Remote Players
+            world.remote_players_data = sd.get("remote_players", {})
             # Restore Mobs
             world.mobs = []
             for m_data in sd.get("mobs", []):
@@ -1729,6 +1803,8 @@ def main():
             net = mc_network.GameClient()
             if net.connect(host_ip):
                 print(f"Connected to {world_name}!")
+                # Send initial JOIN packet with persistent ID
+                net.send({"type": "JOIN", "p_id": player.persistent_id})
             else:
                 screen.fill((50, 0, 0))
                 txt = font.render(f"Failed to connect to {host_ip}", True, (255, 255, 255))
@@ -1795,6 +1871,17 @@ def main():
                             except: continue
                         world.data = new_data
                         world.time = msg.get("time", 0)
+                        
+                        # Restore my specific player data from host
+                        p_save = msg.get("player_data", {})
+                        if p_save:
+                            player.rect.x = p_save.get("x", player.rect.x)
+                            player.rect.y = p_save.get("y", player.rect.y)
+                            player.inventory = p_save.get("inventory", player.inventory)
+                            player.armor = p_save.get("armor", player.armor)
+                            player.offhand = p_save.get("offhand", player.offhand)
+                            player.health = p_save.get("health", player.health)
+                        
                         world.find_safe_spawn(player)
                         print("World Sync Complete!")
             continue # Don't run game logic until world is loaded
@@ -1823,12 +1910,25 @@ def main():
                     world.find_safe_spawn(player)
                     print("World Sync Complete!")
                 elif msg["type"] == "POS":
-                    p_id = msg["id"]
+                    p_id = msg.get("id", "host")
                     if p_id != getattr(net, 'client_id', None):
                         if p_id not in remote_players:
                             remote_players[p_id] = RemotePlayer(p_id, msg["x"], msg["y"])
                         rp = remote_players[p_id]
                         rp.x, rp.y, rp.direction = msg["x"], msg["y"], msg["dir"]
+                elif msg["type"] == "HURT":
+                    target = msg["target_id"]
+                    # Determine if I am the one getting hit
+                    am_i_target = False
+                    if mode == "join" and getattr(net, 'client_id', None) == target:
+                        am_i_target = True
+                    elif mode == "host" and target == "host":
+                        am_i_target = True
+                    
+                    if am_i_target:
+                        player.take_damage(msg.get("dmg", 1))
+                        player.vel_y = -6
+                        player.rect.x = (player.rect.x + msg.get("dir", 1) * 20) % WORLD_PIXELS
                 elif msg["type"] == "BLOCK":
                     pos = tuple(map(int, msg["pos"].split(',')))
                     if msg["b_type"] is None:
@@ -2295,6 +2395,22 @@ def main():
                             mob.vel_y = -6 # Knockback
                             mob.rect.x = (mob.rect.x + player.direction * 25) % WORLD_PIXELS
                             hit_any = True
+
+                # Combat with Remote Players (PvP)
+                if net:
+                    for rp_id, rp in remote_players.items():
+                        dx = abs(player.rect.centerx - rp.x)
+                        if dx > WORLD_PIXELS / 2: dx = WORLD_PIXELS - dx
+                        dy = abs(player.rect.centery - rp.y)
+                        
+                        if dx < 60 and dy < player.rect.height:
+                            rel_x = (rp.x - player.rect.centerx)
+                            if rel_x > WORLD_PIXELS / 2: rel_x -= WORLD_PIXELS
+                            if rel_x < -WORLD_PIXELS / 2: rel_x += WORLD_PIXELS
+                            
+                            if (player.direction > 0 and rel_x > 0) or (player.direction < 0 and rel_x < 0):
+                                net.send({"type": "HURT", "target_id": rp_id, "dmg": dmg, "dir": player.direction})
+                                hit_any = True
                 
                 if hit_any:
                     player.last_action_time = now
@@ -2351,6 +2467,12 @@ def main():
             # Auto-Save
             auto_save_timer += 1
             if auto_save_timer >= 1800: # 30 seconds
+                # Update remote player data before saving (Host only)
+                if mode == "host" and net:
+                    for p_id, p_data in net.player_data.items():
+                        if p_id != "host":
+                            world.remote_players_data[p_id] = p_data
+
                 save_game(world, player, save_filename)
                 auto_save_timer = 0
                 save_msg_timer = 120 # Show for 2 seconds
@@ -2426,6 +2548,12 @@ def main():
                 # Hand/Tool indicator
                 ax_end = px_draw + 12 + (player.direction * 10)
                 pygame.draw.line(screen, COLOR_WHITE, (px_draw+12, py_draw+16), (ax_end, py_draw+16), 2)
+                
+                if player.blocking:
+                    # Draw Shield in front
+                    s_off = 18 if player.direction > 0 else -6
+                    pygame.draw.rect(screen, (120, 80, 40), (px_draw + s_off, py_draw + 10, 12, 30))
+                    pygame.draw.rect(screen, (200, 200, 200), (px_draw + s_off, py_draw + 10, 12, 30), 1)
 
         # --- UI Drawing ---
         if player.show_inventory:
@@ -2489,6 +2617,24 @@ def main():
                     # Tint it dark grey
                     ghost_surf.fill((60, 60, 60, 150), special_flags=pygame.BLEND_RGBA_MULT)
                     screen.blit(ghost_surf, (ax + 4, ay + i * 44 + 4))
+            
+            # Draw Offhand Slot
+            ox, oy = inv_x - 50, inv_y + 4 * 44 + 10
+            pygame.draw.rect(screen, (80, 80, 80), (ox, oy, 40, 40))
+            pygame.draw.rect(screen, (50, 50, 50), (ox, oy, 40, 40), 2)
+            if player.offhand:
+                draw_block_icon(screen, player.offhand["type"], ox + 4, oy + 4, 32, font)
+                if "durability" in player.offhand:
+                    max_d = MAX_DURABILITY.get(player.offhand["type"], 1)
+                    ratio = player.offhand["durability"] / max_d
+                    pygame.draw.rect(screen, (0,0,0), (ox + 4, oy + 32, 32, 4))
+                    pygame.draw.rect(screen, (int(255*(1-ratio)), int(255*ratio), 0), (ox + 4, oy + 32, int(32 * ratio), 4))
+            else:
+                # Ghost Shield Icon
+                ghost_surf = pygame.Surface((32, 32), pygame.SRCALPHA)
+                draw_block_icon(ghost_surf, SHIELD, 0, 0, 32, font)
+                ghost_surf.fill((60, 60, 60, 150), special_flags=pygame.BLEND_RGBA_MULT)
+                screen.blit(ghost_surf, (ox + 4, oy + 4))
 
             if not player.show_3x3 and not player.active_furnace_pos and not player.active_chest_pos:
                 # --- Draw 2x2 Crafting Panel ---
