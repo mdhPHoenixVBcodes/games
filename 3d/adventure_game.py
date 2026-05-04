@@ -135,7 +135,7 @@ class ThirdPersonPlayer(Entity):
         ent.portal_3.enabled = False
         self.save_game()
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
-        invoke(self.teleport_to_level_2, delay=1.0)
+        invoke(self.teleport_to_level_4, delay=1.0)
 
     def enter_portal_4(self):
         self.is_teleporting = True
@@ -228,6 +228,7 @@ class ThirdPersonPlayer(Entity):
     def setup_level_4_arena(self):
         self.clear_all_entities()
         self.level_4_cleared = False
+        ent.portal_3.enabled = False
         enemy_positions = [
             (1992, 1, 2218),
             (2008, 1, 2218),
@@ -277,6 +278,15 @@ class ThirdPersonPlayer(Entity):
 
         self.mission_ui.text = 'Defeat the boss!'
         self.mission_ui.color = color.red
+
+    def teleport_to_level_4(self):
+        self.spawn_point = (2000, 1, 2230)
+        self.position = self.spawn_point
+        self.y_velocity = 0
+        if not self.level_4_cleared:
+            self.setup_level_4_arena()
+        ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
+        invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
     def teleport_to_level_5(self):
         self.spawn_point = (3000, 1, 2230)
@@ -372,6 +382,12 @@ class ThirdPersonPlayer(Entity):
         self.y_velocity = 0
         if self.boss_music:
             self.boss_music.stop()
+        if hasattr(self, 'safezone_music') and self.safezone_music:
+            self.safezone_music.stop()
+        if hasattr(self, 'low_health_music') and self.low_health_music:
+            self.low_health_music.stop()
+            
+        self.crosshair.position = (0, 0.19)
         self.clear_all_entities()
 
         if self.spawn_point == (0, 1, 0):
@@ -497,6 +513,7 @@ class ThirdPersonPlayer(Entity):
             ent.chef.exclamation.enabled = True
             if self.boss_music:
                 self.boss_music.fade_out(duration=2)
+            self.crosshair.position = (0, 0)
 
         if self.spawn_point == (0, 1, 0) or (self.level_3_phase == 2 and len(state.cannons) > 0):
             self.spawn_timer -= time.dt
@@ -606,9 +623,11 @@ class ThirdPersonPlayer(Entity):
         should_play_low_health = self.hp > 0 and self.hp <= 35 and not is_hub
         
         if should_play_low_health:
+            self.health_ui.color = color.red
             if self.low_health_music and not self.low_health_music.playing:
                 self.low_health_music.play()
         else:
+            self.health_ui.color = color.white
             if self.low_health_music and self.low_health_music.playing:
                 self.low_health_music.stop()
 
@@ -640,9 +659,19 @@ class ThirdPersonPlayer(Entity):
     def shoot_arrow(self):
         self.attack_cooldown = 0.5
         spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.5
-        shot_direction = camera.forward if self.level_5_cleared else Vec3(camera.forward.x, 0, camera.forward.z)
-        if shot_direction.length() <= 0.001:
-            shot_direction = self.forward
+        
+        # Precision aiming: Find what the crosshair is looking at
+        ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
+        if ray.hit:
+            target_point = ray.world_point
+        else:
+            target_point = camera.world_position + (camera.forward * 500)
+            
+        # Before Level 5 boss is defeated, keep shots horizontal for traditional feel
+        if not self.level_5_cleared:
+            target_point.y = spawn_pos.y
+            
+        shot_direction = (target_point - spawn_pos).normalized()
         ent.Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction)
 
     def throw_grenade(self):
@@ -808,6 +837,8 @@ class ThirdPersonPlayer(Entity):
             if self.level_4_cleared:
                 self.mission_ui.text = 'Return portal open! Talk to the chef.'
                 self.mission_ui.color = color.cyan
+                ent.portal.position = self.position + (0, 0.5, 4)
+                ent.portal.enabled = True
             else:
                 self.setup_level_4_arena()
                 self.mission_ui.text = 'Defeat the boss cube!'
@@ -824,6 +855,9 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.color = color.gray
 
         self.y_velocity = 0
+        self.crosshair.position = (0, 0) if self.level_5_cleared else (0, 0.19)
+        self.crosshair.scale = 2
+        self.crosshair.enabled = self.has_bow
         self.autosave_timer = self.autosave_interval
         print("Game Loaded!")
 
