@@ -183,7 +183,15 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
             self.crosshair.enabled = False
-        elif not self.has_grenade:
+        elif not self.level_3_cleared:
+            self.mission_ui.text = 'Talk to the Manager'
+            self.mission_ui.color = color.yellow
+            self.crosshair.enabled = True
+        elif self.level_4_portal_open and not self.level_4_cleared:
+            self.mission_ui.text = 'Enter the portal!'
+            self.mission_ui.color = color.magenta
+            self.crosshair.enabled = True
+        elif self.level_4_cleared and not self.has_grenade:
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
             self.crosshair.enabled = True
@@ -199,14 +207,6 @@ class ThirdPersonPlayer(Entity):
             if self.has_grenade:
                 self.grenade_icon.enabled = True
         elif self.level_5_portal_open:
-            self.mission_ui.text = 'Enter the portal!'
-            self.mission_ui.color = color.magenta
-            self.crosshair.enabled = True
-        elif self.level_4_cleared:
-            self.mission_ui.text = 'Talk to the Manager'
-            self.mission_ui.color = color.yellow
-            self.crosshair.enabled = True
-        elif self.level_4_portal_open:
             self.mission_ui.text = 'Enter the portal!'
             self.mission_ui.color = color.magenta
             self.crosshair.enabled = True
@@ -765,28 +765,38 @@ class ThirdPersonPlayer(Entity):
                 if self.safezone_music: self.safezone_music.stop()
                 self.safezone_music = Audio('safezone.mp3', loop=True, autoplay=True, volume=0.5)
 
-            if self.has_bow:
-                if not self.has_grenade:
-                    self.mission_ui.text = 'Talk to chef'
-                    self.mission_ui.color = color.cyan
-                elif self.level_5_cleared and not self.teammate_unlocked:
-                    self.mission_ui.text = 'Talk to chef'
-                    self.mission_ui.color = color.yellow
-                elif self.teammate_unlocked:
-                    self.mission_ui.text = 'Talk to the Manager'
-                    self.mission_ui.color = color.yellow
-                elif self.level_5_portal_open:
-                    self.mission_ui.text = 'Enter the portal!'
-                    self.mission_ui.color = color.magenta
-                elif self.level_4_cleared:
-                    self.mission_ui.text = 'Talk to the Manager'
-                    self.mission_ui.color = color.yellow
-                else:
-                    self.mission_ui.text = 'Find the Manager'
-                    self.mission_ui.color = color.yellow
-            else:
+            if not self.has_bow:
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
+                self.crosshair.enabled = False
+            elif not self.level_3_cleared:
+                self.mission_ui.text = 'Talk to the Manager'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
+            elif self.level_4_portal_open and not self.level_4_cleared:
+                self.mission_ui.text = 'Enter the portal!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
+            elif self.level_4_cleared and not self.has_grenade:
+                self.mission_ui.text = 'Talk to chef'
+                self.mission_ui.color = color.cyan
+                self.crosshair.enabled = True
+            elif self.level_5_cleared:
+                if self.teammate_unlocked:
+                    self.mission_ui.text = 'Go with the archer.'
+                    self.mission_ui.color = color.yellow
+                else:
+                    self.mission_ui.text = 'Talk to chef'
+                    self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
+            elif self.level_5_portal_open:
+                self.mission_ui.text = 'Enter the portal!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
+            else:
+                self.mission_ui.text = 'Talk to the Manager'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
         elif self.spawn_point == (2000, 1, 2010):
             if self.level_3_phase == 1:
                 self.mission_ui.text = 'Destroy the Cannons!'
