@@ -13,6 +13,7 @@ class ThirdPersonPlayer(Entity):
         super().__init__(model='cube', color=color.azure, scale=(1, 2, 1), position=(0, 1, 0), collider='box')
         self.speed = 10
         self.spawn_point = (0, 1, 0)
+        self.current_level = 1
         self.has_bow = False
         self.has_grenade = False
         self.grenade_used = False
@@ -93,6 +94,8 @@ class ThirdPersonPlayer(Entity):
         if self.hp <= 0:
             if self.low_health_music and self.low_health_music.playing:
                 self.low_health_music.stop()
+            if hasattr(self, 'boss_music') and self.boss_music and self.boss_music.playing:
+                self.boss_music.stop()
             print("You died!")
             if state.SAVE_FILE.exists():
                 print("Loading last save...")
@@ -163,22 +166,31 @@ class ThirdPersonPlayer(Entity):
         state.cannon_spheres.clear()
         state.clear_level_6_pillars()
 
+    def disable_all_portals(self):
+        ent.portal.enabled = False
+        ent.portal_2.enabled = False
+        ent.portal_3.enabled = False
+        ent.portal_4.enabled = False
+
     def teleport_to_level_2(self):
+        self.disable_all_portals()
+        self.current_level = 2
         self.spawn_point = (1000, 1, 990)
         self.position = self.spawn_point
         self.y_velocity = 0
         self.clear_all_entities()
         self.level_3_phase = 0
-
+        
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
-        if self.boss_music:
+        if hasattr(self, 'boss_music') and self.boss_music:
             self.boss_music.stop()
-        if not self.safezone_music or not self.safezone_music.playing:
-            if self.safezone_music: self.safezone_music.stop()
+        if not hasattr(self, 'safezone_music') or not self.safezone_music or not self.safezone_music.playing:
+            if hasattr(self, 'safezone_music') and self.safezone_music: self.safezone_music.stop()
             self.safezone_music = Audio('safezone.mp3', loop=True, autoplay=True, volume=0.5)
         
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
-
+        
+        # Reset Hub Mission Text
         if not self.has_bow:
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
@@ -245,6 +257,8 @@ class ThirdPersonPlayer(Entity):
         state.enemies.append(ent.BossCube(target=self, spawn_pos=(3000, 1, 2240)))
 
     def teleport_to_level_3(self):
+        self.disable_all_portals()
+        self.current_level = 3
         self.spawn_point = (2000, 1, 2010)
         self.position = self.spawn_point
         self.y_velocity = 0
@@ -262,13 +276,13 @@ class ThirdPersonPlayer(Entity):
         self.mission_ui.color = color.red
 
     def teleport_to_level_4(self):
+        self.disable_all_portals()
+        self.current_level = 4
         self.spawn_point = (2000, 1, 2230)
         self.position = self.spawn_point
         self.y_velocity = 0
-        self.level_3_phase = 0
-        self.level_3_cleared = True
-        self.level_4_portal_open = True
-        self.setup_level_4_arena()
+        if not self.level_4_cleared:
+            self.setup_level_4_arena()
         
         if self.safezone_music:
             self.safezone_music.stop()
@@ -279,20 +293,13 @@ class ThirdPersonPlayer(Entity):
         self.mission_ui.text = 'Defeat the boss!'
         self.mission_ui.color = color.red
 
-    def teleport_to_level_4(self):
-        self.spawn_point = (2000, 1, 2230)
-        self.position = self.spawn_point
-        self.y_velocity = 0
-        if not self.level_4_cleared:
-            self.setup_level_4_arena()
-        ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
-        invoke(setattr, self, 'is_teleporting', False, delay=1.0)
 
     def teleport_to_level_5(self):
+        self.disable_all_portals()
+        self.current_level = 5
         self.spawn_point = (3000, 1, 2230)
         self.position = self.spawn_point
         self.y_velocity = 0
-        self.level_3_phase = 0
         self.level_5_portal_open = True
         self.level_5_cleared = False
         world.ground_4.color = color.dark_gray
@@ -334,12 +341,12 @@ class ThirdPersonPlayer(Entity):
             state.level_6_pillars.append(pillar)
 
     def teleport_to_level_6(self):
+        self.disable_all_portals()
+        self.current_level = 6
         self.spawn_point = (4000, 2, 2230)
         self.position = self.spawn_point
         self.y_velocity = 0
         self.grounded = True
-        self.level_3_phase = 0
-        self.level_6_portal_open = True
         self.setup_level_6_arena()
 
         if self.teammate_unlocked:
@@ -476,7 +483,7 @@ class ThirdPersonPlayer(Entity):
         if self.y < self.spawn_point[1] - 20:
             self.take_damage(self.max_hp)
 
-        if self.spawn_point == (2000, 1, 2010) and self.level_3_phase == 1 and len(state.cannons) == 0:
+        if self.current_level == 3 and self.level_3_phase == 1 and len(state.cannons) == 0:
             self.level_3_phase = 2
             self.mission_ui.text = 'Enter the arena!'
             self.mission_ui.color = color.green
@@ -484,7 +491,7 @@ class ThirdPersonPlayer(Entity):
             state.cannons.append(ent.Cannon(position=(1980, 1.5, 2250)))
             state.cannons.append(ent.Cannon(position=(2020, 1.5, 2250)))
 
-        if self.spawn_point == (2000, 1, 2010) and self.level_3_phase == 2 and len(state.cannons) == 0 and len(state.enemies) == 0 and len(state.cannon_spheres) == 0 and not self.level_3_cleared:
+        if self.current_level == 3 and self.level_3_phase == 2 and len(state.cannons) == 0 and len(state.enemies) == 0 and len(state.cannon_spheres) == 0 and not self.level_3_cleared:
             self.level_3_cleared = True
             self.mission_ui.text = 'Hallway portal open!'
             self.mission_ui.color = color.magenta
@@ -493,7 +500,7 @@ class ThirdPersonPlayer(Entity):
             ent.portal_3.y = 1.5
             ent.portal_3.enabled = True
 
-        if self.spawn_point == (2000, 1, 2230) and not self.level_4_cleared and len(state.enemies) == 0:
+        if self.current_level == 4 and not self.level_4_cleared and len(state.enemies) == 0:
             self.level_4_cleared = True
             self.mission_ui.text = 'Return portal open! Talk to the chef.'
             self.mission_ui.color = color.cyan
@@ -502,7 +509,7 @@ class ThirdPersonPlayer(Entity):
             ent.portal.enabled = True
             ent.chef.exclamation.enabled = True
 
-        if self.spawn_point == (3000, 1, 2230) and not self.level_5_cleared and len(state.enemies) == 0:
+        if self.current_level == 5 and not self.level_5_cleared and len(state.enemies) == 0:
             self.level_5_cleared = True
             self.level_5_portal_open = False
             self.mission_ui.text = 'Boss defeated! Talk to the chef.'
@@ -610,7 +617,7 @@ class ThirdPersonPlayer(Entity):
                 self.dash_icon.color = color.white
 
         # Hub (Level 2) logic: Regeneration and safe zone music overrides
-        is_hub = self.spawn_point == (1000, 1, 990)
+        is_hub = self.current_level == 2
         
         if is_hub:
             if self.hp < self.max_hp:
@@ -684,6 +691,7 @@ class ThirdPersonPlayer(Entity):
             'x': self.x, 'y': self.y, 'z': self.z,
             'hp': self.hp,
             'spawn_x': self.spawn_point[0], 'spawn_y': self.spawn_point[1], 'spawn_z': self.spawn_point[2],
+            'current_level': self.current_level,
             'enemies_killed': self.enemies_killed,
             'portal_enabled': ent.portal.enabled, 'portal_x': ent.portal.x, 'portal_y': ent.portal.y, 'portal_z': ent.portal.z,
             'portal_2_enabled': ent.portal_2.enabled, 'portal_2_x': ent.portal_2.x, 'portal_2_y': ent.portal_2.y, 'portal_2_z': ent.portal_2.z,
@@ -734,6 +742,7 @@ class ThirdPersonPlayer(Entity):
             self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
         if 'spawn_x' in save_data:
             self.spawn_point = (save_data['spawn_x'], save_data['spawn_y'], save_data['spawn_z'])
+        self.current_level = save_data.get('current_level', 1)
 
         if 'enemies_killed' in save_data:
             self.enemies_killed = save_data['enemies_killed']
@@ -827,6 +836,7 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.color = color.yellow
                 self.crosshair.enabled = True
         elif self.spawn_point == (2000, 1, 2010):
+            ent.portal_3.enabled = False # Safety first
             if self.level_3_phase == 1:
                 self.mission_ui.text = 'Destroy the Cannons!'
                 self.mission_ui.color = color.red
@@ -834,6 +844,7 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Enter the arena!'
                 self.mission_ui.color = color.green
         elif self.spawn_point == (2000, 1, 2230):
+            ent.portal_3.enabled = False # Ensure entrance portal is closed
             if self.level_4_cleared:
                 self.mission_ui.text = 'Return portal open! Talk to the chef.'
                 self.mission_ui.color = color.cyan
