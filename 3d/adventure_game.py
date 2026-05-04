@@ -62,6 +62,10 @@ class ThirdPersonPlayer(Entity):
         self.grenade_icon = Entity(parent=camera.ui, model='quad', texture='image.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
         self.grenade_overlay = Entity(parent=self.grenade_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
+        self.dash_max_cooldown = 0.8
+        self.dash_icon = Entity(parent=camera.ui, model='quad', texture='image2.png', color=color.white, scale=(0.14, 0.14), position=(0.44, -0.4), enabled=True)
+        self.dash_overlay = Entity(parent=self.dash_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        
         self.attack_max_cooldown = 0.5
         self.bow_icon = Entity(parent=camera.ui, model='quad', texture='image1.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
         self.bow_overlay = Entity(parent=self.bow_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
@@ -389,6 +393,7 @@ class ThirdPersonPlayer(Entity):
             self.crosshair.enabled = False
             self.bow_icon.enabled = False
             self.grenade_icon.enabled = False
+            self.dash_icon.enabled = True
             self.reset_mission()
         elif self.spawn_point == (1000, 1, 990):
             self.level_3_phase = 0
@@ -579,6 +584,13 @@ class ThirdPersonPlayer(Entity):
             else:
                 self.grenade_overlay.scale_y = 0
                 self.grenade_icon.color = color.white
+
+            if self.dash_cooldown > 0:
+                self.dash_overlay.scale_y = self.dash_cooldown / self.dash_max_cooldown
+                self.dash_icon.color = color.gray
+            else:
+                self.dash_overlay.scale_y = 0
+                self.dash_icon.color = color.white
 
         # Hub (Level 2) logic: Regeneration and safe zone music overrides
         is_hub = self.spawn_point == (1000, 1, 990)
