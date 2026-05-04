@@ -513,7 +513,7 @@ class ThirdPersonPlayer(Entity):
         # Sprinting and FOV
         current_speed = self.speed
         target_fov = 90
-        if held_keys['left shift']:
+        if held_keys['left control']:
             current_speed *= 1.6
             target_fov = 110
         
@@ -544,7 +544,7 @@ class ThirdPersonPlayer(Entity):
             self.y_velocity = self.jump_force
         if self.dash_cooldown > 0:
             self.dash_cooldown -= time.dt
-        elif held_keys['left control'] and self.grounded:
+        elif held_keys['left shift'] and self.grounded:
             self.perform_dash()
 
         if self.attack_cooldown > 0:
