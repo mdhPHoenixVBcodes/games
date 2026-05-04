@@ -26,7 +26,8 @@ A multi-phase 3D action-survival game built with the `ursina` engine. Progress t
   * `F` - Interact with NPCs
   * `8` - Save Game
   * `9` - Load Game
-  * `0` - Pause
+  * `0` - Pause/Main Menu
+  * `Esc` - Main Menu
 
 ### 2. 2D PyCraft (`mc.py`)
 A 2D Minecraft-style sandbox game built using `pygame`.
