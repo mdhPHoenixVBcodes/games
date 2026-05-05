@@ -3,7 +3,7 @@
 Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project using ***AI*** utilizing different libraries such as `pygame`, `ursina`, and the built-in `turtle` module.
 
 
-> ***Disclaimer: These projects `3dadventure.py`, `mc.py` and `timesurvivor.py` are made with AI***
+> ***Disclaimer: These projects `3dadventure.py`, `mc.py` and `timesurvivor.py` are made with AI***.
 
 
 ## ⚙️ Requirements & Installation
