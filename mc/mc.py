@@ -1919,6 +1919,8 @@ def main():
 
         # --- Network Updates ---
         if net:
+            if mode == "host" and hasattr(net, "drain_world_updates"):
+                net.drain_world_updates()
             network_timer += 1
             if network_timer >= 3: # Send 20 times per second (at 60fps)
                 net.send({"type": "POS", "x": player.rect.x, "y": player.rect.y, "dir": player.direction})

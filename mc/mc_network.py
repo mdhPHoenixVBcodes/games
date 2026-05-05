@@ -30,6 +30,8 @@ class GameServer(NetworkManager):
         self.clients = {} # conn -> player_id
         self.player_data = {} # id -> data
         self.world_ref = None
+        self.pending_world_updates = []
+        self.pending_world_updates_lock = threading.Lock()
 
     def send(self, data):
         """Unified send method for both Client and Server."""
@@ -116,14 +118,8 @@ class GameServer(NetworkManager):
                 self.player_data[client_id] = {}
             self.player_data[client_id].update(msg)
         elif msg["type"] == "BLOCK":
-            pos = tuple(map(int, msg["pos"].split(',')))
-            if msg["b_type"] is None:
-                if pos in self.world_ref.data: del self.world_ref.data[pos]
-                if pos in self.world_ref.block_meta: del self.world_ref.block_meta[pos]
-            else:
-                self.world_ref.data[pos] = msg["b_type"]
-                if "meta" in msg and msg["meta"]:
-                    self.world_ref.block_meta[pos] = msg["meta"]
+            with self.pending_world_updates_lock:
+                self.pending_world_updates.append(msg.copy())
         
         # Relay to all OTHER clients
         self.broadcast(msg, exclude_conn=sender_conn)
@@ -132,6 +128,25 @@ class GameServer(NetworkManager):
         for conn in list(self.clients.keys()):
             if conn != exclude_conn:
                 self.send_json(conn, data)
+
+    def drain_world_updates(self):
+        if not self.pending_world_updates or self.world_ref is None:
+            return
+
+        with self.pending_world_updates_lock:
+            updates = self.pending_world_updates[:]
+            self.pending_world_updates.clear()
+        for msg in updates:
+            pos = tuple(map(int, msg["pos"].split(',')))
+            if msg["b_type"] is None:
+                if pos in self.world_ref.data:
+                    del self.world_ref.data[pos]
+                if pos in self.world_ref.block_meta:
+                    del self.world_ref.block_meta[pos]
+            else:
+                self.world_ref.data[pos] = msg["b_type"]
+                if "meta" in msg and msg["meta"]:
+                    self.world_ref.block_meta[pos] = msg["meta"]
 
 class GameClient(NetworkManager):
     def __init__(self):
