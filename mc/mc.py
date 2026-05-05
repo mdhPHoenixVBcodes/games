@@ -1741,12 +1741,15 @@ def main():
     print("1. Play Singleplayer")
     print("2. Host LAN Game")
     print("3. Join LAN Game")
+    print("4. Exit")
     
-    choice = input("\nSelect option (1-3): ").strip()
+    choice = input("\nSelect option (1-4): ").strip()
     
     mode = "single"
     if choice == "2": mode = "host"
     elif choice == "3": mode = "join"
+    elif choice == "4":
+        return
     
     world_name = "world1"
     if mode != "join":
