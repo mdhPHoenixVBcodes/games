@@ -2855,11 +2855,16 @@ def main():
             mode_names = ["FRONT (LEG)", "FRONT (HEAD)", "DOWN (TOWER)", "UP", "MINING (BOTH)"]
             mode_text = font.render(f"MODE: {mode_names[target_mode]} (F to Cycle)", True, COLOR_WHITE)
             screen.blit(mode_text, (20, 85))
+
+            # --- Draw Coordinates ---
+            cx, cy = player.rect.centerx // TILE_SIZE, player.rect.centery // TILE_SIZE
+            coord_text = font.render(f"X: {cx}, Y: {cy}", True, COLOR_WHITE)
+            screen.blit(coord_text, (SCREEN_WIDTH - coord_text.get_width() - 20, 20))
             
             # --- Save Message ---
             if save_msg_timer > 0:
                 msg = font.render(save_msg_text, True, (100, 255, 100))
-                screen.blit(msg, (SCREEN_WIDTH - 120, 20))
+                screen.blit(msg, (SCREEN_WIDTH - msg.get_width() - 20, 45))
                 save_msg_timer -= 1
             
             # --- Draw Hotbar ---
