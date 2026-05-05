@@ -11,6 +11,7 @@ enemies = []
 cannons = []
 cannon_spheres = []
 level_6_pillars = []
+level_6_sphere_drop = None
 
 
 def get_active_party_targets():
@@ -47,6 +48,13 @@ def clear_level_6_pillars():
     level_6_pillars.clear()
 
 
+def clear_level_6_sphere_drop():
+    global level_6_sphere_drop
+    if level_6_sphere_drop is not None:
+        destroy(level_6_sphere_drop)
+        level_6_sphere_drop = None
+
+
 def spawn_level_6_sphere_enemy(position):
     from adventure_entities import SphereEnemy
 
@@ -63,6 +71,22 @@ def spawn_level_6_sphere_enemy(position):
     sphere_enemy = SphereEnemy(target=player, spawn_pos=position)
     enemies.append(sphere_enemy)
     return sphere_enemy
+
+
+def spawn_level_6_sphere_drop(position):
+    global level_6_sphere_drop
+    from adventure_entities import SphereDrop
+
+    if level_6_sphere_drop is not None:
+        return level_6_sphere_drop
+
+    level_6_sphere_drop = SphereDrop(position=position)
+    if player is not None:
+        player.level_6_drop_spawned = True
+        player.level_6_drop_x = position[0]
+        player.level_6_drop_y = position[1]
+        player.level_6_drop_z = position[2]
+    return level_6_sphere_drop
 
 
 def resolve_level_6_pillar_collision(entity, previous_position):

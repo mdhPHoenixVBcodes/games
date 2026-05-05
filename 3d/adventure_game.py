@@ -7,25 +7,6 @@ import adventure_state as state
 import adventure_entities as ent
 import adventure_world as world
 
-def craft_health_potion():
-    # Temporary inventory just in case you haven't picked up items yet
-    if not hasattr(state, 'player_inventory'):
-        state.player_inventory = {"Herb": 5, "Water": 2, "Scrap Metal": 5, "Energy Core": 1}
-    
-    # Calls the state file to craft it
-    success, msg = state.craft_item(state.player_inventory, "Health Potion")
-    print("CRAFTING:", msg) # Prints safely to console without freezing
-
-# Button to craft
-Button(parent=crafting_menu, text="Craft Health Potion\n(2 Herb, 1 Water)", scale=(0.4, 0.12), position=(0, 0), color=color.azure, on_click=craft_health_potion)
-
-def close_menu():
-    crafting_menu.enabled = False
-    mouse.locked = True
-
-# Button to close
-Button(parent=crafting_menu, text="Close Menu", scale=(0.2, 0.08), position=(0, -0.2), color=color.red, on_click=close_menu)
-
 class ThirdPersonPlayer(Entity):
     def __init__(self):
         super().__init__(model='cube', color=color.azure, scale=(1, 2, 1), position=(0, 1, 0), collider='box')
@@ -55,8 +36,14 @@ class ThirdPersonPlayer(Entity):
         self.level_5_portal_open = False
         self.level_5_cleared = False
         self.level_6_portal_open = False
+        self.level_6_return_portal_open = False
+        self.level_6_drop_spawned = False
+        self.level_6_drop_x = 0
+        self.level_6_drop_y = 0
+        self.level_6_drop_z = 0
         self.level_6_broadcast_shown = False
         self.teammate_unlocked = False
+        self.archer_respawn_timer = 0.0
 
         self.max_hp = 100
         self.hp = self.max_hp
@@ -139,6 +126,30 @@ class ThirdPersonPlayer(Entity):
         elif self.spawn_point == (0, 1, 0):
             self.mission_ui.text = f'Defeat enemies: {self.enemies_killed} / {self.mission_target}'
 
+    def open_level_6_return_portal(self, position):
+        self.level_6_return_portal_open = True
+        self.level_6_drop_spawned = False
+        self.level_6_drop_x = position[0]
+        self.level_6_drop_y = position[1]
+        self.level_6_drop_z = position[2]
+
+        ent.portal.position = (position[0], 1.5, position[2])
+        ent.portal.y = 1.5
+        ent.portal.enabled = True
+
+        self.mission_ui.text = 'Return portal open!'
+        self.mission_ui.color = color.cyan
+        ent.manager.dialogue_ui.text = 'Manager: Retrn t back, i have a frend here t help'
+        ent.manager.dialogue_ui.enabled = True
+        ent.manager.exclamation.enabled = False
+        invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+
+    def collect_level_6_sphere_drop(self, position):
+        if self.level_6_return_portal_open:
+            return
+
+        self.open_level_6_return_portal(position)
+
     def enter_portal(self):
         self.is_teleporting = True
         ent.portal.enabled = False
@@ -185,6 +196,7 @@ class ThirdPersonPlayer(Entity):
             destroy(s)
         state.cannon_spheres.clear()
         state.clear_level_6_pillars()
+        state.clear_level_6_sphere_drop()
 
     def disable_all_portals(self):
         ent.portal.enabled = False
@@ -367,6 +379,9 @@ class ThirdPersonPlayer(Entity):
         self.position = self.spawn_point
         self.y_velocity = 0
         self.grounded = True
+        self.level_6_return_portal_open = False
+        self.level_6_drop_spawned = False
+        state.clear_level_6_sphere_drop()
         self.setup_level_6_arena()
 
         if self.teammate_unlocked:
@@ -432,6 +447,11 @@ class ThirdPersonPlayer(Entity):
             self.level_5_portal_open = False
             self.level_5_cleared = False
             self.level_6_portal_open = False
+            self.level_6_return_portal_open = False
+            self.level_6_drop_spawned = False
+            self.level_6_drop_x = 0
+            self.level_6_drop_y = 0
+            self.level_6_drop_z = 0
             self.level_6_broadcast_shown = False
             self.crosshair.enabled = False
             self.bow_icon.enabled = False
@@ -486,6 +506,21 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Defeat the boss!'
                 self.mission_ui.color = color.white
             self.crosshair.enabled = True
+        elif self.spawn_point == (4000, 2, 2230):
+            self.level_3_phase = 0
+            self.setup_level_6_arena()
+            self.crosshair.enabled = True
+            if self.level_6_return_portal_open:
+                ent.portal.y = 1.5
+                ent.portal.enabled = True
+                self.mission_ui.text = 'Return portal open!'
+                self.mission_ui.color = color.cyan
+            elif self.level_6_drop_spawned:
+                state.spawn_level_6_sphere_drop((self.level_6_drop_x, self.level_6_drop_y, self.level_6_drop_z))
+                self.mission_ui.text = 'Collect the cube!'
+                self.mission_ui.color = color.yellow
+            else:
+                ent.portal.enabled = False
 
     def update(self):
         if self.is_teleporting:
@@ -611,6 +646,21 @@ class ThirdPersonPlayer(Entity):
             self.save_game()
             self.autosave_timer = self.autosave_interval
 
+        # Archer respawn countdown
+        if self.teammate_unlocked and state.archer_companion is None and self.archer_respawn_timer > 0:
+            self.archer_respawn_timer -= time.dt
+            secs_left = int(self.archer_respawn_timer) + 1
+            self.mission_ui.text = f'Archer KO! Respawning in {secs_left}s...'
+            self.mission_ui.color = color.orange
+            if self.archer_respawn_timer <= 0:
+                companion = state.spawn_archer_companion()
+                companion.position = self.position + self.right * 2
+                companion.hp = companion.max_hp
+                companion.health_bar.scale_x = 1.2
+                self.mission_ui.text = 'Archer respawned!'
+                self.mission_ui.color = color.green
+                invoke(setattr, self.mission_ui, 'color', color.yellow, delay=3.0)
+
         # Update HUD
         if self.has_bow:
             self.bow_icon.enabled = True
@@ -732,6 +782,11 @@ class ThirdPersonPlayer(Entity):
             'level_5_portal_open': self.level_5_portal_open,
             'level_5_cleared': self.level_5_cleared,
             'level_6_portal_open': self.level_6_portal_open,
+            'level_6_return_portal_open': self.level_6_return_portal_open,
+            'level_6_drop_spawned': self.level_6_drop_spawned,
+            'level_6_drop_x': self.level_6_drop_x,
+            'level_6_drop_y': self.level_6_drop_y,
+            'level_6_drop_z': self.level_6_drop_z,
             'level_6_broadcast_shown': self.level_6_broadcast_shown,
             'teammate_unlocked': self.teammate_unlocked,
             'teammate_hp': getattr(state.archer_companion, 'hp', 150),
@@ -798,6 +853,11 @@ class ThirdPersonPlayer(Entity):
         self.level_5_portal_open = save_data.get('level_5_portal_open', False)
         self.level_5_cleared = save_data.get('level_5_cleared', False)
         self.level_6_portal_open = save_data.get('level_6_portal_open', False)
+        self.level_6_return_portal_open = save_data.get('level_6_return_portal_open', False)
+        self.level_6_drop_spawned = save_data.get('level_6_drop_spawned', False)
+        self.level_6_drop_x = save_data.get('level_6_drop_x', 0)
+        self.level_6_drop_y = save_data.get('level_6_drop_y', 0)
+        self.level_6_drop_z = save_data.get('level_6_drop_z', 0)
         self.level_6_broadcast_shown = save_data.get('level_6_broadcast_shown', False)
         self.teammate_unlocked = save_data.get('teammate_unlocked', False)
         world.level_3_door.y = save_data.get('door_y', 5)
@@ -885,8 +945,18 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Defeat the boss!'
                 self.mission_ui.color = color.white
         elif self.spawn_point == (4000, 2, 2230):
-            self.mission_ui.text = 'Investigate a pillar'
-            self.mission_ui.color = color.gray
+            self.setup_level_6_arena()
+            self.crosshair.enabled = True
+            if self.level_6_return_portal_open:
+                ent.portal.enabled = True
+                self.mission_ui.text = 'Return portal open!'
+                self.mission_ui.color = color.cyan
+            elif self.level_6_drop_spawned:
+                state.spawn_level_6_sphere_drop((self.level_6_drop_x, self.level_6_drop_y, self.level_6_drop_z))
+                self.mission_ui.text = 'Collect the cube!'
+                self.mission_ui.color = color.yellow
+            else:
+                ent.portal.enabled = False
 
         self.y_velocity = 0
         self.crosshair.position = (0, 0) if self.level_5_cleared else (0, 0.19)

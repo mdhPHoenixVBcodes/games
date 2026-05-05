@@ -1,5 +1,6 @@
 from ursina import *
 from pathlib import Path
+import math
 import random
 
 import adventure_state as state
@@ -232,6 +233,11 @@ class ArcherCompanion(Entity):
         self.color = color.white
         invoke(setattr, self, 'color', color.azure, delay=0.1)
         if self.hp <= 0:
+            # Notify player to start respawn timer, then destroy
+            if hasattr(state.player, 'archer_respawn_timer'):
+                state.player.archer_respawn_timer = 30.0
+                state.player.mission_ui.text = 'Archer KO! Respawning in 30s...'
+                state.player.mission_ui.color = color.orange
             state.dismiss_archer_companion()
 
     def update(self):
@@ -258,7 +264,7 @@ class ArcherCompanion(Entity):
             target = min(state.enemies, key=lambda enemy: distance(self.position, enemy.position))
             if distance(self.position, target.position) <= self.attack_range:
                 self.look_at(target.position + (0, 0.5, 0))
-                Arrow(position=self.position + self.forward * 1.3 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward, hit_party=True, hit_enemies=False, hit_cannons=False, hit_spheres=False)
+                Arrow(position=self.position + self.forward * 1.3 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True)
                 self.attack_cooldown = 0.9
 
 
@@ -337,8 +343,11 @@ class SphereEnemy(Entity):
         self.color = color.white
         invoke(setattr, self, 'color', color.red, delay=0.1)
         if self.hp <= 0:
+            drop_position = self.position + (0, 0.6, 0)
             if self in state.enemies:
                 state.enemies.remove(self)
+            if getattr(state.player, 'current_level', None) == 6 and state.level_6_sphere_drop is None:
+                state.spawn_level_6_sphere_drop(drop_position)
             destroy(self)
 
     def update(self):
@@ -357,6 +366,34 @@ class SphereEnemy(Entity):
             self.look_at(target.position + (0, 0.5, 0))
             Arrow(position=self.position + self.forward * 1.2 + (0, 0.9, 0), rotation=self.rotation, direction=self.forward, hit_party=True, hit_enemies=False, hit_cannons=False, hit_spheres=False)
             self.attack_cooldown = 1.1
+
+
+class SphereDrop(Entity):
+    def __init__(self, position):
+        super().__init__(
+            model='cube',
+            color=color.gold,
+            scale=0.7,
+            position=position,
+            collider='box'
+        )
+        self.base_y = self.y
+        self.spin_speed = random.uniform(90, 140)
+        self.float_phase = random.uniform(0, 6.28)
+        self.float_timer = 0
+        self.pickup_range = 2.2
+
+    def update(self):
+        if state.player is None or state.player.is_teleporting:
+            return
+
+        self.rotation_y += self.spin_speed * time.dt
+        self.float_timer += time.dt * 2.5
+        self.y = self.base_y + math.sin(self.float_timer + self.float_phase) * 0.15
+
+        if distance(self.position, state.player.position) <= self.pickup_range:
+            state.player.collect_level_6_sphere_drop(self.position)
+            state.clear_level_6_sphere_drop()
 
 
 class BossCube(Entity):
