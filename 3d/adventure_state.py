@@ -6,6 +6,7 @@ SAVE_FILE = Path(__file__).with_name('savegame.json')
 
 player = None
 archer_companion = None
+scientist_npc = None
 
 enemies = []
 cannons = []
@@ -39,6 +40,21 @@ def spawn_archer_companion():
         from adventure_entities import ArcherCompanion
         archer_companion = ArcherCompanion()
     return archer_companion
+
+
+def spawn_scientist():
+    global scientist_npc
+    if scientist_npc is None:
+        from adventure_entities import Scientist
+        scientist_npc = Scientist()
+    return scientist_npc
+
+
+def dismiss_scientist():
+    global scientist_npc
+    if scientist_npc is not None:
+        destroy(scientist_npc)
+        scientist_npc = None
 
 
 def clear_level_6_pillars():

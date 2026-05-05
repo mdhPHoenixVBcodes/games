@@ -43,6 +43,17 @@ class Manager(Entity):
 manager = Manager()
 
 
+class Scientist(Entity):
+    def __init__(self):
+        super().__init__(model='sphere', color=color.azure, scale=(2, 4, 2), position=(3992, 1, 2238), collider='box')
+        self.name_label = Text(parent=self, text='Scientist', scale=10, color=color.azure, position=(0, 1), billboard=True, origin=(0, 0))
+        self.exclamation = Text(parent=self, text='!', scale=50, color=color.yellow, position=(0, 1.2), billboard=True, origin=(0, 0))
+        self.dialogue_ui = Text(text="Scientist: ...", position=(0, -0.35), origin=(0, 0), scale=2, color=color.white, background=True, enabled=False)
+
+
+scientist = None
+
+
 class Cannon(Entity):
     def __init__(self, position):
         super().__init__(model='cube', color=color.red, scale=(2, 2, 2), position=position, collider='box')

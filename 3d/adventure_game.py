@@ -44,6 +44,10 @@ class ThirdPersonPlayer(Entity):
         self.level_6_return_portal_x = 0
         self.level_6_return_portal_y = 1.5
         self.level_6_return_portal_z = 0
+        self.scientist_spawned = False
+        self.scientist_x = 0
+        self.scientist_y = 1
+        self.scientist_z = 0
         self.level_6_broadcast_shown = False
         self.teammate_unlocked = False
         self.archer_respawn_timer = 0.0
@@ -151,6 +155,16 @@ class ThirdPersonPlayer(Entity):
         ent.manager.dialogue_ui.enabled = True
         ent.manager.exclamation.enabled = False
         invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+
+        scientist = state.spawn_scientist()
+        scientist.position = self.position + self.right * 4
+        scientist.y = 1.0
+        scientist.exclamation.enabled = True
+        scientist.dialogue_ui.text = 'Scientist: I am here to help.'
+        self.scientist_spawned = True
+        self.scientist_x = scientist.x
+        self.scientist_y = scientist.y
+        self.scientist_z = scientist.z
 
     def collect_level_6_sphere_drop(self, position):
         if self.level_6_return_portal_open:
@@ -460,6 +474,8 @@ class ThirdPersonPlayer(Entity):
             self.level_6_drop_x = 0
             self.level_6_drop_y = 0
             self.level_6_drop_z = 0
+            self.scientist_spawned = False
+            state.dismiss_scientist()
             self.level_6_broadcast_shown = False
             self.crosshair.enabled = False
             self.bow_icon.enabled = False
@@ -524,6 +540,9 @@ class ThirdPersonPlayer(Entity):
                 ent.portal.enabled = True
                 self.mission_ui.text = 'Return portal open!'
                 self.mission_ui.color = color.cyan
+                scientist = state.spawn_scientist()
+                scientist.position = (self.scientist_x, self.scientist_y, self.scientist_z)
+                scientist.exclamation.enabled = True
             elif self.level_6_drop_spawned:
                 state.spawn_level_6_sphere_drop((self.level_6_drop_x, self.level_6_drop_y, self.level_6_drop_z))
                 self.mission_ui.text = 'Collect the cube!'
@@ -795,6 +814,10 @@ class ThirdPersonPlayer(Entity):
             'level_6_return_portal_x': self.level_6_return_portal_x,
             'level_6_return_portal_y': self.level_6_return_portal_y,
             'level_6_return_portal_z': self.level_6_return_portal_z,
+            'scientist_spawned': self.scientist_spawned,
+            'scientist_x': self.scientist_x,
+            'scientist_y': self.scientist_y,
+            'scientist_z': self.scientist_z,
             'level_6_drop_spawned': self.level_6_drop_spawned,
             'level_6_drop_x': self.level_6_drop_x,
             'level_6_drop_y': self.level_6_drop_y,
@@ -869,6 +892,10 @@ class ThirdPersonPlayer(Entity):
         self.level_6_return_portal_x = save_data.get('level_6_return_portal_x', 0)
         self.level_6_return_portal_y = save_data.get('level_6_return_portal_y', 1.5)
         self.level_6_return_portal_z = save_data.get('level_6_return_portal_z', 0)
+        self.scientist_spawned = save_data.get('scientist_spawned', False)
+        self.scientist_x = save_data.get('scientist_x', 0)
+        self.scientist_y = save_data.get('scientist_y', 1)
+        self.scientist_z = save_data.get('scientist_z', 0)
         self.level_6_drop_spawned = save_data.get('level_6_drop_spawned', False)
         self.level_6_drop_x = save_data.get('level_6_drop_x', 0)
         self.level_6_drop_y = save_data.get('level_6_drop_y', 0)
@@ -876,6 +903,12 @@ class ThirdPersonPlayer(Entity):
         self.level_6_broadcast_shown = save_data.get('level_6_broadcast_shown', False)
         self.teammate_unlocked = save_data.get('teammate_unlocked', False)
         world.level_3_door.y = save_data.get('door_y', 5)
+
+        if self.level_6_return_portal_open or self.scientist_spawned:
+            scientist = state.spawn_scientist()
+            scientist.position = (self.scientist_x, self.scientist_y, self.scientist_z)
+            scientist.exclamation.enabled = True
+            self.scientist_spawned = True
 
         if self.teammate_unlocked:
             companion = state.spawn_archer_companion()
@@ -967,6 +1000,9 @@ class ThirdPersonPlayer(Entity):
                 ent.portal.enabled = True
                 self.mission_ui.text = 'Return portal open!'
                 self.mission_ui.color = color.cyan
+                scientist = state.spawn_scientist()
+                scientist.position = (self.scientist_x, self.scientist_y, self.scientist_z)
+                scientist.exclamation.enabled = True
             elif self.level_6_drop_spawned:
                 state.spawn_level_6_sphere_drop((self.level_6_drop_x, self.level_6_drop_y, self.level_6_drop_z))
                 self.mission_ui.text = 'Collect the cube!'
