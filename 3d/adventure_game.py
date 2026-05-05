@@ -147,7 +147,7 @@ class ThirdPersonPlayer(Entity):
 
         self.mission_ui.text = 'Return portal open!'
         self.mission_ui.color = color.cyan
-        ent.manager.dialogue_ui.text = 'Manager: Retrn t back, i have a frend here t help'
+        ent.manager.dialogue_ui.text = 'Manager: Return the thing back, I have a friend here to help'
         ent.manager.dialogue_ui.enabled = True
         ent.manager.exclamation.enabled = False
         invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
