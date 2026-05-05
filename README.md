@@ -2,9 +2,9 @@
 
 Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project using ***AI*** utilizing different libraries such as `pygame`, `ursina`, and the built-in `turtle` module.
 
-```text
+
 > This text will have a line next to it and a slightly shaded background.
-```
+
 
 ## ⚙️ Requirements & Installation
 
