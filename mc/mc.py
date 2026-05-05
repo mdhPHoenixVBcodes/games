@@ -885,8 +885,12 @@ class DroppedItem:
 class Mob:
     def __init__(self, x, y, m_type="zombie"):
         self.m_type = m_type
-        # Cows are a bit wider/shorter
-        if m_type == "cow" or m_type == "sheep":
+        # Cows and sheep are a bit wider/shorter; endermen are 3 blocks tall.
+        if m_type == "enderman":
+            self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 3 - 2)
+            self.speed = 2.5
+            self.health = 30
+        elif m_type == "cow" or m_type == "sheep":
             self.rect = pygame.Rect(x, y, 32, 28)
             self.speed = 0.5
             self.health = 8 if m_type == "sheep" else 10
@@ -903,6 +907,8 @@ class Mob:
         self.hurt_timer = 0
         self.highest_y = self.rect.y
         self.is_burning = False
+        self.teleport_timer = 0
+        self.angry = False
 
     def update(self, world, player):
         if self.hurt_timer > 0: self.hurt_timer -= 1
@@ -914,6 +920,30 @@ class Mob:
                 self.vel_x = self.speed if dist_x > 0 else -self.speed
             else:
                 self.vel_x = 0
+        elif self.m_type == "enderman":
+            dist_x = player.rect.x - self.rect.x
+            if self.teleport_timer > 0:
+                self.teleport_timer -= 1
+            if not self.angry:
+                touch_x = abs(self.rect.centerx - player.rect.centerx)
+                if touch_x > WORLD_PIXELS / 2:
+                    touch_x = WORLD_PIXELS - touch_x
+                touch_y = abs(self.rect.centery - player.rect.centery)
+                if touch_x < (self.rect.width + player.rect.width) / 2 and touch_y < (self.rect.height + player.rect.height) / 2:
+                    self.angry = True
+                    self.teleport_timer = 0
+                self.vel_x = 0
+            else:
+                if abs(dist_x) > 350 and self.teleport_timer <= 0 and random.random() < 0.08:
+                    offset_x = random.choice([-180, 180])
+                    offset_y = random.randint(-20, 10)
+                    self.rect.x = (player.rect.x + offset_x) % WORLD_PIXELS
+                    self.rect.y = max(0, min((WORLD_HEIGHT - 3) * TILE_SIZE, player.rect.y + offset_y))
+                    self.teleport_timer = 90
+                elif abs(dist_x) < 700:
+                    self.vel_x = self.speed if dist_x > 0 else -self.speed
+                else:
+                    self.vel_x = 0
         else: # Cow/Sheep Wander / Follow
             slot = player.inventory[player.selected_slot] if not player.show_inventory else player.held_item
             lure_item = WHEAT_ITEM if self.m_type == "cow" else SEEDS
@@ -1017,6 +1047,15 @@ class Mob:
                 if pygame.time.get_ticks() - self.last_hit > 1000:
                     player.take_damage(2)
                     self.last_hit = pygame.time.get_ticks()
+        elif self.m_type == "enderman":
+            dist_x = abs(self.rect.centerx - player.rect.centerx)
+            if dist_x > WORLD_PIXELS / 2:
+                dist_x = WORLD_PIXELS - dist_x
+            dist_y = abs(self.rect.centery - player.rect.centery)
+            if self.angry and dist_x < 72 and dist_y < self.rect.height:
+                if pygame.time.get_ticks() - self.last_hit > 1200:
+                    player.take_damage(4)
+                    self.last_hit = pygame.time.get_ticks()
 
     def draw(self, surface, scroll_x, scroll_y):
         # Draw in all 3 wrapped positions to ensure seamless appearance
@@ -1046,6 +1085,14 @@ class Mob:
                         fx, fy = dx + random.randint(0, 16), dy + random.randint(0, 32)
                         pygame.draw.rect(surface, (255, 100, 0), (fx, fy, 8, 8))
                         pygame.draw.rect(surface, (255, 200, 0), (fx + 2, fy + 2, 4, 4))
+            elif self.m_type == "enderman":
+                color = (120, 40, 180) if self.angry else (90, 40, 120)
+                if is_hurt:
+                    color = (180, 80, 220)
+                pygame.draw.rect(surface, color, (dx, dy, self.rect.width, self.rect.height))
+                eye_color = (255, 80, 80) if self.angry else (180, 100, 255)
+                pygame.draw.rect(surface, eye_color, (dx + 3, dy + 10, 5, 5))
+                pygame.draw.rect(surface, eye_color, (dx + 16, dy + 10, 5, 5))
             elif self.m_type == "cow":
                 color = (255, 100, 100) if is_hurt else (255, 255, 255)
                 pygame.draw.rect(surface, color, (dx, dy, self.rect.width, self.rect.height))
@@ -2450,6 +2497,9 @@ def main():
                             mob.hurt_timer = 10
                             mob.vel_y = -6 # Knockback
                             mob.rect.x = (mob.rect.x + player.direction * 25) % WORLD_PIXELS
+                            if mob.m_type == "enderman":
+                                mob.angry = True
+                                mob.teleport_timer = 0
                             hit_any = True
 
                 # Combat with Remote Players (PvP)
@@ -2488,6 +2538,10 @@ def main():
             if (t > 14000 or t < 1000) and len([m for m in world.mobs if m.m_type == "zombie"]) < 6:
                 if random.random() < 0.005:
                     world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "zombie"))
+            # Endermen at Night
+            if (t > 14000 or t < 1000) and len([m for m in world.mobs if m.m_type == "enderman"]) < 2:
+                if random.random() < 0.0025:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-350, 350])) % WORLD_PIXELS, 50, "enderman"))
             # Cows during Day
             if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "cow"]) < 4:
                 if random.random() < 0.003:
