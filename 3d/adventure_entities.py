@@ -355,7 +355,7 @@ class SphereEnemy(Entity):
             self.position += self.forward * self.speed * time.dt
         elif self.attack_cooldown <= 0:
             self.look_at(target.position + (0, 0.5, 0))
-            Arrow(position=self.position + self.forward * 1.2 + (0, 0.9, 0), rotation=self.rotation, direction=self.forward)
+            Arrow(position=self.position + self.forward * 1.2 + (0, 0.9, 0), rotation=self.rotation, direction=self.forward, hit_party=True, hit_enemies=False, hit_cannons=False, hit_spheres=False)
             self.attack_cooldown = 1.1
 
 

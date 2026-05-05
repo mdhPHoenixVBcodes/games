@@ -841,10 +841,11 @@ class World:
                 pygame.draw.line(surface, (0,0,0), (dx, dy + o), (dx + TILE_SIZE, dy + TILE_SIZE - o), 1)
 
 class DroppedItem:
-    def __init__(self, x, y, item_type, count=1):
+    def __init__(self, x, y, item_type, count=1, durability=None):
         self.rect = pygame.Rect(x, y, 16, 16)
         self.item_type = item_type
         self.count = count
+        self.durability = durability
         self.vel_y = -3
         self.vel_x = random.uniform(-1, 1)
         self.spawn_time = pygame.time.get_ticks()
@@ -1597,7 +1598,7 @@ def handle_inventory_click(player, mx, my, button, world=None):
                 if player.held_item["count"] <= 0: player.held_item = None
     elif player.held_item is not None and button == 1:
         # Clicked outside with item -> Drop it
-        drop = DroppedItem(player.rect.centerx, player.rect.centery, player.held_item["type"], player.held_item["count"])
+        drop = DroppedItem(player.rect.centerx, player.rect.centery, player.held_item["type"], player.held_item["count"], player.held_item.get("durability"))
         drop.vel_x = player.direction * 4
         drop.vel_y = -3
         world.dropped_items.append(drop)
@@ -1996,7 +1997,7 @@ def main():
                     if event.key == pygame.K_z:
                         slot = player.inventory[player.selected_slot]
                         if slot:
-                            drop = DroppedItem(player.rect.centerx, player.rect.centery, slot["type"])
+                            drop = DroppedItem(player.rect.centerx, player.rect.centery, slot["type"], 1, slot.get("durability"))
                             drop.vel_x = player.direction * 4
                             drop.vel_y = -3
                             world.dropped_items.append(drop)
@@ -2012,7 +2013,7 @@ def main():
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_z:
                     if player.held_item:
                         # Drop 1 from held item
-                        drop = DroppedItem(player.rect.centerx, player.rect.centery, player.held_item["type"], 1)
+                        drop = DroppedItem(player.rect.centerx, player.rect.centery, player.held_item["type"], 1, player.held_item.get("durability"))
                         drop.vel_x = player.direction * 4
                         drop.vel_y = -3
                         world.dropped_items.append(drop)
@@ -2153,6 +2154,10 @@ def main():
                         
                         # Durability Loss
                         if tool and tool["type"] >= 100:
+                            if "durability" not in tool:
+                                # Fallback: add durability if missing (legacy items)
+                                tool["durability"] = MAX_DURABILITY.get(tool["type"], 60)
+                            
                             tool["durability"] -= 1
                             if tool["durability"] <= 0:
                                 player.inventory[player.selected_slot] = None
@@ -2501,6 +2506,8 @@ def main():
                     for i in range(36):
                         if player.inventory[i] is None:
                             player.inventory[i] = {"type": di.item_type, "count": di.count}
+                            if hasattr(di, 'durability') and di.durability is not None:
+                                player.inventory[i]["durability"] = di.durability
                             added = True
                             break
                 if added:
