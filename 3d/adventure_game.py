@@ -51,6 +51,7 @@ class ThirdPersonPlayer(Entity):
         self.level_6_broadcast_shown = False
         self.teammate_unlocked = False
         self.archer_respawn_timer = 0.0
+        self.hub_regen_enabled = True
 
         self.max_hp = 100
         self.hp = self.max_hp
@@ -219,6 +220,7 @@ class ThirdPersonPlayer(Entity):
     def teleport_to_level_2(self):
         self.disable_all_portals()
         self.current_level = 2
+        self.hub_regen_enabled = True
         self.spawn_point = (1000, 1, 990)
         self.position = self.spawn_point
         self.y_velocity = 0
@@ -512,11 +514,19 @@ class ThirdPersonPlayer(Entity):
             self.setup_level_3_cannons()
         elif self.spawn_point == (2000, 1, 2230):
             self.level_3_phase = 0
-            self.level_3_cleared = True
-            self.level_4_portal_open = True
-            self.setup_level_4_arena()
-            self.mission_ui.text = 'Defeat the boss!'
-            self.mission_ui.color = color.red
+            self.crosshair.enabled = True
+            if self.level_4_cleared:
+                self.level_4_portal_open = True
+                self.mission_ui.text = 'Return portal open! Talk to the chef.'
+                self.mission_ui.color = color.cyan
+                ent.portal.position = self.position + (0, 0.5, 4)
+                ent.portal.enabled = True
+                ent.chef.exclamation.enabled = True
+            else:
+                self.level_4_portal_open = True
+                self.setup_level_4_arena()
+                self.mission_ui.text = 'Defeat the boss!'
+                self.mission_ui.color = color.red
             self.crosshair.enabled = True
         elif self.spawn_point == (3000, 1, 2230):
             self.level_3_phase = 0
@@ -715,7 +725,7 @@ class ThirdPersonPlayer(Entity):
         # Hub (Level 2) logic: Regeneration and safe zone music overrides
         is_hub = self.current_level == 2
         
-        if is_hub:
+        if is_hub and self.hub_regen_enabled:
             if self.hp < self.max_hp:
                 self.hp += 15 * time.dt
                 if self.hp > self.max_hp:
@@ -931,6 +941,7 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = f'Defeat enemies: {self.enemies_killed} / {self.mission_target}'
                 self.mission_ui.color = color.yellow
         elif self.spawn_point == (1000, 1, 990):
+            self.hub_regen_enabled = True
             if not self.safezone_music or not self.safezone_music.playing:
                 if self.safezone_music: self.safezone_music.stop()
                 self.safezone_music = Audio('Music/safezone.mp3', loop=True, autoplay=True, volume=0.5)
@@ -1022,6 +1033,7 @@ class ThirdPersonPlayer(Entity):
             self.load_game()
         elif key == '/':
             self.spawn_point = (0, 1, 0)
+            self.hub_regen_enabled = False
             self.reset_game_state()
         elif key == 'right mouse down':
             if self.has_bow and self.attack_cooldown <= 0:
