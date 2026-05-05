@@ -392,6 +392,8 @@ class SphereDrop(Entity):
         self.spin_speed = random.uniform(90, 140)
         self.float_phase = random.uniform(0, 6.28)
         self.float_timer = 0
+        self.fall_speed = 18
+        self.landed = False
         self.pickup_range = 2.2
 
     def update(self):
@@ -399,6 +401,18 @@ class SphereDrop(Entity):
             return
 
         self.rotation_y += self.spin_speed * time.dt
+
+        if not self.landed:
+            self.y -= self.fall_speed * time.dt
+            ground_hit = raycast(self.world_position + (0, 1, 0), direction=(0, -1, 0), distance=20, ignore=(self,))
+            if ground_hit.hit:
+                target_y = ground_hit.world_point[1] + (self.scale_y / 2)
+                if self.y <= target_y:
+                    self.y = target_y
+                    self.base_y = self.y
+                    self.landed = True
+            return
+
         self.float_timer += time.dt * 2.5
         self.y = self.base_y + math.sin(self.float_timer + self.float_phase) * 0.15
 
