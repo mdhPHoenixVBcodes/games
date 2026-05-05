@@ -95,7 +95,10 @@ class GameServer(NetworkManager):
             self.player_data[p_id] = msg.get("player_data", {})
             
             # Now send the INIT packet with their specific data
-            p_save = self.world_ref.remote_players_data.get(p_id, {})
+            p_save = self.world_ref.remote_players_data.get(p_id)
+            if not p_save:
+                p_save = msg.get("player_data", {})
+                self.world_ref.remote_players_data[p_id] = p_save # Save it immediately
             init_msg = {
                 "type": "INIT",
                 "id": p_id,
@@ -108,8 +111,10 @@ class GameServer(NetworkManager):
             return
 
         msg["id"] = client_id 
-        if msg["type"] == "POS":
-            self.player_data[client_id] = msg
+        if msg["type"] in ("POS", "SYNC"):
+            if client_id not in self.player_data:
+                self.player_data[client_id] = {}
+            self.player_data[client_id].update(msg)
         elif msg["type"] == "BLOCK":
             pos = tuple(map(int, msg["pos"].split(',')))
             if msg["b_type"] is None:

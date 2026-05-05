@@ -1813,8 +1813,20 @@ def main():
             net = mc_network.GameClient()
             if net.connect(host_ip):
                 print(f"Connected to {world_name}!")
-                # Send initial JOIN packet with persistent ID
-                net.send({"type": "JOIN", "p_id": player.persistent_id})
+                # Send initial JOIN packet with persistent ID and current data
+                net.send({
+                    "type": "JOIN", 
+                    "p_id": player.persistent_id,
+                    "player_data": {
+                        "inventory": player.inventory,
+                        "health": player.health,
+                        "hunger": player.hunger,
+                        "armor": player.armor,
+                        "offhand": getattr(player, 'offhand', None),
+                        "x": player.rect.x,
+                        "y": player.rect.y
+                    }
+                })
             else:
                 screen.fill((50, 0, 0))
                 txt = font.render(f"Failed to connect to {host_ip}", True, (255, 255, 255))
@@ -2511,6 +2523,18 @@ def main():
                     for p_id, p_data in net.player_data.items():
                         if p_id != "host":
                             world.remote_players_data[p_id] = p_data
+                elif mode == "join" and net:
+                    # Sync my own data to the host so it can be saved
+                    net.send({
+                        "type": "SYNC", 
+                        "inventory": player.inventory,
+                        "health": player.health,
+                        "hunger": player.hunger,
+                        "armor": player.armor,
+                        "offhand": getattr(player, 'offhand', None),
+                        "x": player.rect.x,
+                        "y": player.rect.y
+                    })
 
                 save_game(world, player, save_filename)
                 auto_save_timer = 0
