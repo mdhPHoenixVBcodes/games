@@ -41,6 +41,9 @@ class ThirdPersonPlayer(Entity):
         self.level_6_drop_x = 0
         self.level_6_drop_y = 0
         self.level_6_drop_z = 0
+        self.level_6_return_portal_x = 0
+        self.level_6_return_portal_y = 1.5
+        self.level_6_return_portal_z = 0
         self.level_6_broadcast_shown = False
         self.teammate_unlocked = False
         self.archer_respawn_timer = 0.0
@@ -133,9 +136,14 @@ class ThirdPersonPlayer(Entity):
         self.level_6_drop_y = position[1]
         self.level_6_drop_z = position[2]
 
-        ent.portal.position = (position[0], 1.5, position[2])
+        portal_pos = self.position + self.forward * 5
+        portal_pos.y = 1.5
+        ent.portal.position = portal_pos
         ent.portal.y = 1.5
         ent.portal.enabled = True
+        self.level_6_return_portal_x = portal_pos.x
+        self.level_6_return_portal_y = portal_pos.y
+        self.level_6_return_portal_z = portal_pos.z
 
         self.mission_ui.text = 'Return portal open!'
         self.mission_ui.color = color.cyan
@@ -511,6 +519,7 @@ class ThirdPersonPlayer(Entity):
             self.setup_level_6_arena()
             self.crosshair.enabled = True
             if self.level_6_return_portal_open:
+                ent.portal.position = (self.level_6_return_portal_x, self.level_6_return_portal_y, self.level_6_return_portal_z)
                 ent.portal.y = 1.5
                 ent.portal.enabled = True
                 self.mission_ui.text = 'Return portal open!'
@@ -783,6 +792,9 @@ class ThirdPersonPlayer(Entity):
             'level_5_cleared': self.level_5_cleared,
             'level_6_portal_open': self.level_6_portal_open,
             'level_6_return_portal_open': self.level_6_return_portal_open,
+            'level_6_return_portal_x': self.level_6_return_portal_x,
+            'level_6_return_portal_y': self.level_6_return_portal_y,
+            'level_6_return_portal_z': self.level_6_return_portal_z,
             'level_6_drop_spawned': self.level_6_drop_spawned,
             'level_6_drop_x': self.level_6_drop_x,
             'level_6_drop_y': self.level_6_drop_y,
@@ -854,6 +866,9 @@ class ThirdPersonPlayer(Entity):
         self.level_5_cleared = save_data.get('level_5_cleared', False)
         self.level_6_portal_open = save_data.get('level_6_portal_open', False)
         self.level_6_return_portal_open = save_data.get('level_6_return_portal_open', False)
+        self.level_6_return_portal_x = save_data.get('level_6_return_portal_x', 0)
+        self.level_6_return_portal_y = save_data.get('level_6_return_portal_y', 1.5)
+        self.level_6_return_portal_z = save_data.get('level_6_return_portal_z', 0)
         self.level_6_drop_spawned = save_data.get('level_6_drop_spawned', False)
         self.level_6_drop_x = save_data.get('level_6_drop_x', 0)
         self.level_6_drop_y = save_data.get('level_6_drop_y', 0)
@@ -948,6 +963,7 @@ class ThirdPersonPlayer(Entity):
             self.setup_level_6_arena()
             self.crosshair.enabled = True
             if self.level_6_return_portal_open:
+                ent.portal.position = (self.level_6_return_portal_x, self.level_6_return_portal_y, self.level_6_return_portal_z)
                 ent.portal.enabled = True
                 self.mission_ui.text = 'Return portal open!'
                 self.mission_ui.color = color.cyan
