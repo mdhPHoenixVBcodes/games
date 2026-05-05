@@ -2,6 +2,9 @@
 
 Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project using ***AI*** utilizing different libraries such as `pygame`, `ursina`, and the built-in `turtle` module.
 
+```text
+> This text will have a line next to it and a slightly shaded background.
+```
 
 ## ⚙️ Requirements & Installation
 
@@ -17,7 +20,7 @@ pip install pygame ursina
 ### 1. 3D Adventure Dungeon (`aidea.py`)
 #### ***This game is still in production so bugs may occur.***
 A multi-phase 3D action-survival game built with the `ursina` engine. Progress through different dimensions, talk to NPCs, and defeat bosses.
-* **Features:** Multiple levels (Plains, Safe Zone, Final Arena etc.), interactive NPCs, an unlockable companions, melee and ranged combat, powers, health UI, and a functioning Save/Load system.
+* **Features:** Multiple levels (Plains, Safe Zone, Final Arena etc.), interactive NPCs, unlockable companions, team up abilities, melee and ranged combat, powers, health UI, and a functioning Save/Load system.
 * **Controls:** * `W, A, S, D` - Move
   * `Space` - Jump
   * `Left Click` - Sword Attack
