@@ -61,4 +61,4 @@ A console-driven interactive drawing program using the `turtle` graphics module.
 
 ---
 Regards,
-[*mdhPHoenixVBcodes*](https://github.com/mdhPHoenixVBcodes/) and *AI* (***Gemini 3.1 and Flash***)
+[*mdhPHoenixVBcodes*](https://github.com/mdhPHoenixVBcodes/) and [*AI*](https://gemini.google.com/) (***Gemini 3.1 and Flash***)
