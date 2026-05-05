@@ -459,6 +459,7 @@ class Player:
 class World:
     def __init__(self):
         self.data = {}
+        self.block_meta = {} # (tx, ty) -> {"facing": 1 or -1}
         self.furnace_data = {} # (tx, ty) -> {"input": slot, "fuel": slot, "output": slot, "cook_time": float, "fuel_time": float}
         self.chest_data = {} # (tx, ty) -> [slots]
         self.remote_players_data = {} # persistent_id -> player_stats
@@ -636,7 +637,9 @@ class World:
                     elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
                         # Simple 2-part hitbox for stairs
                         blocks.append(pygame.Rect(bx, by + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2)) # Base
-                        blocks.append(pygame.Rect(bx, by, TILE_SIZE//2, TILE_SIZE//2)) # Top Step
+                        facing = world.block_meta.get((tx, ty), {}).get("facing", -1)
+                        step_x = bx if facing == -1 else bx + TILE_SIZE//2
+                        blocks.append(pygame.Rect(step_x, by, TILE_SIZE//2, TILE_SIZE//2)) # Top Step
                     else:
                         blocks.append(pygame.Rect(bx, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE))
         return blocks
@@ -703,9 +706,13 @@ class World:
                     elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
                         color = COLOR_PLANKS if b_type == W_STAIRS else ((100, 100, 100) if b_type == C_STAIRS else ((180, 180, 190) if b_type == SS_STAIRS else (200, 200, 220)))
                         pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
-                        pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE//2, TILE_SIZE//2))
+                        # Orientation from meta
+                        facing = world.block_meta.get((x, y), {}).get("facing", -1)
+                        step_x = draw_x if facing == -1 else draw_x + TILE_SIZE//2
+                        pygame.draw.rect(surface, color, (step_x, draw_y, TILE_SIZE//2, TILE_SIZE//2))
+                        # Outlines
                         pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2), 1)
-                        pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y, TILE_SIZE//2, TILE_SIZE//2), 1)
+                        pygame.draw.rect(surface, (0,0,0), (step_x, draw_y, TILE_SIZE//2, TILE_SIZE//2), 1)
                     elif b_type in (W_SLAB, C_SLAB, SS_SLAB, I_SLAB):
                         color = COLOR_PLANKS if b_type == W_SLAB else ((100, 100, 100) if b_type == C_SLAB else ((180, 180, 190) if b_type == SS_SLAB else (200, 200, 220)))
                         pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
@@ -1666,6 +1673,7 @@ def update_furnaces(world):
 def save_game(world, player, filename):
     save_data = {
         "world_data": {f"{k[0]},{k[1]}": v for k, v in world.data.items()},
+        "block_meta": {f"{k[0]},{k[1]}": v for k, v in world.block_meta.items()},
         "chest_data": {f"{k[0]},{k[1]}": v for k, v in world.chest_data.items()},
         "furnace_data": {f"{k[0]},{k[1]}": v for k, v in world.furnace_data.items()},
         "time": world.time,
@@ -1690,6 +1698,7 @@ def load_game(world, player, filename):
             sd = json.load(f)
             # Restore World
             world.data = {tuple(map(int, k.split(','))): v for k, v in sd["world_data"].items()}
+            world.block_meta = {tuple(map(int, k.split(','))): v for k, v in sd.get("block_meta", {}).items()}
             world.chest_data = {tuple(map(int, k.split(','))): v for k, v in sd["chest_data"].items()}
             world.furnace_data = {tuple(map(int, k.split(','))): v for k, v in sd["furnace_data"].items()}
             world.time = sd["time"]
@@ -1871,6 +1880,15 @@ def main():
                                 new_data[(int(coords[0]), int(coords[1]))] = v
                             except: continue
                         world.data = new_data
+                        
+                        new_meta = {}
+                        for k, v in msg.get("block_meta", {}).items():
+                            try:
+                                coords = k.split(',')
+                                new_meta[(int(coords[0]), int(coords[1]))] = v
+                            except: continue
+                        world.block_meta = new_meta
+                        
                         world.time = msg.get("time", 0)
                         
                         # Restore my specific player data from host
@@ -1907,6 +1925,15 @@ def main():
                             new_data[(int(coords[0]), int(coords[1]))] = v
                         except: continue
                     world.data = new_data
+                    
+                    new_meta = {}
+                    for k, v in msg.get("block_meta", {}).items():
+                        try:
+                            coords = k.split(',')
+                            new_meta[(int(coords[0]), int(coords[1]))] = v
+                        except: continue
+                    world.block_meta = new_meta
+                    
                     world.time = msg.get("time", 0)
                     world.find_safe_spawn(player)
                     print("World Sync Complete!")
@@ -1934,8 +1961,11 @@ def main():
                     pos = tuple(map(int, msg["pos"].split(',')))
                     if msg["b_type"] is None:
                         if pos in world.data: del world.data[pos]
+                        if pos in world.block_meta: del world.block_meta[pos]
                     else:
                         world.data[pos] = msg["b_type"]
+                        if "meta" in msg and msg["meta"]:
+                            world.block_meta[pos] = msg["meta"]
                 elif msg["type"] == "QUIT":
                     p_id = msg["id"]
                     if p_id in remote_players: del remote_players[p_id]
@@ -2146,6 +2176,7 @@ def main():
                             for pos in to_remove:
                                 if pos in world.data:
                                     del world.data[pos]
+                                    if pos in world.block_meta: del world.block_meta[pos]
                                     if net:
                                         net.send({"type": "BLOCK", "pos": f"{pos[0]},{pos[1]}", "b_type": None})
                             
@@ -2336,8 +2367,11 @@ def main():
                         p_placement_rect.x %= WORLD_PIXELS
                         if not p_placement_rect.colliderect(tr): 
                             world.data[(tx, ty)] = slot["type"]
+                            if slot["type"] in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
+                                world.block_meta[(tx, ty)] = {"facing": player.direction}
+                            
                             if net:
-                                net.send({"type": "BLOCK", "pos": f"{tx},{ty}", "b_type": slot["type"]})
+                                net.send({"type": "BLOCK", "pos": f"{tx},{ty}", "b_type": slot["type"], "meta": world.block_meta.get((tx, ty))})
                             if slot["type"] == CHEST:
                                 # New chest placed - check if it merges with a neighbor
                                 if (tx-1, ty) in world.data and world.data[(tx-1, ty)] == CHEST:

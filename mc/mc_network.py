@@ -100,6 +100,7 @@ class GameServer(NetworkManager):
                 "type": "INIT",
                 "id": p_id,
                 "world_data": {f"{k[0]},{k[1]}": v for k, v in self.world_ref.data.items()},
+                "block_meta": {f"{k[0]},{k[1]}": v for k, v in self.world_ref.block_meta.items()},
                 "time": self.world_ref.time,
                 "player_data": p_save # Send back their saved inventory/pos
             }
@@ -113,8 +114,11 @@ class GameServer(NetworkManager):
             pos = tuple(map(int, msg["pos"].split(',')))
             if msg["b_type"] is None:
                 if pos in self.world_ref.data: del self.world_ref.data[pos]
+                if pos in self.world_ref.block_meta: del self.world_ref.block_meta[pos]
             else:
                 self.world_ref.data[pos] = msg["b_type"]
+                if "meta" in msg and msg["meta"]:
+                    self.world_ref.block_meta[pos] = msg["meta"]
         
         # Relay to all OTHER clients
         self.broadcast(msg, exclude_conn=sender_conn)
