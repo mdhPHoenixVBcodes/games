@@ -7,6 +7,24 @@ import adventure_state as state
 import adventure_entities as ent
 import adventure_world as world
 
+def craft_health_potion():
+    # Temporary inventory just in case you haven't picked up items yet
+    if not hasattr(state, 'player_inventory'):
+        state.player_inventory = {"Herb": 5, "Water": 2, "Scrap Metal": 5, "Energy Core": 1}
+    
+    # Calls the state file to craft it
+    success, msg = state.craft_item(state.player_inventory, "Health Potion")
+    print("CRAFTING:", msg) # Prints safely to console without freezing
+
+# Button to craft
+Button(parent=crafting_menu, text="Craft Health Potion\n(2 Herb, 1 Water)", scale=(0.4, 0.12), position=(0, 0), color=color.azure, on_click=craft_health_potion)
+
+def close_menu():
+    crafting_menu.enabled = False
+    mouse.locked = True
+
+# Button to close
+Button(parent=crafting_menu, text="Close Menu", scale=(0.2, 0.08), position=(0, -0.2), color=color.red, on_click=close_menu)
 
 class ThirdPersonPlayer(Entity):
     def __init__(self):

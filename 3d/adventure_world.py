@@ -9,6 +9,15 @@ ground_2 = Entity(model='plane', color=color.brown, collider='box', scale=(100, 
 for _ in range(10):
     Entity(model='cube', color=color.yellow, position=(1000 + random.uniform(-30, 30), 1, 1000 + random.uniform(-30, 30)), scale=(2, 5, 2), collider='box')
 
+# --- CRAFTING TABLE FOR LEVEL 2 ---
+crafting_table = Entity(
+    model='cube', 
+    color=color.orange, 
+    scale=(3, 2, 3), 
+    position=(1020, 1, 1020), # Placed in Level 2 area
+    collider='box'
+)
+
 wall_height = 10
 Entity(model='cube', color=color.dark_gray, collider='box', scale=(100, wall_height, 1), position=(1000, wall_height/2, 1050))
 Entity(model='cube', color=color.dark_gray, collider='box', scale=(100, wall_height, 1), position=(1000, wall_height/2, 950))
