@@ -177,10 +177,10 @@ class ShockwaveGrenade(Entity):
 
 
 class Arrow(Entity):
-    def __init__(self, position, rotation=None, direction=None, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True):
+    def __init__(self, position, rotation=None, direction=None, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True, damage=10):
         super().__init__(model='cube', color=color.white, scale=(0.05, 0.05, 1.5), position=position, rotation=rotation or (0, 0, 0))
         self.speed = 60
-        self.damage = 10
+        self.damage = damage
         self.direction = (direction.normalized() if direction is not None else self.forward)
         self.hit_party = hit_party
         self.hit_enemies = hit_enemies
@@ -275,7 +275,7 @@ class ArcherCompanion(Entity):
             target = min(state.enemies, key=lambda enemy: distance(self.position, enemy.position))
             if distance(self.position, target.position) <= self.attack_range:
                 self.look_at(target.position + (0, 0.5, 0))
-                Arrow(position=self.position + self.forward * 1.3 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True)
+                Arrow(position=self.position + self.forward * 1.3 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True, damage=15)
                 self.attack_cooldown = 0.9
 
 
@@ -343,7 +343,7 @@ class SphereEnemy(Entity):
         self.max_hp = 120
         self.hp = self.max_hp
         self.attack_range = 22
-        self.attack_damage = 12
+        self.attack_damage = 5
         self.attack_cooldown = 0
         self.health_bar = Entity(parent=self, y=0.9, model='cube', color=color.green, scale=(1.1, 0.1, 0.1))
 
@@ -375,7 +375,7 @@ class SphereEnemy(Entity):
             self.position += self.forward * self.speed * time.dt
         elif self.attack_cooldown <= 0:
             self.look_at(target.position + (0, 0.5, 0))
-            Arrow(position=self.position + self.forward * 1.2 + (0, 0.9, 0), rotation=self.rotation, direction=self.forward, hit_party=True, hit_enemies=False, hit_cannons=False, hit_spheres=False)
+            Arrow(position=self.position + self.forward * 1.2 + (0, 0.9, 0), rotation=self.rotation, direction=self.forward, hit_party=True, hit_enemies=False, hit_cannons=False, hit_spheres=False, damage=5)
             self.attack_cooldown = 1.1
 
 

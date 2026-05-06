@@ -1,5 +1,6 @@
 from ursina import *
 import random
+import os
 
 ground_1 = Entity(model='plane', color=color.green, collider='box', scale=(100, 1, 100), position=(0, 0, 0))
 for _ in range(15):
@@ -24,6 +25,16 @@ Entity(model='cube', color=color.dark_gray, collider='box', scale=(100, wall_hei
 Entity(model='cube', color=color.dark_gray, collider='box', scale=(1, wall_height, 100), position=(1050, wall_height/2, 1000))
 Entity(model='cube', color=color.dark_gray, collider='box', scale=(1, wall_height, 100), position=(950, wall_height/2, 1000))
 
+level_2_name_sign = Text(
+    text=os.getenv('GAME_USERNAME', 'Player'),
+    position=(1000, 6.2, 1048.5),
+    origin=(0, 0),
+    scale=2,
+    color=color.white,
+    background=True,
+    billboard=True
+)
+
 ground_3 = Entity(model='cube', color=color.dark_gray, collider='box', scale=(20, 1, 200), position=(2000, 0, 2100))
 Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 200), position=(1990, 5, 2100))
 Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 200), position=(2010, 5, 2100))
@@ -38,3 +49,4 @@ Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), positi
 
 ground_5 = Entity(model='cube', color=color.white, collider='box', scale=(100, 1, 100), position=(3000, 0, 2230))
 ground_6 = Entity(model='cube', color=color.gray, collider='box', scale=(150, 1, 150), position=(4000, 0, 2230))
+ground_7 = Entity(model='cube', color=color.gray, collider='box', scale=(150, 1, 150), position=(5000, 0, 2230))

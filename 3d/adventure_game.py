@@ -21,6 +21,7 @@ class ThirdPersonPlayer(Entity):
         self.jump_force = 12
         self.grounded = False
         self.is_teleporting = False
+        self.cannonhallway_music = None
         self.boss_music = None
         self.safezone_music = None
         self.low_health_music = Audio('Music/lowhealth.mp3', loop=True, autoplay=False)
@@ -41,6 +42,9 @@ class ThirdPersonPlayer(Entity):
         self.level_6_drop_x = 0
         self.level_6_drop_y = 0
         self.level_6_drop_z = 0
+        self.level_7_portal_open = False
+        self.level_7_cleared = False
+        self.scientist_talked = False
         self.level_6_return_portal_x = 0
         self.level_6_return_portal_y = 1.5
         self.level_6_return_portal_z = 0
@@ -50,6 +54,7 @@ class ThirdPersonPlayer(Entity):
         self.scientist_z = 0
         self.level_6_broadcast_shown = False
         self.teammate_unlocked = False
+        self.level_7_pillars = []
         self.archer_respawn_timer = 0.0
         self.hub_regen_enabled = True
 
@@ -71,6 +76,7 @@ class ThirdPersonPlayer(Entity):
         self.grenade_shockwave_radius = 7
         self.grenade_shockwave_push = 28
         self.crosshair = Text(parent=camera.ui, text='+', origin=(0, 0), position=(0, 0.19), scale=2, color=color.white, enabled=False)
+        self.name_label = Text(parent=self, text=state.player_name, position=(0, 1.8), origin=(0, 0), scale=10, color=color.white, background=False, billboard=True)
         
         # --- Ability HUD ---
         self.grenade_max_cooldown = 1.25
@@ -189,7 +195,9 @@ class ThirdPersonPlayer(Entity):
         ent.portal_4.enabled = False
         self.save_game()
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
-        if self.level_6_portal_open or (self.teammate_unlocked and self.level_5_cleared):
+        if self.level_7_portal_open:
+            invoke(self.teleport_to_level_7, delay=1.0)
+        elif self.level_6_portal_open or (self.teammate_unlocked and self.level_5_cleared):
             invoke(self.teleport_to_level_6, delay=1.0)
         elif self.level_5_cleared:
             invoke(self.teleport_to_level_2, delay=1.0)
@@ -208,8 +216,92 @@ class ThirdPersonPlayer(Entity):
         for s in state.cannon_spheres:
             destroy(s)
         state.cannon_spheres.clear()
+        for pillar in self.level_7_pillars:
+            destroy(pillar)
+        self.level_7_pillars.clear()
         state.clear_level_6_pillars()
         state.clear_level_6_sphere_drop()
+
+    def start_cannonhallway_music(self):
+        if self.cannonhallway_music and self.cannonhallway_music.playing:
+            return
+        if self.cannonhallway_music:
+            self.cannonhallway_music.stop()
+        self.cannonhallway_music = Audio('Music/cannonhallway.mp3', loop=True, autoplay=True, volume=0.55)
+
+    def stop_cannonhallway_music(self):
+        if self.cannonhallway_music:
+            self.cannonhallway_music.stop()
+
+    def resolve_level_7_pillar_collision(self, entity, previous_position):
+        if not self.level_7_pillars:
+            return
+        for pillar in self.level_7_pillars:
+            if pillar.enabled and entity.intersects(pillar).hit:
+                entity.position = previous_position
+                return
+
+    def setup_level_7_arena(self):
+        self.clear_all_entities()
+        ent.portal.enabled = False
+        world.ground_7.enabled = True
+        world.ground_7.position = (5000, 0, 2230)
+        world.ground_7.scale = (150, 1, 150)
+        world.ground_7.collider = 'box'
+
+        pillar_positions = [
+            (4968, 1, 2198),
+            (5032, 1, 2198),
+            (4968, 1, 2230),
+            (5032, 1, 2230),
+            (4968, 1, 2262),
+            (5032, 1, 2262),
+            (5000, 1, 2214),
+            (5000, 1, 2246),
+        ]
+        for pos in pillar_positions:
+            pillar_height = random.uniform(10, 22)
+            pillar = Entity(
+                model='cube',
+                color=color.azure,
+                collider='box',
+                scale=(4.5, pillar_height, 4.5),
+                position=(pos[0], pillar_height / 2, pos[2])
+            )
+            self.level_7_pillars.append(pillar)
+
+        from adventure_entities import SphereEnemy
+
+        enemy_positions = [
+            (4980, 1, 2210),
+            (5020, 1, 2210),
+            (4972, 1, 2240),
+            (5028, 1, 2240),
+            (5000, 1, 2270),
+        ]
+        for pos in enemy_positions:
+            state.enemies.append(SphereEnemy(target=self, spawn_pos=pos))
+
+    def teleport_to_level_7(self):
+        self.disable_all_portals()
+        self.current_level = 7
+        self.spawn_point = (5000, 2, 2230)
+        self.position = self.spawn_point
+        self.y_velocity = 0
+        self.grounded = True
+        self.level_7_portal_open = False
+        self.level_7_cleared = False
+        self.setup_level_7_arena()
+
+        if self.safezone_music:
+            self.safezone_music.stop()
+        self.stop_cannonhallway_music()
+
+        ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
+        invoke(setattr, self, 'is_teleporting', False, delay=1.0)
+
+        self.mission_ui.text = 'Defeat the drones!'
+        self.mission_ui.color = color.azure
 
     def disable_all_portals(self):
         ent.portal.enabled = False
@@ -230,6 +322,7 @@ class ThirdPersonPlayer(Entity):
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         if hasattr(self, 'boss_music') and self.boss_music:
             self.boss_music.stop()
+        self.stop_cannonhallway_music()
         if not hasattr(self, 'safezone_music') or not self.safezone_music or not self.safezone_music.playing:
             if hasattr(self, 'safezone_music') and self.safezone_music: self.safezone_music.stop()
             self.safezone_music = Audio('Music/safezone.mp3', loop=True, autoplay=True, volume=0.5)
@@ -241,6 +334,18 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
             self.crosshair.enabled = False
+        elif self.level_7_cleared:
+            self.mission_ui.text = 'Level 7 cleared!'
+            self.mission_ui.color = color.azure
+            self.crosshair.enabled = True
+        elif self.level_7_portal_open:
+            self.mission_ui.text = 'Enter Level 7!'
+            self.mission_ui.color = color.magenta
+            self.crosshair.enabled = True
+        elif self.scientist_talked:
+            self.mission_ui.text = 'Talk to the Manager'
+            self.mission_ui.color = color.yellow
+            self.crosshair.enabled = True
         elif not self.level_3_cleared:
             self.mission_ui.text = 'Talk to the Manager'
             self.mission_ui.color = color.yellow
@@ -252,6 +357,10 @@ class ThirdPersonPlayer(Entity):
         elif self.level_4_cleared and not self.has_grenade:
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
+            self.crosshair.enabled = True
+        elif self.level_6_return_portal_open or self.scientist_spawned:
+            self.mission_ui.text = 'Talk to scientist'
+            self.mission_ui.color = color.white
             self.crosshair.enabled = True
         elif self.level_5_cleared:
             if self.teammate_unlocked:
@@ -324,6 +433,7 @@ class ThirdPersonPlayer(Entity):
         
         if self.safezone_music:
             self.safezone_music.stop()
+        self.start_cannonhallway_music()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -342,6 +452,7 @@ class ThirdPersonPlayer(Entity):
         
         if self.safezone_music:
             self.safezone_music.stop()
+        self.start_cannonhallway_music()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -360,6 +471,7 @@ class ThirdPersonPlayer(Entity):
         self.level_5_cleared = False
         world.ground_4.color = color.dark_gray
         self.setup_level_5_arena()
+        self.stop_cannonhallway_music()
         
         if self.safezone_music:
             self.safezone_music.stop()
@@ -382,6 +494,7 @@ class ThirdPersonPlayer(Entity):
         world.ground_6.position = (4000, 0, 2230)
         world.ground_6.scale = (150, 1, 150)
         world.ground_6.collider = 'box'
+        self.stop_cannonhallway_music()
         for _ in range(18):
             pillar_x = random.uniform(3930, 4070)
             pillar_z = random.uniform(2160, 2300)
@@ -450,6 +563,7 @@ class ThirdPersonPlayer(Entity):
             self.boss_music.stop()
         if hasattr(self, 'safezone_music') and self.safezone_music:
             self.safezone_music.stop()
+        self.stop_cannonhallway_music()
         if hasattr(self, 'low_health_music') and self.low_health_music:
             self.low_health_music.stop()
             
@@ -476,6 +590,9 @@ class ThirdPersonPlayer(Entity):
             self.level_6_drop_x = 0
             self.level_6_drop_y = 0
             self.level_6_drop_z = 0
+            self.level_7_portal_open = False
+            self.level_7_cleared = False
+            self.scientist_talked = False
             self.scientist_spawned = False
             state.dismiss_scientist()
             self.level_6_broadcast_shown = False
@@ -490,6 +607,22 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = False
+            elif self.level_7_cleared:
+                self.mission_ui.text = 'Level 7 cleared!'
+                self.mission_ui.color = color.azure
+                self.crosshair.enabled = True
+            elif self.level_7_portal_open:
+                self.mission_ui.text = 'Enter Level 7!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
+            elif self.scientist_talked:
+                self.mission_ui.text = 'Talk to the Manager'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
+            elif self.level_6_return_portal_open or self.scientist_spawned:
+                self.mission_ui.text = 'Talk to scientist'
+                self.mission_ui.color = color.white
+                self.crosshair.enabled = True
             elif self.level_5_portal_open:
                 self.mission_ui.text = 'Enter the portal!'
                 self.mission_ui.color = color.magenta
@@ -512,6 +645,7 @@ class ThirdPersonPlayer(Entity):
             self.crosshair.enabled = True
             self.level_3_phase = 1
             self.setup_level_3_cannons()
+            self.start_cannonhallway_music()
         elif self.spawn_point == (2000, 1, 2230):
             self.level_3_phase = 0
             self.crosshair.enabled = True
@@ -527,11 +661,13 @@ class ThirdPersonPlayer(Entity):
                 self.setup_level_4_arena()
                 self.mission_ui.text = 'Defeat the boss!'
                 self.mission_ui.color = color.red
+            self.start_cannonhallway_music()
             self.crosshair.enabled = True
         elif self.spawn_point == (3000, 1, 2230):
             self.level_3_phase = 0
             self.level_5_portal_open = True
             self.setup_level_5_arena()
+            self.stop_cannonhallway_music()
             if self.level_5_cleared:
                 self.mission_ui.text = 'Boss defeated! Return portal open.'
                 self.mission_ui.color = color.cyan
@@ -556,6 +692,9 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.color = color.yellow
             else:
                 ent.portal.enabled = False
+
+        if self.spawn_point not in ((2000, 1, 2010), (2000, 1, 2230)):
+            self.stop_cannonhallway_music()
 
     def update(self):
         if self.is_teleporting:
@@ -612,6 +751,15 @@ class ThirdPersonPlayer(Entity):
                 self.boss_music.fade_out(duration=2)
             self.crosshair.position = (0, 0)
 
+        if self.current_level == 7 and not self.level_7_cleared and len(state.enemies) == 0:
+            self.level_7_cleared = True
+            self.level_7_portal_open = False
+            self.mission_ui.text = 'Return portal open!'
+            self.mission_ui.color = color.cyan
+            ent.portal.position = self.position + self.forward * 4
+            ent.portal.y = 1.5
+            ent.portal.enabled = True
+
         if self.spawn_point == (0, 1, 0) or (self.level_3_phase == 2 and len(state.cannons) > 0):
             self.spawn_timer -= time.dt
             if self.spawn_timer <= 0:
@@ -643,6 +791,8 @@ class ThirdPersonPlayer(Entity):
             self.position += direction * current_speed * time.dt
         if self.spawn_point == (4000, 2, 2230) or self.level_6_portal_open:
             state.resolve_level_6_pillar_collision(self, previous_position)
+        if self.current_level == 7:
+            self.resolve_level_7_pillar_collision(self, previous_position)
 
         ray = raycast(self.position, direction=(0, -1, 0), ignore=(self,), distance=1.1)
         if ray.hit and self.y_velocity <= 0:
@@ -733,16 +883,22 @@ class ThirdPersonPlayer(Entity):
                 self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
         
         # Low Health Music Management
+        in_cannonhallway_area = self.current_level in (3, 4)
         should_play_low_health = self.hp > 0 and self.hp <= 35 and not is_hub
         
         if should_play_low_health:
             self.health_ui.color = color.red
+            self.stop_cannonhallway_music()
             if self.low_health_music and not self.low_health_music.playing:
                 self.low_health_music.play()
         else:
             self.health_ui.color = color.white
             if self.low_health_music and self.low_health_music.playing:
                 self.low_health_music.stop()
+            if in_cannonhallway_area:
+                self.start_cannonhallway_music()
+            else:
+                self.stop_cannonhallway_music()
 
     def perform_dash(self):
         self.dash_cooldown = self.dash_max_cooldown
@@ -831,6 +987,9 @@ class ThirdPersonPlayer(Entity):
             'level_6_drop_z': self.level_6_drop_z,
             'level_6_broadcast_shown': self.level_6_broadcast_shown,
             'teammate_unlocked': self.teammate_unlocked,
+            'level_7_portal_open': self.level_7_portal_open,
+            'level_7_cleared': self.level_7_cleared,
+            'scientist_talked': self.scientist_talked,
             'teammate_hp': getattr(state.archer_companion, 'hp', 150),
             'teammate_x': getattr(state.archer_companion, 'x', self.x),
             'teammate_y': getattr(state.archer_companion, 'y', self.y),
@@ -909,6 +1068,9 @@ class ThirdPersonPlayer(Entity):
         self.level_6_drop_z = save_data.get('level_6_drop_z', 0)
         self.level_6_broadcast_shown = save_data.get('level_6_broadcast_shown', False)
         self.teammate_unlocked = save_data.get('teammate_unlocked', False)
+        self.level_7_portal_open = save_data.get('level_7_portal_open', False)
+        self.level_7_cleared = save_data.get('level_7_cleared', False)
+        self.scientist_talked = save_data.get('scientist_talked', False)
         world.level_3_door.y = save_data.get('door_y', 5)
 
         if self.spawn_point == (1000, 1, 990) and (self.level_6_return_portal_open or self.scientist_spawned):
@@ -950,6 +1112,18 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = False
+            elif self.level_7_cleared:
+                self.mission_ui.text = 'Level 7 cleared!'
+                self.mission_ui.color = color.azure
+                self.crosshair.enabled = True
+            elif self.level_7_portal_open:
+                self.mission_ui.text = 'Enter Level 7!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
+            elif self.scientist_talked:
+                self.mission_ui.text = 'Talk to the Manager'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
             elif not self.level_3_cleared:
                 self.mission_ui.text = 'Talk to the Manager'
                 self.mission_ui.color = color.yellow
@@ -961,6 +1135,10 @@ class ThirdPersonPlayer(Entity):
             elif self.level_4_cleared and not self.has_grenade:
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
+                self.crosshair.enabled = True
+            elif self.level_6_return_portal_open or self.scientist_spawned:
+                self.mission_ui.text = 'Talk to scientist'
+                self.mission_ui.color = color.white
                 self.crosshair.enabled = True
             elif self.level_5_cleared:
                 if self.teammate_unlocked:
@@ -1004,6 +1182,18 @@ class ThirdPersonPlayer(Entity):
             else:
                 self.mission_ui.text = 'Defeat the boss!'
                 self.mission_ui.color = color.white
+        elif self.spawn_point == (5000, 2, 2230):
+            self.setup_level_7_arena()
+            self.crosshair.enabled = True
+            if self.level_7_cleared:
+                ent.portal.position = self.position + self.forward * 4
+                ent.portal.y = 1.5
+                ent.portal.enabled = True
+                self.mission_ui.text = 'Return portal open!'
+                self.mission_ui.color = color.cyan
+            else:
+                self.mission_ui.text = 'Defeat the drones!'
+                self.mission_ui.color = color.azure
         elif self.spawn_point == (4000, 2, 2230):
             self.setup_level_6_arena()
             self.crosshair.enabled = True
@@ -1042,6 +1232,15 @@ class ThirdPersonPlayer(Entity):
             if self.has_grenade and self.grenade_cooldown <= 0 and not self.is_teleporting:
                 self.throw_grenade()
         elif key == 'f':
+            if state.scientist_npc is not None and distance(self.position, state.scientist_npc.position) < 5.0:
+                state.scientist_npc.dialogue_ui.text = 'Scientist: I need to check this thing out. Maybe it will be useful.'
+                state.scientist_npc.dialogue_ui.enabled = True
+                state.scientist_npc.exclamation.enabled = False
+                self.scientist_talked = True
+                self.mission_ui.text = 'Talk to the Manager'
+                self.mission_ui.color = color.yellow
+                ent.manager.exclamation.enabled = True
+                invoke(setattr, state.scientist_npc.dialogue_ui, 'enabled', False, delay=4.0)
             if distance(self.position, ent.chef.position) < 5.0 and not self.has_bow:
                 ent.chef.dialogue_ui.enabled = True
                 ent.chef.exclamation.enabled = False
@@ -1094,7 +1293,13 @@ class ThirdPersonPlayer(Entity):
 
                     invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
                 else:
-                    if self.teammate_unlocked and self.level_5_cleared:
+                    if self.scientist_talked and not self.level_7_cleared:
+                        ent.manager.dialogue_ui.text = "Manager: The Level 7 arena is open."
+                        self.level_7_portal_open = True
+                        self.level_6_portal_open = False
+                        self.mission_ui.text = 'Enter Level 7!'
+                        self.mission_ui.color = color.magenta
+                    elif self.teammate_unlocked and self.level_5_cleared:
                         ent.manager.dialogue_ui.text = "Manager: Great. The Level 6 portal is open."
                         self.mission_ui.text = 'Enter Level 6!'
                         self.level_5_portal_open = False

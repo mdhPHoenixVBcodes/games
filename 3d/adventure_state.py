@@ -1,8 +1,10 @@
 from ursina import Ursina, Entity, color, destroy, distance
 from pathlib import Path
+import os
 
 app = Ursina()
 SAVE_FILE = Path(__file__).with_name('savegame.json')
+player_name = os.getenv('GAME_USERNAME', 'Player')
 
 player = None
 archer_companion = None

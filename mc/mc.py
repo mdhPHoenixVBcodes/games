@@ -138,6 +138,7 @@ DOOR_TOP = 70
 DOOR_OPEN_TOP = 71
 BED_RIGHT = 72
 COAL_BLOCK_ITEM = 73
+ENDER_PEARL = 74
 
 # Tool IDs
 W_PICK = 100; S_PICK = 101; I_PICK = 110
@@ -207,7 +208,8 @@ BLOCK_NAMES = {
     SHIELD: "Shield",
     LADDER: "Ladder",
     DIAMOND: "Diamond",
-    COAL_BLOCK_ITEM: "Coal Block"
+    COAL_BLOCK_ITEM: "Coal Block",
+    ENDER_PEARL: "Ender Pearl"
 }
 
 MAX_DURABILITY = {
@@ -269,6 +271,7 @@ class Player:
         
         self.offhand = None
         self.blocking = False
+        self.jump_attack_timer = 0
         
         self.held_item = None
         self.show_inventory = False
@@ -289,6 +292,8 @@ class Player:
         self.show_inventory = False # Ensure movement isn't locked on start
 
     def update(self, world):
+        if self.jump_attack_timer > 0:
+            self.jump_attack_timer -= 1
         # Hunger Logic
         self.hunger_timer += 1
         if self.hunger_timer >= 600: # Every 10 seconds lose some hunger
@@ -340,12 +345,13 @@ class Player:
             if (item_in_hand and item_in_hand["type"] == SHIELD) or (self.offhand and self.offhand["type"] == SHIELD):
                 self.blocking = True
                 dx *= 0.3 # Slow down while blocking
-        
+
         if keys[pygame.K_SPACE]:
             if in_water:
                 self.vel_y = -3 # Swim up
             elif self.on_ground:
                 self.vel_y = self.jump_strength
+                self.jump_attack_timer = 12
 
         self.vel_y += GRAVITY * (0.3 if in_water else 1.0)
         
@@ -424,6 +430,7 @@ class Player:
         self.hunger_timer = 0
         self.regen_timer = 0
         self.invincible_until = pygame.time.get_ticks() + 5000
+        self.jump_attack_timer = 0
 
     def take_damage(self, amount):
         if pygame.time.get_ticks() < self.invincible_until: return
@@ -465,6 +472,7 @@ class World:
         self.remote_players_data = {} # persistent_id -> player_stats
         self.mobs = []
         self.dropped_items = [] # (DroppedItem instances)
+        self.projectiles = [] # ThrownPearl instances
         self.time = 0 # 0 corresponds to 6:00 AM (Sunrise)
         self.generate_world()
 
@@ -882,6 +890,61 @@ class DroppedItem:
             float_y = dy + math.sin(pygame.time.get_ticks() * 0.005) * 3
             draw_block_icon(surface, self.item_type, dx, float_y, 16, font)
 
+class ThrownPearl:
+    def __init__(self, x, y, target_x, target_y):
+        self.x = float(x)
+        self.y = float(y)
+        self.target_x = float(target_x)
+        self.target_y = float(target_y)
+        self.speed = 14.0
+        self.rect = pygame.Rect(int(self.x) - 4, int(self.y) - 4, 8, 8)
+        self.spawn_time = pygame.time.get_ticks()
+        self.last_safe_x = self.x
+        self.last_safe_y = self.y
+
+    def _wrap_dx(self, dx):
+        if dx > WORLD_PIXELS / 2:
+            dx -= WORLD_PIXELS
+        elif dx < -WORLD_PIXELS / 2:
+            dx += WORLD_PIXELS
+        return dx
+
+    def update(self, world):
+        self.last_safe_x = self.x
+        self.last_safe_y = self.y
+
+        dx = self._wrap_dx(self.target_x - self.x)
+        dy = self.target_y - self.y
+        dist = math.hypot(dx, dy)
+
+        if dist <= self.speed or dist == 0:
+            self.x = self.target_x
+            self.y = self.target_y
+            self.rect.center = (int(self.x), int(self.y))
+            return True, (self.x, self.y)
+
+        self.x = (self.x + (dx / dist) * self.speed) % WORLD_PIXELS
+        self.y += (dy / dist) * self.speed
+        self.rect.center = (int(self.x), int(self.y))
+
+        for block_rect in world.get_surrounding_blocks(self.rect):
+            if self.rect.colliderect(block_rect):
+                return True, (self.last_safe_x, self.last_safe_y)
+
+        if self.y < 0 or self.y > WORLD_HEIGHT * TILE_SIZE or pygame.time.get_ticks() - self.spawn_time > 5000:
+            return True, (self.x, self.y)
+
+        return False, None
+
+    def draw(self, surface, scroll_x, scroll_y):
+        for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
+            dx = self.rect.centerx - int(scroll_x) + offset
+            if dx < -40 or dx > SCREEN_WIDTH + 40:
+                continue
+            dy = self.rect.centery - int(scroll_y)
+            pygame.draw.circle(surface, (90, 0, 140), (dx, dy), 5)
+            pygame.draw.circle(surface, (220, 220, 255), (dx - 1, dy - 1), 2)
+
 class Mob:
     def __init__(self, x, y, m_type="zombie"):
         self.m_type = m_type
@@ -1160,6 +1223,9 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type == COAL_BLOCK_ITEM:
         pygame.draw.rect(screen, (20, 20, 20), (x, y, size, size))
         pygame.draw.rect(screen, (60, 60, 60), (x + 2, y + 2, size - 4, size - 4), 1)
+    elif b_type == ENDER_PEARL:
+        pygame.draw.circle(screen, (70, 0, 110), (x + size // 2, y + size // 2), size // 3)
+        pygame.draw.circle(screen, (200, 170, 255), (x + size // 2 - 2, y + size // 2 - 2), size // 8)
     elif b_type == DOOR:
         pygame.draw.rect(screen, (120, 80, 40), (x + size//4, y, size//2, size))
         pygame.draw.rect(screen, (0, 0, 0), (x + size//2 + 4, y + size//2, 4, 4)) # Handle
@@ -1781,6 +1847,23 @@ def load_game(world, player, filename):
     except Exception as e:
         print(f"Load error: {e}")
 
+def teleport_player_to(world, player, x, y):
+    # Place the player at the pearl landing spot, then nudge upward if needed.
+    player.rect.centerx = int(x) % WORLD_PIXELS
+    player.rect.centery = int(y)
+    player.vel_y = 0
+    player.on_ground = False
+    player.highest_y = player.rect.y
+
+    for _ in range(12):
+        if any(player.rect.colliderect(block_rect) for block_rect in world.get_surrounding_blocks(player.rect)):
+            player.rect.y -= 4
+        else:
+            break
+
+    if any(player.rect.colliderect(block_rect) for block_rect in world.get_surrounding_blocks(player.rect)):
+        world.find_safe_spawn(player)
+
 def main():
     print("="*30)
     print("   MINECRAFT 2D - MAIN MENU")
@@ -1790,7 +1873,7 @@ def main():
     print("3. Join LAN Game")
     print("4. Exit")
     
-    choice = input("\nSelect option (1-4): ").strip()
+    choice = input("\nSelect option (1-4): ").strip() or "1"
     
     mode = "single"
     if choice == "2": mode = "host"
@@ -1798,7 +1881,7 @@ def main():
     elif choice == "4":
         return
     
-    world_name = "world1"
+    world_name = "default"
     if mode != "join":
         # List existing worlds
         saves = [f for f in os.listdir('.') if f.startswith("savegame") and f.endswith(".json")]
@@ -1811,7 +1894,7 @@ def main():
                 print(f" - {name}")
         
         print("\n(Type a world name to load, or 'create' for a new world)")
-        world_name = input("Enter world name: ").strip() or "world1"
+        world_name = input("Enter world name: ").strip() or "default"
         if world_name.lower() == "create":
             world_name = input("Enter name for new world: ").strip() or f"world_{int(time.time())}"
     else:
@@ -2263,8 +2346,21 @@ def main():
         elif m_btns[2] and now - player.last_action_time > 120:
             # --- Placing/Interacting Logic ---
             action_taken = False
-            for tx, ty in valid_targets:
-                slot = player.inventory[player.selected_slot]
+            slot = player.inventory[player.selected_slot]
+
+            # Ender Pearl: throw toward the mouse cursor and teleport on landing.
+            if slot and slot["type"] == ENDER_PEARL:
+                mx, my = pygame.mouse.get_pos()
+                target_x = (scroll_x + mx) % WORLD_PIXELS
+                target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
+                world.projectiles.append(ThrownPearl(player.rect.centerx, player.rect.centery, target_x, target_y))
+                slot["count"] -= 1
+                if slot["count"] <= 0:
+                    player.inventory[player.selected_slot] = None
+                player.last_action_time = now
+                action_taken = True
+
+            for tx, ty in ([] if action_taken else valid_targets):
                 # Eating / Drinking
                 if slot and slot["type"] in (BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON, MILK_BUCKET):
                     if slot["type"] == MILK_BUCKET or player.hunger < player.max_hunger:
@@ -2474,6 +2570,7 @@ def main():
             elif t_type in (W_PICK, S_PICK, I_PICK, D_PICK): dmg = 2 if t_type == W_PICK else (3 if t_type == S_PICK else (5 if t_type == I_PICK else 6))
             elif t_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL, D_SHOVEL): dmg = 1 if t_type == W_SHOVEL else (2 if t_type == S_SHOVEL else (4 if t_type == I_SHOVEL else 5))
             elif t_type in (W_HOE, S_HOE, I_HOE, D_HOE): dmg = 1 if t_type == W_HOE else (1 if t_type == S_HOE else (2 if t_type == I_HOE else 3))
+            crit_bonus = player.jump_attack_timer > 0 or player.vel_y != 0
 
             if now - player.last_action_time > 300:
                 # Combat with Mobs (with wrap handling)
@@ -2493,7 +2590,7 @@ def main():
                         if rel_x < -WORLD_PIXELS / 2: rel_x += WORLD_PIXELS
                         
                         if (player.direction > 0 and rel_x > 0) or (player.direction < 0 and rel_x < 0):
-                            mob.health -= dmg
+                            mob.health -= dmg * (1.5 if crit_bonus else 1.0)
                             mob.hurt_timer = 10
                             mob.vel_y = -6 # Knockback
                             mob.rect.x = (mob.rect.x + player.direction * 25) % WORLD_PIXELS
@@ -2515,7 +2612,7 @@ def main():
                             if rel_x < -WORLD_PIXELS / 2: rel_x += WORLD_PIXELS
                             
                             if (player.direction > 0 and rel_x > 0) or (player.direction < 0 and rel_x < 0):
-                                net.send({"type": "HURT", "target_id": rp_id, "dmg": dmg, "dir": player.direction})
+                                net.send({"type": "HURT", "target_id": rp_id, "dmg": dmg * (1.5 if crit_bonus else 1.0), "dir": player.direction})
                                 hit_any = True
                 
                 if hit_any:
@@ -2562,6 +2659,8 @@ def main():
                     elif mob.m_type == "zombie":
                         spawn_drop(ROTTEN_FLESH, random.randint(1, 2))
                         spawn_drop(BONE, random.randint(1, 2))
+                    elif mob.m_type == "enderman":
+                        spawn_drop(ENDER_PEARL, random.randint(1, 2))
                     elif mob.m_type == "sheep":
                         spawn_drop(WOOL, random.randint(1, 2))
                         spawn_drop(RAW_MUTTON, random.randint(1, 3))
@@ -2601,6 +2700,15 @@ def main():
                 save_msg_text = "Game Saved!"
                 
         world.draw(screen, scroll_x, scroll_y)
+
+        # Update and Draw Thrown Pearls
+        for pearl in world.projectiles[:]:
+            landed, land_pos = pearl.update(world)
+            pearl.draw(screen, scroll_x, scroll_y)
+            if landed:
+                if land_pos is not None:
+                    teleport_player_to(world, player, land_pos[0], land_pos[1])
+                world.projectiles.remove(pearl)
 
         # Update and Draw Dropped Items
         for di in world.dropped_items[:]:
