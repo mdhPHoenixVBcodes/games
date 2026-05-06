@@ -1,8 +1,14 @@
-from ursina import Ursina, Entity, color, destroy, distance
+from panda3d.core import loadPrcFileData, Filename
+from ursina import Ursina, Entity, color, destroy, distance, window
 from pathlib import Path
 import os
 
-app = Ursina()
+APP_DIR = Path(__file__).resolve().parent
+APP_ICON = Filename.fromOsSpecific(str(APP_DIR / 'Logo' / 'logo.ico'))
+loadPrcFileData('', f'icon-filename {APP_ICON}')
+
+app = Ursina(title='3D Adventure', icon=APP_ICON)
+window.title = '3D Adventure'
 SAVE_FILE = Path(__file__).with_name('savegame.json')
 player_name = os.getenv('GAME_USERNAME', 'Player')
 

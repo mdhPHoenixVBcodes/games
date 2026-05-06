@@ -3,6 +3,7 @@ import random
 import math
 import json
 import os
+from pathlib import Path
 import mc_network
 import discovery
 import time
@@ -31,6 +32,10 @@ COLOR_LEAVES_G = (34, 100, 34)
 COLOR_LEAVES_B = (50, 120, 50)
 COLOR_RED = (255, 0, 0)
 COLOR_DARK_RED = (200, 0, 0)
+
+BASE_DIR = Path(__file__).resolve().parent
+WORLDS_DIR = BASE_DIR / "worlds"
+WORLDS_DIR.mkdir(exist_ok=True)
 
 class RemotePlayer:
     def __init__(self, p_id, x, y):
@@ -229,7 +234,7 @@ PLACEABLE_BLOCKS = {
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
     LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS,
     W_SLAB, C_SLAB, SS_SLAB, I_SLAB, FARMLAND, HAY_BALE, CHEST,
-    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM
+    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT
 }
 
 class Player:
@@ -237,11 +242,12 @@ class Player:
         # Persistent ID for multiplayer saves
         self.persistent_id = "player_" + str(random.randint(1000, 9999))
         try:
-            if os.path.exists("player_id.json"):
-                with open("player_id.json", "r") as f:
+            player_id_file = WORLDS_DIR / "player_id.json"
+            if player_id_file.exists():
+                with open(player_id_file, "r") as f:
                     self.persistent_id = json.load(f).get("id", self.persistent_id)
             else:
-                with open("player_id.json", "w") as f:
+                with open(player_id_file, "w") as f:
                     json.dump({"id": self.persistent_id}, f)
         except: pass
 
@@ -328,9 +334,23 @@ class Player:
         # Boat Speed Boost
         below_x, below_y = self.rect.centerx // TILE_SIZE, (self.rect.bottom + 2) // TILE_SIZE
         speed_mult = 1.0
-        if (below_x, below_y) in world.data and world.data[(below_x, below_y)] == BOAT:
+        on_boat = (below_x, below_y) in world.data and world.data[(below_x, below_y)] == BOAT
+        if on_boat:
             speed_mult = 2.5 # Fast boat travel
-        
+        if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:
+            speed_mult *= 2.0 # Sprint
+        sprinting = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
+
+        if on_boat and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]):
+            exit_dx = 1 if self.direction > 0 else -1
+            exit_x = (below_x + exit_dx) % WORLD_WIDTH
+            self.rect.x = exit_x * TILE_SIZE
+            world.find_safe_spawn(self)
+            self.vel_y = 0
+            self.on_ground = False
+            self.highest_y = self.rect.y
+            return
+
         if keys[pygame.K_a]:
             dx -= self.speed * (0.5 if in_water else speed_mult)
             self.direction = -1
@@ -350,7 +370,7 @@ class Player:
             if in_water:
                 self.vel_y = -3 # Swim up
             elif self.on_ground:
-                self.vel_y = self.jump_strength
+                self.vel_y = self.jump_strength * (1.2 if sprinting else 1.0)
                 self.jump_attack_timer = 12
 
         self.vel_y += GRAVITY * (0.3 if in_water else 1.0)
@@ -365,6 +385,9 @@ class Player:
                 break
         
         if on_ladder:
+            # Touching a ladder breaks the fall, so don't carry pre-ladder fall distance forward.
+            self.highest_y = self.rect.y
+            self.on_ground = False
             self.vel_y = 0 # Default to staying still
             if keys[pygame.K_w] or keys[pygame.K_SPACE]:
                 self.vel_y = -4 # Climb up
@@ -373,6 +396,8 @@ class Player:
             # Don't let gravity pull us down if we're on a ladder
             dy = self.vel_y
         else:
+            if sprinting and self.on_ground and (keys[pygame.K_a] or keys[pygame.K_d]):
+                dx *= 1.15 # Small takeoff boost while sprinting
             if self.vel_y > 15: self.vel_y = 15
             dy = self.vel_y
 
@@ -636,7 +661,7 @@ class World:
                 tx, ty = (p_x + x_off) % WORLD_WIDTH, p_y + y_off
                 if (tx, ty) in self.data:
                     b_type = self.data[(tx, ty)]
-                    if b_type == TALL_GRASS or WHEAT_STG0 <= b_type <= WHEAT_STG3 or b_type in (FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR_OPEN, WATER, LADDER): continue # Non-solid
+                    if b_type == TALL_GRASS or WHEAT_STG0 <= b_type <= WHEAT_STG3 or b_type in (FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR_OPEN, WATER, LADDER, BOAT): continue # Non-solid / rideable
                     bx, by = (p_x + x_off) * TILE_SIZE, ty * TILE_SIZE
                     if b_type == FARMLAND:
                         blocks.append(pygame.Rect(bx, by + 4, TILE_SIZE, TILE_SIZE - 4))
@@ -1483,12 +1508,13 @@ def update_crafting(player):
     match([I,I,I, I,N,I, N,N,N], {"type": I_HELMET, "count": 1, "durability": 165})
     match([I,N,I, I,I,I, I,I,I], {"type": I_CHEST, "count": 1, "durability": 240})
     match([I,I,I, I,N,I, I,N,I], {"type": I_LEGS, "count": 1, "durability": 225})
-    match([I,N,I, I,N,I, N,N,N], {"type": I_BOOTS, "count": 1, "durability": 195})
+    match([N,N,N, I,N,I, I,N,I], {"type": I_BOOTS, "count": 1, "durability": 195})
     match([D,D,D, D,N,D, N,N,N], {"type": D_HELMET, "count": 1, "durability": 363})
     match([D,N,D, D,D,D, D,D,D], {"type": D_CHEST, "count": 1, "durability": 528})
     match([D,D,D, D,N,D, D,N,D], {"type": D_LEGS, "count": 1, "durability": 495})
-    match([D,N,D, D,N,D, N,N,N], {"type": D_BOOTS, "count": 1, "durability": 429})
-    match([W,W,W, W,I,W, W,W,W], {"type": SHIELD, "count": 1, "durability": 336})
+    match([N,N,N, D,N,D, D,N,D], {"type": D_BOOTS, "count": 1, "durability": 429})
+    # Shield: iron in the top-middle slot.
+    match([W,I,W, W,W,W, N,W,N], {"type": SHIELD, "count": 1, "durability": 336})
     # Furnace
     match([S,S,S, S,N,S, S,S,S], {"type": FURNACE, "count": 1})
     # Iron Products
@@ -1884,7 +1910,7 @@ def main():
     world_name = "default"
     if mode != "join":
         # List existing worlds
-        saves = [f for f in os.listdir('.') if f.startswith("savegame") and f.endswith(".json")]
+        saves = [f.name for f in WORLDS_DIR.iterdir() if f.is_file() and f.name.startswith("savegame") and f.name.endswith(".json")]
         if saves:
             print("\nExisting Worlds:")
             for s in saves:
@@ -1902,13 +1928,13 @@ def main():
         if not world_name: return
 
     # Resolve filename
-    save_filename = f"savegame_{world_name}.json"
+    save_filename = WORLDS_DIR / f"savegame_{world_name}.json"
     if world_name == "default":
-        save_filename = "savegame.json"
-    elif os.path.exists(f"savegame{world_name}.json"):
-        save_filename = f"savegame{world_name}.json"
-    elif os.path.exists(f"savegame_{world_name}.json"):
-        save_filename = f"savegame_{world_name}.json"
+        save_filename = WORLDS_DIR / "savegame.json"
+    elif (WORLDS_DIR / f"savegame{world_name}.json").exists():
+        save_filename = WORLDS_DIR / f"savegame{world_name}.json"
+    elif (WORLDS_DIR / f"savegame_{world_name}.json").exists():
+        save_filename = WORLDS_DIR / f"savegame_{world_name}.json"
     
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -2056,7 +2082,17 @@ def main():
                 net.drain_world_updates()
             network_timer += 1
             if network_timer >= 3: # Send 20 times per second (at 60fps)
-                net.send({"type": "POS", "x": player.rect.x, "y": player.rect.y, "dir": player.direction})
+                net.send({
+                    "type": "POS",
+                    "x": player.rect.x,
+                    "y": player.rect.y,
+                    "dir": player.direction,
+                    "health": player.health,
+                    "hunger": player.hunger,
+                    "inventory": player.inventory,
+                    "armor": player.armor,
+                    "offhand": getattr(player, 'offhand', None)
+                })
                 network_timer = 0
             
             # Process received messages
@@ -2361,6 +2397,33 @@ def main():
                 action_taken = True
 
             for tx, ty in ([] if action_taken else valid_targets):
+                if (tx, ty) in world.data and world.data[(tx, ty)] == BOAT:
+                    player.rect.centerx = tx * TILE_SIZE + TILE_SIZE // 2
+                    player.rect.bottom = ty * TILE_SIZE
+                    player.vel_y = 0
+                    player.on_ground = True
+                    player.highest_y = player.rect.y
+                    action_taken = True
+                    break
+
+                # Boat: place without replacing terrain, then allow right-click to mount it.
+                if slot and slot["type"] == BOAT:
+                    boat_pos = None
+                    if (tx, ty) not in world.data:
+                        boat_pos = (tx, ty)
+                    elif ty > 0 and (tx, ty - 1) not in world.data:
+                        boat_pos = (tx, ty - 1)
+
+                    if boat_pos is not None:
+                        world.data[boat_pos] = BOAT
+                        if net:
+                            net.send({"type": "BLOCK", "pos": f"{boat_pos[0]},{boat_pos[1]}", "b_type": BOAT})
+                        slot["count"] -= 1
+                        if slot["count"] <= 0:
+                            player.inventory[player.selected_slot] = None
+                        action_taken = True
+                        break
+
                 # Eating / Drinking
                 if slot and slot["type"] in (BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON, MILK_BUCKET):
                     if slot["type"] == MILK_BUCKET or player.hunger < player.max_hunger:
@@ -2406,7 +2469,7 @@ def main():
                         if (player.direction > 0 and rel_x > 0) or (player.direction < 0 and rel_x < 0):
                             target_mob = mob
                             break
-                
+
                 if target_mob and target_mob.m_type == "cow" and slot and slot["type"] == BUCKET:
                     # Milking
                     if slot["count"] == 1:

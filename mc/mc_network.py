@@ -33,6 +33,12 @@ class GameServer(NetworkManager):
         self.pending_world_updates = []
         self.pending_world_updates_lock = threading.Lock()
 
+    def _extract_player_snapshot(self, msg):
+        return {
+            k: v for k, v in msg.items()
+            if k not in ("type", "id")
+        }
+
     def send(self, data):
         """Unified send method for both Client and Server."""
         data["id"] = "host"
@@ -100,7 +106,7 @@ class GameServer(NetworkManager):
             p_save = self.world_ref.remote_players_data.get(p_id)
             if not p_save:
                 p_save = msg.get("player_data", {})
-                self.world_ref.remote_players_data[p_id] = p_save # Save it immediately
+            self.world_ref.remote_players_data[p_id] = p_save.copy() if isinstance(p_save, dict) else p_save
             init_msg = {
                 "type": "INIT",
                 "id": p_id,
@@ -117,6 +123,10 @@ class GameServer(NetworkManager):
             if client_id not in self.player_data:
                 self.player_data[client_id] = {}
             self.player_data[client_id].update(msg)
+            if self.world_ref is not None:
+                snapshot = self._extract_player_snapshot(msg)
+                if snapshot:
+                    self.world_ref.remote_players_data[client_id] = snapshot
         elif msg["type"] == "BLOCK":
             with self.pending_world_updates_lock:
                 self.pending_world_updates.append(msg.copy())
