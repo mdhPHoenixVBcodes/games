@@ -144,6 +144,12 @@ DOOR_OPEN_TOP = 71
 BED_RIGHT = 72
 COAL_BLOCK_ITEM = 73
 ENDER_PEARL = 74
+STRING_ITEM = 75
+BOW = 76
+RAW_CHICKEN = 77
+COOKED_CHICKEN = 78
+FEATHER = 79
+EGG = 80
 
 # Tool IDs
 W_PICK = 100; S_PICK = 101; I_PICK = 110
@@ -214,7 +220,13 @@ BLOCK_NAMES = {
     LADDER: "Ladder",
     DIAMOND: "Diamond",
     COAL_BLOCK_ITEM: "Coal Block",
-    ENDER_PEARL: "Ender Pearl"
+    ENDER_PEARL: "Ender Pearl",
+    STRING_ITEM: "String",
+    BOW: "Bow",
+    RAW_CHICKEN: "Raw Chicken",
+    COOKED_CHICKEN: "Cooked Chicken",
+    FEATHER: "Feather",
+    EGG: "Egg"
 }
 
 MAX_DURABILITY = {
@@ -224,6 +236,7 @@ MAX_DURABILITY = {
     D_PICK: 1561, D_AXE: 1561, D_SHOVEL: 1561, D_SWORD: 1561, D_HOE: 1561,
     I_HELMET: 165, I_CHEST: 240, I_LEGS: 225, I_BOOTS: 195,
     D_HELMET: 363, D_CHEST: 528, D_LEGS: 495, D_BOOTS: 429,
+    BOW: 384,
     SHIELD: 336
 }
 
@@ -441,7 +454,14 @@ class Player:
             return
         fall_distance = (self.rect.y - self.highest_y) / TILE_SIZE
         if fall_distance >= 4:
-            self.health -= int(fall_distance - 3)
+            dmg = fall_distance - 3
+            boots = self.armor[3]
+            if boots:
+                if boots["type"] == D_BOOTS:
+                    dmg *= 0.6
+                elif boots["type"] == I_BOOTS:
+                    dmg *= 0.75
+            self.health -= max(1, math.ceil(dmg))
             self.health = max(0, self.health)
         self.highest_y = self.rect.y
 
@@ -498,6 +518,8 @@ class World:
         self.mobs = []
         self.dropped_items = [] # (DroppedItem instances)
         self.projectiles = [] # ThrownPearl instances
+        self.egg_projectiles = [] # EggShot instances
+        self.arrows = [] # ArrowShot instances
         self.time = 0 # 0 corresponds to 6:00 AM (Sunrise)
         self.generate_world()
 
@@ -970,6 +992,125 @@ class ThrownPearl:
             pygame.draw.circle(surface, (90, 0, 140), (dx, dy), 5)
             pygame.draw.circle(surface, (220, 220, 255), (dx - 1, dy - 1), 2)
 
+class ArrowShot:
+    def __init__(self, x, y, target_x, target_y):
+        self.x = float(x)
+        self.y = float(y)
+        self.prev_x = self.x
+        self.prev_y = self.y
+        dx = target_x - self.x
+        if dx > WORLD_PIXELS / 2:
+            dx -= WORLD_PIXELS
+        elif dx < -WORLD_PIXELS / 2:
+            dx += WORLD_PIXELS
+        dy = target_y - self.y
+        dist = max(0.001, math.hypot(dx, dy))
+        self.vel_x = (dx / dist) * 16.0
+        self.vel_y = (dy / dist) * 16.0
+        self.rect = pygame.Rect(int(self.x) - 4, int(self.y) - 4, 8, 8)
+        self.spawn_time = pygame.time.get_ticks()
+
+    def update(self, world):
+        self.prev_x, self.prev_y = self.x, self.y
+        steps = max(1, int(math.ceil(max(abs(self.vel_x), abs(self.vel_y)) / 6.0)))
+        step_x = self.vel_x / steps
+        step_y = self.vel_y / steps
+
+        for _ in range(steps):
+            self.x = (self.x + step_x) % WORLD_PIXELS
+            self.y += step_y
+            self.rect.center = (int(self.x), int(self.y))
+
+            hitbox = self.rect.inflate(8, 8)
+            for mob in world.mobs:
+                if hitbox.colliderect(mob.rect):
+                    mob.health -= 6
+                    mob.hurt_timer = 10
+                    mob.vel_x += 2.0 if self.vel_x > 0 else -2.0
+                    mob.vel_y = min(mob.vel_y, -4)
+                    if mob.m_type == "enderman":
+                        mob.angry = True
+                        mob.teleport_timer = 0
+                    return True
+
+            for block_rect in world.get_surrounding_blocks(hitbox):
+                if hitbox.colliderect(block_rect):
+                    return True
+
+        self.vel_y += 0.08
+
+        if self.y < 0 or self.y > WORLD_HEIGHT * TILE_SIZE or pygame.time.get_ticks() - self.spawn_time > 3500:
+            return True
+
+        return False
+
+    def draw(self, surface, scroll_x, scroll_y):
+        for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
+            dx0 = self.prev_x - int(scroll_x) + offset
+            dy0 = self.prev_y - int(scroll_y)
+            dx1 = self.rect.centerx - int(scroll_x) + offset
+            dy1 = self.rect.centery - int(scroll_y)
+            if max(dx0, dx1) < -40 or min(dx0, dx1) > SCREEN_WIDTH + 40:
+                continue
+            if max(dy0, dy1) < -40 or min(dy0, dy1) > SCREEN_HEIGHT + 40:
+                continue
+            pygame.draw.line(surface, (210, 180, 120), (dx0, dy0), (dx1, dy1), 4)
+            pygame.draw.circle(surface, (245, 235, 220), (dx1, dy1), 3)
+            break
+
+class EggShot:
+    def __init__(self, x, y, target_x, target_y):
+        self.x = float(x)
+        self.y = float(y)
+        self.prev_x = self.x
+        self.prev_y = self.y
+        dx = target_x - self.x
+        if dx > WORLD_PIXELS / 2:
+            dx -= WORLD_PIXELS
+        elif dx < -WORLD_PIXELS / 2:
+            dx += WORLD_PIXELS
+        dy = target_y - self.y
+        dist = max(0.001, math.hypot(dx, dy))
+        self.vel_x = (dx / dist) * 13.0
+        self.vel_y = (dy / dist) * 13.0 - 4.0
+        self.rect = pygame.Rect(int(self.x) - 4, int(self.y) - 4, 8, 8)
+        self.spawn_time = pygame.time.get_ticks()
+
+    def update(self, world):
+        self.prev_x, self.prev_y = self.x, self.y
+        self.x = (self.x + self.vel_x) % WORLD_PIXELS
+        self.y += self.vel_y
+        self.vel_y += 0.18
+        self.rect.center = (int(self.x), int(self.y))
+
+        for block_rect in world.get_surrounding_blocks(self.rect):
+            if self.rect.colliderect(block_rect):
+                hatch = random.random() < 0.125
+                if hatch:
+                    world.mobs.append(Mob(int(self.x), int(self.y), "chicken"))
+                return True
+
+        if self.y < 0 or self.y > WORLD_HEIGHT * TILE_SIZE or pygame.time.get_ticks() - self.spawn_time > 3500:
+            if random.random() < 0.125:
+                world.mobs.append(Mob(int(self.x), int(self.y), "chicken"))
+            return True
+
+        return False
+
+    def draw(self, surface, scroll_x, scroll_y):
+        for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
+            dx0 = self.prev_x - int(scroll_x) + offset
+            dy0 = self.prev_y - int(scroll_y)
+            dx1 = self.rect.centerx - int(scroll_x) + offset
+            dy1 = self.rect.centery - int(scroll_y)
+            if max(dx0, dx1) < -40 or min(dx0, dx1) > SCREEN_WIDTH + 40:
+                continue
+            if max(dy0, dy1) < -40 or min(dy0, dy1) > SCREEN_HEIGHT + 40:
+                continue
+            pygame.draw.line(surface, (245, 245, 245), (dx0, dy0), (dx1, dy1), 3)
+            pygame.draw.ellipse(surface, (240, 235, 220), (dx1 - 4, dy1 - 4, 8, 10))
+            break
+
 class Mob:
     def __init__(self, x, y, m_type="zombie"):
         self.m_type = m_type
@@ -978,6 +1119,15 @@ class Mob:
             self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 3 - 2)
             self.speed = 2.5
             self.health = 30
+        elif m_type == "spider":
+            self.rect = pygame.Rect(x, y, 32, 20)
+            self.speed = 2.4
+            self.health = 18
+        elif m_type == "chicken":
+            self.rect = pygame.Rect(x, y, 18, 18)
+            self.speed = 0.9
+            self.health = 4
+            self.egg_timer = random.randint(900, 2400)
         elif m_type == "cow" or m_type == "sheep":
             self.rect = pygame.Rect(x, y, 32, 28)
             self.speed = 0.5
@@ -1000,6 +1150,8 @@ class Mob:
 
     def update(self, world, player):
         if self.hurt_timer > 0: self.hurt_timer -= 1
+        t = world.time % 24000
+        is_night = (t > 14000 or t < 1000)
         # AI Logic
         if self.m_type == "zombie":
             # Chase player
@@ -1032,9 +1184,38 @@ class Mob:
                     self.vel_x = self.speed if dist_x > 0 else -self.speed
                 else:
                     self.vel_x = 0
+        elif self.m_type == "spider":
+            dist_x = player.rect.x - self.rect.x
+            if is_night:
+                if abs(dist_x) < 450:
+                    self.vel_x = self.speed if dist_x > 0 else -self.speed
+                else:
+                    self.vel_x = 0
+            else:
+                self.wander_timer -= 1
+                if self.wander_timer <= 0:
+                    self.wander_timer = random.randint(60, 180)
+                    self.vel_x = random.choice([-self.speed, 0, self.speed])
+        elif self.m_type == "chicken":
+            slot = player.inventory[player.selected_slot] if not player.show_inventory else player.held_item
+            if slot and slot["type"] == SEEDS:
+                dist_x = player.rect.x - self.rect.x
+                if abs(dist_x) < 220:
+                    self.vel_x = self.speed if dist_x > 0 else -self.speed
+                else:
+                    self.vel_x = 0
+            else:
+                self.wander_timer -= 1
+                if self.wander_timer <= 0:
+                    self.wander_timer = random.randint(50, 140)
+                    self.vel_x = random.choice([-self.speed, 0, self.speed])
+            self.egg_timer -= 1
+            if self.egg_timer <= 0:
+                world.dropped_items.append(DroppedItem(self.rect.centerx, self.rect.centery, EGG))
+                self.egg_timer = random.randint(1200, 3000)
         else: # Cow/Sheep Wander / Follow
             slot = player.inventory[player.selected_slot] if not player.show_inventory else player.held_item
-            lure_item = WHEAT_ITEM if self.m_type == "cow" else SEEDS
+            lure_item = WHEAT_ITEM
             if slot and slot["type"] == lure_item:
                 # Follow Player
                 dist_x = player.rect.x - self.rect.x
@@ -1061,15 +1242,20 @@ class Mob:
         self.rect.x = (self.rect.x + self.vel_x) % WORLD_PIXELS
         # Collision
         hits = world.get_surrounding_blocks(self.rect)
+        hit_wall = False
         for block in hits:
             if self.rect.colliderect(block):
                 if self.vel_x > 0: self.rect.right = block.left
                 elif self.vel_x < 0: self.rect.left = block.right
+                if self.m_type == "spider" and self.vel_x != 0:
+                    hit_wall = True
                 # Jump if blocked and on ground
                 if self.on_ground:
                     self.vel_y = -7
                     self.on_ground = False
-        
+        if self.m_type == "spider" and hit_wall and self.vel_y > -3.5:
+            self.vel_y = -3.5
+
         # Move Y
         self.rect.y += self.vel_y
         hits = world.get_surrounding_blocks(self.rect)
@@ -1103,7 +1289,6 @@ class Mob:
         # Zombies specific behaviors
         if self.m_type == "zombie":
             # Sunlight burn
-            t = world.time % 24000
             if 1000 < t < 11000: # Day
                 # Check for roof (Sky exposure) - wider check for better house protection
                 tx, ty = int(self.rect.centerx // TILE_SIZE) % WORLD_WIDTH, int(self.rect.top // TILE_SIZE)
@@ -1143,6 +1328,15 @@ class Mob:
             if self.angry and dist_x < 72 and dist_y < self.rect.height:
                 if pygame.time.get_ticks() - self.last_hit > 1200:
                     player.take_damage(4)
+                    self.last_hit = pygame.time.get_ticks()
+        elif self.m_type == "spider":
+            dist_x = abs(self.rect.centerx - player.rect.centerx)
+            if dist_x > WORLD_PIXELS / 2:
+                dist_x = WORLD_PIXELS - dist_x
+            dist_y = abs(self.rect.centery - player.rect.centery)
+            if is_night and dist_x < (self.rect.width + player.rect.width)/2 and dist_y < (self.rect.height + player.rect.height)/2:
+                if pygame.time.get_ticks() - self.last_hit > 900:
+                    player.take_damage(2)
                     self.last_hit = pygame.time.get_ticks()
 
     def draw(self, surface, scroll_x, scroll_y):
@@ -1197,6 +1391,31 @@ class Mob:
                 hx = dx + (self.rect.width if self.vel_x >= 0 else -6)
                 h_color = (255, 100, 100) if is_hurt else (50, 50, 50)
                 pygame.draw.rect(surface, h_color, (hx, dy + 6, 8, 10)) # Face
+            elif self.m_type == "spider":
+                body_color = (160, 30, 30) if is_hurt else (30, 30, 30)
+                pygame.draw.rect(surface, body_color, (dx + 3, dy + 6, self.rect.width - 6, 12), 0, 6)
+                pygame.draw.ellipse(surface, (20, 20, 20), (dx + 7, dy + 1, 18, 14))
+                eye_color = (240, 60, 60)
+                pygame.draw.circle(surface, eye_color, (dx + 12, dy + 8), 2)
+                pygame.draw.circle(surface, eye_color, (dx + 20, dy + 8), 2)
+                leg_color = (25, 25, 25)
+                leg_pairs = [
+                    ((dx + 6, dy + 7), (dx - 3, dy + 2)),
+                    ((dx + 6, dy + 11), (dx - 4, dy + 10)),
+                    ((dx + 26, dy + 7), (dx + 35, dy + 2)),
+                    ((dx + 26, dy + 11), (dx + 36, dy + 10)),
+                ]
+                for start, end in leg_pairs:
+                    pygame.draw.line(surface, leg_color, start, end, 2)
+                    pygame.draw.line(surface, leg_color, (start[0], start[1] + 2), (end[0], end[1] + 2), 2)
+            elif self.m_type == "chicken":
+                body = (255, 245, 220) if not is_hurt else (255, 180, 180)
+                wing = (240, 220, 180) if not is_hurt else (220, 120, 120)
+                pygame.draw.ellipse(surface, body, (dx, dy + 2, self.rect.width, self.rect.height - 2))
+                pygame.draw.circle(surface, (255, 220, 0), (dx + 14, dy + 8), 4)
+                pygame.draw.rect(surface, wing, (dx + 4, dy + 8, 8, 5))
+                pygame.draw.line(surface, (255, 160, 40), (dx + 13, dy + 12), (dx + 11, dy + 17), 2)
+                pygame.draw.line(surface, (255, 160, 40), (dx + 16, dy + 12), (dx + 18, dy + 17), 2)
 
 def draw_block_icon(screen, b_type, x, y, size, font):
     if b_type == STICK:
@@ -1251,6 +1470,26 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type == ENDER_PEARL:
         pygame.draw.circle(screen, (70, 0, 110), (x + size // 2, y + size // 2), size // 3)
         pygame.draw.circle(screen, (200, 170, 255), (x + size // 2 - 2, y + size // 2 - 2), size // 8)
+    elif b_type == STRING_ITEM:
+        for i in range(3):
+            pygame.draw.line(screen, (235, 235, 235), (x + 2, y + 4 + i * 4), (x + size - 2, y + 2 + i * 4), 1)
+    elif b_type == BOW:
+        pygame.draw.arc(screen, (160, 110, 70), (x + 6, y + 3, size - 12, size - 6), 1.2, 5.1, 3)
+        pygame.draw.line(screen, (235, 235, 235), (x + 10, y + 5), (x + 10, y + size - 5), 1)
+        pygame.draw.line(screen, (235, 235, 235), (x + 10, y + size // 2), (x + size - 8, y + size // 2), 1)
+    elif b_type in (RAW_CHICKEN, COOKED_CHICKEN, FEATHER):
+        if b_type == FEATHER:
+            pygame.draw.ellipse(screen, (245, 245, 245), (x + 4, y + 2, size - 8, size - 4))
+            pygame.draw.line(screen, (220, 220, 220), (x + size // 2, y + 3), (x + size // 2, y + size - 3), 1)
+        else:
+            base = (230, 170, 130) if b_type == RAW_CHICKEN else (180, 110, 70)
+            accent = (255, 245, 220) if b_type == RAW_CHICKEN else (220, 180, 120)
+            pygame.draw.ellipse(screen, base, (x + 2, y + 5, size - 4, size - 8))
+            pygame.draw.circle(screen, accent, (x + size - 6, y + 8), 3)
+            pygame.draw.line(screen, (160, 90, 40), (x + 4, y + size - 7), (x + 8, y + size - 2), 2)
+    elif b_type == EGG:
+        pygame.draw.ellipse(screen, (245, 240, 220), (x + 5, y + 3, size - 10, size - 6))
+        pygame.draw.ellipse(screen, (220, 210, 190), (x + 6, y + 4, size - 12, size - 8), 1)
     elif b_type == DOOR:
         pygame.draw.rect(screen, (120, 80, 40), (x + size//4, y, size//2, size))
         pygame.draw.rect(screen, (0, 0, 0), (x + size//2 + 4, y + size//2, 4, 4)) # Handle
@@ -1475,7 +1714,7 @@ def update_crafting(player):
             res3 = result
 
     # Materials
-    W = PLANKS; S = COBBLESTONE; T = STICK; N = None; I = IRON_INGOT; D = DIAMOND; ST = STICK
+    W = PLANKS; S = COBBLESTONE; T = STICK; N = None; I = IRON_INGOT; D = DIAMOND; ST = STICK; STR = STRING_ITEM
     # Pickaxes
     match([W,W,W, N,T,N, N,T,N], {"type": W_PICK, "count": 1, "durability": 60})
     match([S,S,S, N,T,N, N,T,N], {"type": S_PICK, "count": 1, "durability": 132})
@@ -1515,6 +1754,8 @@ def update_crafting(player):
     match([N,N,N, D,N,D, D,N,D], {"type": D_BOOTS, "count": 1, "durability": 429})
     # Shield: iron in the top-middle slot.
     match([W,I,W, W,W,W, N,W,N], {"type": SHIELD, "count": 1, "durability": 336})
+    # Bow
+    match([STR,T,N, STR,N,T, STR,T,N], {"type": BOW, "count": 1, "durability": 384})
     # Furnace
     match([S,S,S, S,N,S, S,S,S], {"type": FURNACE, "count": 1})
     # Iron Products
@@ -1543,6 +1784,8 @@ def update_crafting(player):
     match([N,N,N, WH,WH,WH, N,N,N], {"type": BREAD, "count": 1})
     match([WH,WH,WH, WH,WH,WH, WH,WH,WH], {"type": HAY_BALE, "count": 1})
     match([COAL,COAL,COAL, COAL,COAL,COAL, COAL,COAL,COAL], {"type": COAL_BLOCK_ITEM, "count": 1})
+    # Bow
+    match([N,N,N, N,N,N, STR,T,N], {"type": BOW, "count": 1, "durability": 384})
     # Chest
     match([W,W,W, W,N,W, W,W,W], {"type": CHEST, "count": 1})
     # Wooden Products
@@ -1763,13 +2006,14 @@ def update_furnaces(world):
             elif i_type == IRON_BLOCK: result_type = IRON_INGOT
             elif i_type == RAW_BEEF: result_type = STEAK
             elif i_type == RAW_MUTTON: result_type = COOKED_MUTTON
+            elif i_type == RAW_CHICKEN: result_type = COOKED_CHICKEN
             elif i_type in (OAK_LOG, BIRCH_LOG): result_type = CHARCOAL
             
             if result_type:
                 can_smelt = True
                 b_at_pos = world.data.get(pos)
                 # Filtering
-                if b_at_pos == SMOKER and i_type not in (RAW_BEEF, RAW_MUTTON): can_smelt = False
+                if b_at_pos == SMOKER and i_type not in (RAW_BEEF, RAW_MUTTON, RAW_CHICKEN): can_smelt = False
                 if b_at_pos == BLAST_FURNACE and i_type not in (IRON_BLOCK, COBBLESTONE): can_smelt = False
                 
                 if data["output"] and (data["output"]["type"] != result_type or data["output"]["count"] >= 80):
@@ -2395,6 +2639,29 @@ def main():
                     player.inventory[player.selected_slot] = None
                 player.last_action_time = now
                 action_taken = True
+            elif slot and slot["type"] == EGG:
+                mx, my = pygame.mouse.get_pos()
+                target_x = (scroll_x + mx) % WORLD_PIXELS
+                target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
+                world.egg_projectiles.append(EggShot(player.rect.centerx, player.rect.centery, target_x, target_y))
+                slot["count"] -= 1
+                if slot["count"] <= 0:
+                    player.inventory[player.selected_slot] = None
+                player.last_action_time = now
+                action_taken = True
+            elif slot and slot["type"] == BOW:
+                mx, my = pygame.mouse.get_pos()
+                target_x = (scroll_x + mx) % WORLD_PIXELS
+                target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
+                if slot.get("durability", 0) > 0:
+                    start_x = (player.rect.centerx + (player.direction * 16)) % WORLD_PIXELS
+                    start_y = player.rect.centery - 4
+                    world.arrows.append(ArrowShot(start_x, start_y, target_x, target_y))
+                    slot["durability"] -= 1
+                    if slot["durability"] <= 0:
+                        player.inventory[player.selected_slot] = None
+                    player.last_action_time = now
+                    action_taken = True
 
             for tx, ty in ([] if action_taken else valid_targets):
                 if (tx, ty) in world.data and world.data[(tx, ty)] == BOAT:
@@ -2433,6 +2700,14 @@ def main():
                             slot["type"] = BUCKET # Return empty bucket
                         else:
                             slot["count"] -= 1
+                        if slot["count"] <= 0: player.inventory[player.selected_slot] = None
+                        action_taken = True
+                        break
+                if slot and slot["type"] in (RAW_CHICKEN, COOKED_CHICKEN):
+                    if player.hunger < player.max_hunger:
+                        fill = {RAW_CHICKEN: 2, COOKED_CHICKEN: 5}[slot["type"]]
+                        player.hunger = min(player.max_hunger, player.hunger + fill)
+                        slot["count"] -= 1
                         if slot["count"] <= 0: player.inventory[player.selected_slot] = None
                         action_taken = True
                         break
@@ -2700,8 +2975,12 @@ def main():
                     world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "zombie"))
             # Endermen at Night
             if (t > 14000 or t < 1000) and len([m for m in world.mobs if m.m_type == "enderman"]) < 2:
-                if random.random() < 0.0025:
+                if random.random() < 0.0008:
                     world.mobs.append(Mob((player.rect.x + random.choice([-350, 350])) % WORLD_PIXELS, 50, "enderman"))
+            # Spiders at Night
+            if (t > 14000 or t < 1000) and len([m for m in world.mobs if m.m_type == "spider"]) < 4:
+                if random.random() < 0.004:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-450, 450])) % WORLD_PIXELS, 50, "spider"))
             # Cows during Day
             if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "cow"]) < 4:
                 if random.random() < 0.003:
@@ -2709,6 +2988,9 @@ def main():
             if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "sheep"]) < 4:
                 if random.random() < 0.003:
                     world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "sheep"))
+            if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "chicken"]) < 5:
+                if random.random() < 0.004:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "chicken"))
                 
             for mob in world.mobs[:]:
                 mob.update(world, player)
@@ -2727,6 +3009,12 @@ def main():
                     elif mob.m_type == "sheep":
                         spawn_drop(WOOL, random.randint(1, 2))
                         spawn_drop(RAW_MUTTON, random.randint(1, 3))
+                    elif mob.m_type == "chicken":
+                        spawn_drop(RAW_CHICKEN, random.randint(1, 2))
+                        if random.random() < 0.65:
+                            spawn_drop(FEATHER, random.randint(1, 2))
+                    elif mob.m_type == "spider":
+                        spawn_drop(STRING_ITEM, random.randint(1, 3))
                     world.mobs.remove(mob)
                     
             # --- Farming Growth ---
@@ -2772,6 +3060,20 @@ def main():
                 if land_pos is not None:
                     teleport_player_to(world, player, land_pos[0], land_pos[1])
                 world.projectiles.remove(pearl)
+
+        # Update and Draw Eggs
+        for egg in world.egg_projectiles[:]:
+            if egg.update(world):
+                world.egg_projectiles.remove(egg)
+            else:
+                egg.draw(screen, scroll_x, scroll_y)
+
+        # Update and Draw Arrows
+        for arrow in world.arrows[:]:
+            if arrow.update(world):
+                world.arrows.remove(arrow)
+            else:
+                arrow.draw(screen, scroll_x, scroll_y)
 
         # Update and Draw Dropped Items
         for di in world.dropped_items[:]:
