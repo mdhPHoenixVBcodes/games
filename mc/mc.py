@@ -1085,13 +1085,13 @@ class EggShot:
 
         for block_rect in world.get_surrounding_blocks(self.rect):
             if self.rect.colliderect(block_rect):
-                hatch = random.random() < 0.125
+                hatch = random.random() < 0.35
                 if hatch:
                     world.mobs.append(Mob(int(self.x), int(self.y), "chicken"))
                 return True
 
         if self.y < 0 or self.y > WORLD_HEIGHT * TILE_SIZE or pygame.time.get_ticks() - self.spawn_time > 3500:
-            if random.random() < 0.125:
+            if random.random() < 0.35:
                 world.mobs.append(Mob(int(self.x), int(self.y), "chicken"))
             return True
 
