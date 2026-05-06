@@ -279,6 +279,69 @@ class ArcherCompanion(Entity):
                 self.attack_cooldown = 0.9
 
 
+class DroneCompanion(Entity):
+    def __init__(self):
+        super().__init__(
+            model='sphere',
+            color=color.cyan,
+            scale=1.15,
+            position=state.player.position + (-2, 1.5, -2),
+            collider='box'
+        )
+        self.max_hp = 120
+        self.hp = self.max_hp
+        self.speed = 8.5
+        self.follow_distance = 3.0
+        self.attack_range = 24
+        self.attack_cooldown = 0
+        self.health_bar = Entity(parent=self, y=0.9, model='cube', color=color.green, scale=(1.1, 0.1, 0.1))
+
+    def take_damage(self, amount):
+        self.hp -= amount
+        self.health_bar.scale_x = max(self.hp / self.max_hp, 0) * 1.1
+        self.color = color.white
+        invoke(setattr, self, 'color', color.cyan, delay=0.1)
+        if self.hp <= 0:
+            if hasattr(state.player, 'drone_respawn_timer'):
+                state.player.drone_respawn_timer = 30.0
+                state.player.mission_ui.text = 'Drone KO! Respawning in 30s...'
+                state.player.mission_ui.color = color.orange
+            state.dismiss_drone_companion()
+
+    def update(self):
+        if state.player.is_teleporting:
+            return
+
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= time.dt
+
+        follow_target = state.player.position - state.player.right * 1.8 - state.player.forward * 3.0
+        follow_target.y = self.y
+        to_follow = follow_target - self.position
+        to_follow.y = 0
+        previous_position = self.position
+        if to_follow.length() > self.follow_distance:
+            self.position += to_follow.normalized() * self.speed * time.dt
+            if getattr(state.player, 'current_level', None) == 7:
+                state.player.resolve_level_7_pillar_collision(self, previous_position)
+
+        ray = raycast(self.position + (0, 1.5, 0), direction=(0, -1, 0), ignore=(self,), distance=4)
+        if ray.hit:
+            self.y = ray.world_point[1] + (self.scale_y / 2)
+
+        if self.attack_cooldown <= 0 and len(state.enemies) > 0:
+            target = min(state.enemies, key=lambda enemy: distance(self.position, enemy.position))
+            if distance(self.position, target.position) <= self.attack_range:
+                loS_target = target.position + (0, 0.5, 0)
+                loS_origin = self.position + (0, 1.0, 0)
+                los = raycast(loS_origin, (loS_target - loS_origin).normalized(), distance=distance(loS_origin, loS_target), ignore=(self, target))
+                if getattr(state.player, 'current_level', None) == 7 and los.hit and los.entity in getattr(state.player, 'level_7_pillars', []):
+                    return
+                self.look_at(target.position + (0, 0.5, 0))
+                Arrow(position=self.position + self.forward * 1.2 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True, damage=10)
+                self.attack_cooldown = 1.8
+
+
 class Enemy(Entity):
     def __init__(self, target, spawn_pos):
         super().__init__(model='cube', color=color.red, scale=(1, 2, 1), position=spawn_pos, collider='box')
@@ -333,7 +396,7 @@ class SphereEnemy(Entity):
     def __init__(self, target, spawn_pos):
         super().__init__(
             model='sphere',
-            color=color.gray,
+            color=color.red,
             scale=1.2,
             position=spawn_pos,
             collider='box'
@@ -374,9 +437,14 @@ class SphereEnemy(Entity):
             self.look_at(target.position + (0, 0.5, 0))
             self.position += self.forward * self.speed * time.dt
         elif self.attack_cooldown <= 0:
+            loS_target = target.position + (0, 0.5, 0)
+            loS_origin = self.position + (0, 0.9, 0)
+            los = raycast(loS_origin, (loS_target - loS_origin).normalized(), distance=dist, ignore=(self, target))
+            if getattr(state.player, 'current_level', None) == 7 and los.hit and los.entity in getattr(state.player, 'level_7_pillars', []):
+                return
             self.look_at(target.position + (0, 0.5, 0))
             Arrow(position=self.position + self.forward * 1.2 + (0, 0.9, 0), rotation=self.rotation, direction=self.forward, hit_party=True, hit_enemies=False, hit_cannons=False, hit_spheres=False, damage=5)
-            self.attack_cooldown = 1.1
+            self.attack_cooldown = 2.25
 
 
 class SphereDrop(Entity):

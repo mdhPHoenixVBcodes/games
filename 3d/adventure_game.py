@@ -22,6 +22,7 @@ class ThirdPersonPlayer(Entity):
         self.grounded = False
         self.is_teleporting = False
         self.cannonhallway_music = None
+        self.rbtc_music = None
         self.boss_music = None
         self.safezone_music = None
         self.low_health_music = Audio('Music/lowhealth.mp3', loop=True, autoplay=False)
@@ -45,6 +46,7 @@ class ThirdPersonPlayer(Entity):
         self.level_7_portal_open = False
         self.level_7_cleared = False
         self.scientist_talked = False
+        self.drone_teammate_unlocked = False
         self.level_6_return_portal_x = 0
         self.level_6_return_portal_y = 1.5
         self.level_6_return_portal_z = 0
@@ -56,6 +58,7 @@ class ThirdPersonPlayer(Entity):
         self.teammate_unlocked = False
         self.level_7_pillars = []
         self.archer_respawn_timer = 0.0
+        self.drone_respawn_timer = 0.0
         self.hub_regen_enabled = True
 
         self.max_hp = 100
@@ -117,13 +120,28 @@ class ThirdPersonPlayer(Entity):
                 self.low_health_music.stop()
             if hasattr(self, 'boss_music') and self.boss_music and self.boss_music.playing:
                 self.boss_music.stop()
-            print("You died!")
-            if state.SAVE_FILE.exists():
-                print("Loading last save...")
-                self.load_game()
+            has_live_teammate = (
+                (self.teammate_unlocked and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0) or
+                (self.drone_teammate_unlocked and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0)
+            )
+            if has_live_teammate:
+                self.hp = 50
+                self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
+                self.position = self.spawn_point
+                self.y_velocity = 0
+                self.grounded = True
+                self.color = color.azure
+                invoke(setattr, self, 'color', color.azure, delay=0.2)
+                self.mission_ui.text = 'Stay alive until the archer returns!'
+                self.mission_ui.color = color.orange
             else:
-                print("No save file found! Resetting...")
-                self.reset_game_state()
+                print("You died!")
+                if state.SAVE_FILE.exists():
+                    print("Loading last save...")
+                    self.load_game()
+                else:
+                    print("No save file found! Resetting...")
+                    self.reset_game_state()
 
     def add_kill(self):
         if self.spawn_point != (0, 1, 0):
@@ -233,6 +251,17 @@ class ThirdPersonPlayer(Entity):
         if self.cannonhallway_music:
             self.cannonhallway_music.stop()
 
+    def start_rbtc_music(self):
+        if self.rbtc_music and self.rbtc_music.playing:
+            return
+        if self.rbtc_music:
+            self.rbtc_music.stop()
+        self.rbtc_music = Audio('Music/rbtc.mp3', loop=True, autoplay=True, volume=0.55)
+
+    def stop_rbtc_music(self):
+        if self.rbtc_music:
+            self.rbtc_music.stop()
+
     def resolve_level_7_pillar_collision(self, entity, previous_position):
         if not self.level_7_pillars:
             return
@@ -273,11 +302,11 @@ class ThirdPersonPlayer(Entity):
         from adventure_entities import SphereEnemy
 
         enemy_positions = [
-            (4980, 1, 2210),
-            (5020, 1, 2210),
-            (4972, 1, 2240),
-            (5028, 1, 2240),
-            (5000, 1, 2270),
+            (4980, 5, 2210),
+            (5020, 5, 2210),
+            (4972, 5, 2240),
+            (5028, 5, 2240),
+            (5000, 5, 2270),
         ]
         for pos in enemy_positions:
             state.enemies.append(SphereEnemy(target=self, spawn_pos=pos))
@@ -293,9 +322,24 @@ class ThirdPersonPlayer(Entity):
         self.level_7_cleared = False
         self.setup_level_7_arena()
 
+        if self.teammate_unlocked:
+            companion = state.spawn_archer_companion()
+            companion.position = self.position + (2, 0, -2)
+            companion.y = self.y + (companion.scale_y / 2) - 1
+            companion.hp = max(1, min(companion.hp, companion.max_hp))
+            companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
+
+        if self.drone_teammate_unlocked:
+            drone = state.spawn_drone_companion()
+            drone.position = self.position + (-2, 1, -2)
+            drone.y = self.y + 1.5
+            drone.hp = max(1, min(drone.hp, drone.max_hp))
+            drone.health_bar.scale_x = max(drone.hp / drone.max_hp, 0) * 1.1
+
         if self.safezone_music:
             self.safezone_music.stop()
         self.stop_cannonhallway_music()
+        self.stop_rbtc_music()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -323,6 +367,7 @@ class ThirdPersonPlayer(Entity):
         if hasattr(self, 'boss_music') and self.boss_music:
             self.boss_music.stop()
         self.stop_cannonhallway_music()
+        self.stop_rbtc_music()
         if not hasattr(self, 'safezone_music') or not self.safezone_music or not self.safezone_music.playing:
             if hasattr(self, 'safezone_music') and self.safezone_music: self.safezone_music.stop()
             self.safezone_music = Audio('Music/safezone.mp3', loop=True, autoplay=True, volume=0.5)
@@ -334,17 +379,17 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
             self.crosshair.enabled = False
+        elif self.drone_teammate_unlocked:
+            self.mission_ui.text = 'Drone teammate ready.'
+            self.mission_ui.color = color.cyan
+            self.crosshair.enabled = True
         elif self.level_7_cleared:
-            self.mission_ui.text = 'Level 7 cleared!'
-            self.mission_ui.color = color.azure
+            self.mission_ui.text = 'Talk to scientist'
+            self.mission_ui.color = color.white
             self.crosshair.enabled = True
         elif self.level_7_portal_open:
             self.mission_ui.text = 'Enter Level 7!'
             self.mission_ui.color = color.magenta
-            self.crosshair.enabled = True
-        elif self.scientist_talked:
-            self.mission_ui.text = 'Talk to the Manager'
-            self.mission_ui.color = color.yellow
             self.crosshair.enabled = True
         elif not self.level_3_cleared:
             self.mission_ui.text = 'Talk to the Manager'
@@ -434,6 +479,7 @@ class ThirdPersonPlayer(Entity):
         if self.safezone_music:
             self.safezone_music.stop()
         self.start_cannonhallway_music()
+        self.stop_rbtc_music()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -453,6 +499,7 @@ class ThirdPersonPlayer(Entity):
         if self.safezone_music:
             self.safezone_music.stop()
         self.start_cannonhallway_music()
+        self.stop_rbtc_music()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -475,6 +522,7 @@ class ThirdPersonPlayer(Entity):
         
         if self.safezone_music:
             self.safezone_music.stop()
+        self.stop_rbtc_music()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -536,6 +584,8 @@ class ThirdPersonPlayer(Entity):
 
         if self.safezone_music:
             self.safezone_music.stop()
+        self.stop_cannonhallway_music()
+        self.start_rbtc_music()
 
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
@@ -564,6 +614,7 @@ class ThirdPersonPlayer(Entity):
         if hasattr(self, 'safezone_music') and self.safezone_music:
             self.safezone_music.stop()
         self.stop_cannonhallway_music()
+        self.stop_rbtc_music()
         if hasattr(self, 'low_health_music') and self.low_health_music:
             self.low_health_music.stop()
             
@@ -576,6 +627,8 @@ class ThirdPersonPlayer(Entity):
             self.grenade_used = False
             self.teammate_unlocked = False
             state.dismiss_archer_companion()
+            self.drone_teammate_unlocked = False
+            state.dismiss_drone_companion()
             ent.chef.exclamation.enabled = True
             ent.manager.exclamation.enabled = True
             self.level_3_phase = 0
@@ -607,17 +660,17 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = False
+            elif self.drone_teammate_unlocked:
+                self.mission_ui.text = 'Drone teammate ready.'
+                self.mission_ui.color = color.cyan
+                self.crosshair.enabled = True
             elif self.level_7_cleared:
-                self.mission_ui.text = 'Level 7 cleared!'
-                self.mission_ui.color = color.azure
+                self.mission_ui.text = 'Talk to scientist'
+                self.mission_ui.color = color.white
                 self.crosshair.enabled = True
             elif self.level_7_portal_open:
                 self.mission_ui.text = 'Enter Level 7!'
                 self.mission_ui.color = color.magenta
-                self.crosshair.enabled = True
-            elif self.scientist_talked:
-                self.mission_ui.text = 'Talk to the Manager'
-                self.mission_ui.color = color.yellow
                 self.crosshair.enabled = True
             elif self.level_6_return_portal_open or self.scientist_spawned:
                 self.mission_ui.text = 'Talk to scientist'
@@ -846,6 +899,20 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.color = color.green
                 invoke(setattr, self.mission_ui, 'color', color.yellow, delay=3.0)
 
+        if self.drone_teammate_unlocked and state.drone_companion is None and self.drone_respawn_timer > 0:
+            self.drone_respawn_timer -= time.dt
+            secs_left = int(self.drone_respawn_timer) + 1
+            self.mission_ui.text = f'Drone KO! Respawning in {secs_left}s...'
+            self.mission_ui.color = color.orange
+            if self.drone_respawn_timer <= 0:
+                drone = state.spawn_drone_companion()
+                drone.position = self.position - self.right * 2
+                drone.hp = drone.max_hp
+                drone.health_bar.scale_x = 1.1
+                self.mission_ui.text = 'Drone respawned!'
+                self.mission_ui.color = color.green
+                invoke(setattr, self.mission_ui, 'color', color.yellow, delay=3.0)
+
         # Update HUD
         if self.has_bow:
             self.bow_icon.enabled = True
@@ -889,6 +956,7 @@ class ThirdPersonPlayer(Entity):
         if should_play_low_health:
             self.health_ui.color = color.red
             self.stop_cannonhallway_music()
+            self.stop_rbtc_music()
             if self.low_health_music and not self.low_health_music.playing:
                 self.low_health_music.play()
         else:
@@ -897,8 +965,11 @@ class ThirdPersonPlayer(Entity):
                 self.low_health_music.stop()
             if in_cannonhallway_area:
                 self.start_cannonhallway_music()
+            elif self.current_level == 6:
+                self.start_rbtc_music()
             else:
                 self.stop_cannonhallway_music()
+                self.stop_rbtc_music()
 
     def perform_dash(self):
         self.dash_cooldown = self.dash_max_cooldown
@@ -990,6 +1061,11 @@ class ThirdPersonPlayer(Entity):
             'level_7_portal_open': self.level_7_portal_open,
             'level_7_cleared': self.level_7_cleared,
             'scientist_talked': self.scientist_talked,
+            'drone_teammate_unlocked': self.drone_teammate_unlocked,
+            'drone_hp': getattr(state.drone_companion, 'hp', 120),
+            'drone_x': getattr(state.drone_companion, 'x', self.x),
+            'drone_y': getattr(state.drone_companion, 'y', self.y),
+            'drone_z': getattr(state.drone_companion, 'z', self.z),
             'teammate_hp': getattr(state.archer_companion, 'hp', 150),
             'teammate_x': getattr(state.archer_companion, 'x', self.x),
             'teammate_y': getattr(state.archer_companion, 'y', self.y),
@@ -1071,6 +1147,7 @@ class ThirdPersonPlayer(Entity):
         self.level_7_portal_open = save_data.get('level_7_portal_open', False)
         self.level_7_cleared = save_data.get('level_7_cleared', False)
         self.scientist_talked = save_data.get('scientist_talked', False)
+        self.drone_teammate_unlocked = save_data.get('drone_teammate_unlocked', False)
         world.level_3_door.y = save_data.get('door_y', 5)
 
         if self.spawn_point == (1000, 1, 990) and (self.level_6_return_portal_open or self.scientist_spawned):
@@ -1095,6 +1172,18 @@ class ThirdPersonPlayer(Entity):
         else:
             state.dismiss_archer_companion()
 
+        if self.drone_teammate_unlocked:
+            drone = state.spawn_drone_companion()
+            drone.hp = save_data.get('drone_hp', drone.max_hp)
+            drone.health_bar.scale_x = max(drone.hp / drone.max_hp, 0) * 1.1
+            drone.position = (
+                save_data.get('drone_x', self.x - 2),
+                save_data.get('drone_y', self.y + 1),
+                save_data.get('drone_z', self.z - 2),
+            )
+        else:
+            state.dismiss_drone_companion()
+
         if self.spawn_point == (0, 1, 0):
             if self.enemies_killed >= self.mission_target:
                 self.mission_ui.text = 'Portal Opened Nearby!'
@@ -1112,17 +1201,17 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = False
+            elif self.drone_teammate_unlocked:
+                self.mission_ui.text = 'Drone teammate ready.'
+                self.mission_ui.color = color.cyan
+                self.crosshair.enabled = True
             elif self.level_7_cleared:
-                self.mission_ui.text = 'Level 7 cleared!'
-                self.mission_ui.color = color.azure
+                self.mission_ui.text = 'Talk to scientist'
+                self.mission_ui.color = color.white
                 self.crosshair.enabled = True
             elif self.level_7_portal_open:
                 self.mission_ui.text = 'Enter Level 7!'
                 self.mission_ui.color = color.magenta
-                self.crosshair.enabled = True
-            elif self.scientist_talked:
-                self.mission_ui.text = 'Talk to the Manager'
-                self.mission_ui.color = color.yellow
                 self.crosshair.enabled = True
             elif not self.level_3_cleared:
                 self.mission_ui.text = 'Talk to the Manager'
@@ -1197,6 +1286,7 @@ class ThirdPersonPlayer(Entity):
         elif self.spawn_point == (4000, 2, 2230):
             self.setup_level_6_arena()
             self.crosshair.enabled = True
+            self.start_rbtc_music()
             if self.level_6_return_portal_open:
                 ent.portal.position = (self.level_6_return_portal_x, self.level_6_return_portal_y, self.level_6_return_portal_z)
                 ent.portal.enabled = True
@@ -1233,13 +1323,18 @@ class ThirdPersonPlayer(Entity):
                 self.throw_grenade()
         elif key == 'f':
             if state.scientist_npc is not None and distance(self.position, state.scientist_npc.position) < 5.0:
-                state.scientist_npc.dialogue_ui.text = 'Scientist: I need to check this thing out. Maybe it will be useful.'
+                state.scientist_npc.dialogue_ui.text = "Scientist: I used that special battery to make this drone for you. It's friendly."
                 state.scientist_npc.dialogue_ui.enabled = True
                 state.scientist_npc.exclamation.enabled = False
                 self.scientist_talked = True
-                self.mission_ui.text = 'Talk to the Manager'
-                self.mission_ui.color = color.yellow
-                ent.manager.exclamation.enabled = True
+                self.drone_teammate_unlocked = True
+                self.mission_ui.text = 'Drone teammate unlocked!'
+                self.mission_ui.color = color.cyan
+                drone = state.spawn_drone_companion()
+                drone.position = self.position + (-2, 1, -2)
+                drone.y = self.y + 1.5
+                drone.hp = drone.max_hp
+                drone.health_bar.scale_x = 1.1
                 invoke(setattr, state.scientist_npc.dialogue_ui, 'enabled', False, delay=4.0)
             if distance(self.position, ent.chef.position) < 5.0 and not self.has_bow:
                 ent.chef.dialogue_ui.enabled = True
@@ -1293,7 +1388,12 @@ class ThirdPersonPlayer(Entity):
 
                     invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
                 else:
-                    if self.scientist_talked and not self.level_7_cleared:
+                    if self.level_7_cleared and not self.scientist_talked:
+                        ent.manager.dialogue_ui.text = "Manager: Talk to the scientist."
+                        self.mission_ui.text = 'Talk to scientist'
+                        self.mission_ui.color = color.white
+                        self.level_7_portal_open = False
+                    elif self.scientist_talked and not self.level_7_cleared:
                         ent.manager.dialogue_ui.text = "Manager: The Level 7 arena is open."
                         self.level_7_portal_open = True
                         self.level_6_portal_open = False

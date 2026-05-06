@@ -8,6 +8,7 @@ player_name = os.getenv('GAME_USERNAME', 'Player')
 
 player = None
 archer_companion = None
+drone_companion = None
 scientist_npc = None
 
 enemies = []
@@ -21,6 +22,8 @@ def get_active_party_targets():
     targets = [player]
     if archer_companion is not None and getattr(archer_companion, 'hp', 0) > 0:
         targets.append(archer_companion)
+    if drone_companion is not None and getattr(drone_companion, 'hp', 0) > 0:
+        targets.append(drone_companion)
     return targets
 
 
@@ -44,6 +47,14 @@ def spawn_archer_companion():
     return archer_companion
 
 
+def spawn_drone_companion():
+    global drone_companion
+    if drone_companion is None:
+        from adventure_entities import DroneCompanion
+        drone_companion = DroneCompanion()
+    return drone_companion
+
+
 def spawn_scientist():
     global scientist_npc
     if scientist_npc is None:
@@ -57,6 +68,13 @@ def dismiss_scientist():
     if scientist_npc is not None:
         destroy(scientist_npc)
         scientist_npc = None
+
+
+def dismiss_drone_companion():
+    global drone_companion
+    if drone_companion is not None:
+        destroy(drone_companion)
+        drone_companion = None
 
 
 def clear_level_6_pillars():
