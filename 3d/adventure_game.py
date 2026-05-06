@@ -120,11 +120,13 @@ class ThirdPersonPlayer(Entity):
                 self.low_health_music.stop()
             if hasattr(self, 'boss_music') and self.boss_music and self.boss_music.playing:
                 self.boss_music.stop()
-            has_live_teammate = (
-                (self.teammate_unlocked and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0) or
-                (self.drone_teammate_unlocked and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0)
-            )
-            if has_live_teammate:
+            live_teammate = None
+            if self.teammate_unlocked and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0:
+                live_teammate = 'archer'
+            elif self.drone_teammate_unlocked and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0:
+                live_teammate = 'drone'
+
+            if live_teammate is not None:
                 self.hp = 50
                 self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
                 self.position = self.spawn_point
@@ -132,7 +134,10 @@ class ThirdPersonPlayer(Entity):
                 self.grounded = True
                 self.color = color.azure
                 invoke(setattr, self, 'color', color.azure, delay=0.2)
-                self.mission_ui.text = 'Stay alive until the archer returns!'
+                if live_teammate == 'archer':
+                    self.mission_ui.text = 'Stay alive until the archer returns!'
+                else:
+                    self.mission_ui.text = 'Stay alive until the drone returns!'
                 self.mission_ui.color = color.orange
             else:
                 print("You died!")
@@ -1336,7 +1341,8 @@ class ThirdPersonPlayer(Entity):
                 drone.hp = drone.max_hp
                 drone.health_bar.scale_x = 1.1
                 invoke(setattr, state.scientist_npc.dialogue_ui, 'enabled', False, delay=4.0)
-            if distance(self.position, ent.chef.position) < 5.0 and not self.has_bow:
+                return
+            elif distance(self.position, ent.chef.position) < 5.0 and not self.has_bow:
                 ent.chef.dialogue_ui.enabled = True
                 ent.chef.exclamation.enabled = False
                 self.has_bow = True
