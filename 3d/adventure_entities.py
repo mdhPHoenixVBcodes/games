@@ -235,6 +235,14 @@ class ArcherCompanion(Entity):
         self.follow_distance = 2.8
         self.attack_range = 16
         self.attack_cooldown = 0
+        self.y_velocity = 0
+        self.gravity = 25
+        self.jump_force = 12
+        self.grounded = False
+        self.dash_cooldown = 0
+        self.dash_duration = 0.15
+        self.dash_speed = 45
+        self.is_dashing = False
         self.health_bar = Entity(parent=self, y=1.1, model='cube', color=color.green, scale=(1.2, 0.12, 0.12))
         self.bow = Entity(parent=self, model='cube', color=color.brown, scale=(0.12, 0.8, 0.12), position=(0.55, 0.05, 0.25), rotation=(0, 0, 25))
 
@@ -249,10 +257,92 @@ class ArcherCompanion(Entity):
                 state.player.archer_respawn_timer = 30.0
                 state.player.mission_ui.text = 'Archer KO! Respawning in 30s...'
                 state.player.mission_ui.color = color.orange
+            if state.control_mode == 'archer':
+                state.set_control_mode('player')
             state.dismiss_archer_companion()
+
+    def shoot_arrow(self):
+        if self.attack_cooldown > 0:
+            return
+
+        self.attack_cooldown = 0.5
+        spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.5
+        ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
+        if ray.hit:
+            target_point = ray.world_point
+        else:
+            target_point = camera.world_position + (camera.forward * 500)
+        shot_direction = (target_point - spawn_pos).normalized()
+        Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction, damage=15)
+
+    def perform_dash(self):
+        self.dash_cooldown = self.dash_duration
+        self.is_dashing = True
+        dash_dir = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+        if dash_dir.length() <= 0.001:
+            dash_dir = self.forward
+        else:
+            dash_dir = dash_dir.normalized()
+
+        self.animate_position(self.position + dash_dir * 8, duration=self.dash_duration, curve=curve.out_expo)
+        invoke(setattr, self, 'is_dashing', False, delay=self.dash_duration)
+
+    def snap_to_ground(self):
+        ground_ray = raycast(self.position + (0, 2, 0), direction=(0, -1, 0), ignore=(self, state.player), distance=8)
+        if ground_ray.hit:
+            self.y = ground_ray.world_point[1] + (self.scale_y / 2)
+            self.y_velocity = 0
+            self.grounded = True
+            return True
+        return False
+
+    def input(self, key):
+        if state.control_mode != 'archer':
+            return
+
+        if key == 'f':
+            state.handle_story_interaction(self)
 
     def update(self):
         if state.player.is_teleporting:
+            return
+
+        if state.control_mode == 'archer':
+            if self.attack_cooldown > 0:
+                self.attack_cooldown -= time.dt
+            if self.dash_cooldown > 0:
+                self.dash_cooldown -= time.dt
+
+            current_speed = self.speed
+            target_fov = 90
+            if held_keys['left control']:
+                current_speed *= 1.6
+                target_fov = 110
+            camera.fov = lerp(camera.fov, target_fov, 5 * time.dt)
+
+            if not self.is_dashing:
+                direction = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+                self.position += direction * current_speed * time.dt
+
+            previous_position = self.position
+            if getattr(state.player, 'current_level', None) == 7:
+                state.player.resolve_level_7_pillar_collision(self, previous_position)
+
+            if not self.snap_to_ground():
+                self.grounded = False
+                self.y_velocity -= self.gravity * time.dt
+            self.y += self.y_velocity * time.dt
+            self.snap_to_ground()
+
+            self.rotation_y += mouse.velocity[0] * 150
+            camera.rotation_x = clamp(camera.rotation_x - mouse.velocity[1] * 150, -25, 45)
+
+            if held_keys['space'] and self.grounded:
+                self.y_velocity = self.jump_force
+            if (held_keys['left shift'] or held_keys['shift']) and self.dash_cooldown <= 0:
+                self.perform_dash()
+            if held_keys['right mouse'] and self.attack_cooldown <= 0:
+                self.shoot_arrow()
             return
 
         if self.attack_cooldown > 0:
@@ -267,9 +357,7 @@ class ArcherCompanion(Entity):
             self.position += to_follow.normalized() * self.speed * time.dt
             state.resolve_level_6_pillar_collision(self, previous_position)
 
-        ray = raycast(self.position + (0, 2, 0), direction=(0, -1, 0), ignore=(self,), distance=4)
-        if ray.hit:
-            self.y = ray.world_point[1] + (self.scale_y / 2)
+        self.snap_to_ground()
 
         if self.attack_cooldown <= 0 and len(state.enemies) > 0:
             target = min(state.enemies, key=lambda enemy: distance(self.position, enemy.position))
@@ -294,6 +382,14 @@ class DroneCompanion(Entity):
         self.follow_distance = 3.0
         self.attack_range = 24
         self.attack_cooldown = 0
+        self.y_velocity = 0
+        self.gravity = 25
+        self.jump_force = 12
+        self.grounded = False
+        self.dash_cooldown = 0
+        self.dash_duration = 0.15
+        self.dash_speed = 45
+        self.is_dashing = False
         self.health_bar = Entity(parent=self, y=0.9, model='cube', color=color.green, scale=(1.1, 0.1, 0.1))
 
     def take_damage(self, amount):
@@ -306,10 +402,84 @@ class DroneCompanion(Entity):
                 state.player.drone_respawn_timer = 30.0
                 state.player.mission_ui.text = 'Drone KO! Respawning in 30s...'
                 state.player.mission_ui.color = color.orange
+            if state.control_mode == 'drone':
+                state.set_control_mode('player')
             state.dismiss_drone_companion()
+
+    def snap_to_ground(self):
+        ground_ray = raycast(self.position + (0, 2, 0), direction=(0, -1, 0), ignore=(self, state.player, state.archer_companion), distance=8)
+        if ground_ray.hit:
+            self.y = ground_ray.world_point[1] + (self.scale_y / 2)
+            self.y_velocity = 0
+            self.grounded = True
+            return True
+        return False
+
+    def perform_dash(self):
+        self.dash_cooldown = self.dash_duration
+        self.is_dashing = True
+        dash_dir = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+        if dash_dir.length() <= 0.001:
+            dash_dir = self.forward
+        else:
+            dash_dir = dash_dir.normalized()
+
+        self.animate_position(self.position + dash_dir * 8, duration=self.dash_duration, curve=curve.out_expo)
+        invoke(setattr, self, 'is_dashing', False, delay=self.dash_duration)
+
+    def input(self, key):
+        if state.control_mode != 'drone':
+            return
+        if key == 'f':
+            state.handle_story_interaction(self)
 
     def update(self):
         if state.player.is_teleporting:
+            return
+
+        if state.control_mode == 'drone':
+            if self.attack_cooldown > 0:
+                self.attack_cooldown -= time.dt
+
+            current_speed = self.speed
+            target_fov = 90
+            if held_keys['left control']:
+                current_speed *= 1.6
+                target_fov = 110
+            camera.fov = lerp(camera.fov, target_fov, 5 * time.dt)
+
+            if not self.is_dashing:
+                direction = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+                self.position += direction * current_speed * time.dt
+
+            vertical_direction = 0
+            if held_keys['space']:
+                vertical_direction += 1
+            if held_keys['left shift'] or held_keys['shift']:
+                vertical_direction -= 1
+            if vertical_direction != 0:
+                self.position += self.up * vertical_direction * current_speed * time.dt
+
+            previous_position = self.position
+            if getattr(state.player, 'current_level', None) == 7:
+                state.player.resolve_level_7_pillar_collision(self, previous_position)
+
+            self.y_velocity = 0
+            self.grounded = False
+
+            self.rotation_y += mouse.velocity[0] * 150
+            camera.rotation_x = clamp(camera.rotation_x - mouse.velocity[1] * 150, -25, 45)
+
+            if held_keys['right mouse'] and self.attack_cooldown <= 0:
+                self.attack_cooldown = 0.5
+                spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.5
+                ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
+                if ray.hit:
+                    target_point = ray.world_point
+                else:
+                    target_point = camera.world_position + (camera.forward * 500)
+                shot_direction = (target_point - spawn_pos).normalized()
+                Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction, damage=10)
             return
 
         if self.attack_cooldown > 0:
@@ -325,9 +495,7 @@ class DroneCompanion(Entity):
             if getattr(state.player, 'current_level', None) == 7:
                 state.player.resolve_level_7_pillar_collision(self, previous_position)
 
-        ray = raycast(self.position + (0, 1.5, 0), direction=(0, -1, 0), ignore=(self,), distance=4)
-        if ray.hit:
-            self.y = ray.world_point[1] + (self.scale_y / 2)
+        self.snap_to_ground()
 
         if self.attack_cooldown <= 0 and len(state.enemies) > 0:
             target = min(state.enemies, key=lambda enemy: distance(self.position, enemy.position))
@@ -546,7 +714,7 @@ class BossCube(Entity):
 
 
 black_screen = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(3, 3), z=-10)
-controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause\nE - Shockwave', position=(-0.82, -0.35), scale=2.5, color=color.white, background=True)
+controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause', position=(-0.82, -0.35), scale=2.5, color=color.white, background=True)
 
 
 class DamageMarker(Text):

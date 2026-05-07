@@ -1,5 +1,5 @@
 from panda3d.core import loadPrcFileData, Filename
-from ursina import Ursina, Entity, color, destroy, distance, window
+from ursina import Ursina, Entity, color, destroy, distance, window, camera, mouse, invoke
 from pathlib import Path
 import os
 
@@ -16,6 +16,7 @@ player = None
 archer_companion = None
 drone_companion = None
 scientist_npc = None
+control_mode = 'player'
 
 enemies = []
 cannons = []
@@ -41,8 +42,154 @@ def get_nearest_party_target(origin):
 def dismiss_archer_companion():
     global archer_companion
     if archer_companion is not None:
+        if control_mode == 'archer':
+            set_control_mode('player')
         destroy(archer_companion)
         archer_companion = None
+
+
+def set_control_mode(mode):
+    global control_mode
+    mode = mode if mode in ('player', 'archer', 'drone') else 'player'
+    if mode == 'archer' and (archer_companion is None or getattr(archer_companion, 'hp', 0) <= 0):
+        mode = 'player'
+    if mode == 'drone' and (drone_companion is None or getattr(drone_companion, 'hp', 0) <= 0):
+        mode = 'player'
+    control_mode = mode
+
+    target = player
+    if mode == 'archer' and archer_companion is not None:
+        target = archer_companion
+    elif mode == 'drone' and drone_companion is not None:
+        target = drone_companion
+    if target is not None:
+        camera.parent = target
+        camera.position = (0, 3, -7)
+        camera.rotation_x = 15
+        mouse.locked = True
+    return control_mode
+
+
+def handle_story_interaction(actor):
+    import adventure_entities as ent
+    import adventure_world as world
+
+    player_obj = globals()['player']
+
+    if scientist_npc is not None and distance(actor.position, scientist_npc.position) < 5.0:
+        if not player_obj.scientist_inspected:
+            scientist_npc.dialogue_ui.text = "Scientist: I need to check this thing out. Maybe it will be useful."
+            player_obj.scientist_inspected = True
+            player_obj.mission_ui.text = 'Talk to the Manager'
+            player_obj.mission_ui.color = color.yellow
+        else:
+            scientist_npc.dialogue_ui.text = "Scientist: I used that special battery to make this drone for you. It's friendly."
+            player_obj.scientist_talked = True
+            player_obj.drone_teammate_unlocked = True
+            player_obj.mission_ui.text = 'Drone teammate unlocked!'
+            player_obj.mission_ui.color = color.cyan
+            drone = spawn_drone_companion()
+            drone.position = player_obj.position + (-2, 1, -2)
+            drone.y = player_obj.y + 1.5
+            drone.hp = drone.max_hp
+            drone.health_bar.scale_x = 1.1
+        scientist_npc.dialogue_ui.enabled = True
+        scientist_npc.exclamation.enabled = False
+        invoke(setattr, scientist_npc.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0 and not player_obj.has_bow:
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player_obj.has_bow = True
+        player_obj.mission_ui.text = 'Find the Manager'
+        player_obj.mission_ui.color = color.yellow
+        player_obj.crosshair.enabled = True
+        player_obj.bow_icon.enabled = True
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0 and player_obj.level_4_cleared and not player_obj.has_grenade:
+        ent.chef.dialogue_ui.text = 'Chef: Here take this shockwave grenade, press E to use it'
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player_obj.has_grenade = True
+        player_obj.mission_ui.text = 'Use the shockwave grenade'
+        player_obj.mission_ui.color = color.yellow
+        player_obj.grenade_icon.enabled = True
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0 and player_obj.level_5_cleared and not player_obj.teammate_unlocked:
+        ent.chef.dialogue_ui.text = 'Chef: This is my friend, the archer, he will help.'
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player_obj.teammate_unlocked = True
+        teammate = spawn_archer_companion()
+        teammate.hp = teammate.max_hp
+        teammate.health_bar.scale_x = 1.2
+        teammate.position = player_obj.position + (2, 0, -2)
+        player_obj.mission_ui.text = 'Talk to the Manager'
+        player_obj.mission_ui.color = color.yellow
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0:
+        ent.chef.dialogue_ui.text = 'Chef: Good luck out there!'
+        ent.chef.dialogue_ui.enabled = True
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.manager.position) < 5.0:
+        if not player_obj.has_bow:
+            ent.manager.dialogue_ui.text = "Manager: Talk to the Chef first, you need a weapon!"
+            ent.manager.dialogue_ui.enabled = True
+            invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+        elif not player_obj.level_3_cleared:
+            ent.manager.dialogue_ui.text = "Manager: The portal is open."
+            ent.manager.dialogue_ui.enabled = True
+            ent.manager.exclamation.enabled = False
+            player_obj.mission_ui.text = 'Enter the portal!'
+            player_obj.mission_ui.color = color.magenta
+
+            ent.portal_2.position = ent.manager.position + ent.manager.forward * 4
+            ent.portal_2.y = 1.5
+            ent.portal_2.enabled = True
+
+            invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+        else:
+            if player_obj.scientist_inspected and not player_obj.level_7_cleared:
+                ent.manager.dialogue_ui.text = "Manager: The Level 7 arena is open."
+                player_obj.level_7_portal_open = True
+                player_obj.level_6_portal_open = False
+                player_obj.mission_ui.text = 'Enter Level 7!'
+                player_obj.mission_ui.color = color.magenta
+            elif player_obj.level_7_cleared and not player_obj.scientist_talked:
+                ent.manager.dialogue_ui.text = "Manager: Talk to the scientist."
+                player_obj.mission_ui.text = 'Talk to scientist'
+                player_obj.mission_ui.color = color.white
+                player_obj.level_7_portal_open = False
+            elif player_obj.teammate_unlocked and player_obj.level_5_cleared:
+                ent.manager.dialogue_ui.text = "Manager: Great. The Level 6 portal is open."
+                player_obj.mission_ui.text = 'Enter Level 6!'
+                player_obj.level_5_portal_open = False
+                player_obj.level_6_portal_open = True
+            else:
+                ent.manager.dialogue_ui.text = "Manager: Great. The boss arena is open."
+                player_obj.mission_ui.text = 'Enter the portal!'
+                player_obj.level_5_portal_open = True
+                player_obj.level_6_portal_open = False
+            ent.manager.dialogue_ui.enabled = True
+            ent.manager.exclamation.enabled = False
+            world.ground_4.color = color.dark_gray
+            ent.portal_4.position = ent.manager.position + ent.manager.forward * 4
+            ent.portal_4.y = 1.5
+            ent.portal_4.enabled = True
+            player_obj.mission_ui.color = color.magenta
+            invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    return False
 
 
 def spawn_archer_companion():
@@ -79,6 +226,8 @@ def dismiss_scientist():
 def dismiss_drone_companion():
     global drone_companion
     if drone_companion is not None:
+        if control_mode == 'drone':
+            set_control_mode('player')
         destroy(drone_companion)
         drone_companion = None
 

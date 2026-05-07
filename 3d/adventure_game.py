@@ -7,6 +7,124 @@ import adventure_state as state
 import adventure_entities as ent
 import adventure_world as world
 
+def handle_story_interaction(actor):
+    player = state.player
+
+    if state.scientist_npc is not None and distance(actor.position, state.scientist_npc.position) < 5.0:
+        if not player.scientist_inspected:
+            state.scientist_npc.dialogue_ui.text = "Scientist: I need to check this thing out. Maybe it will be useful."
+            player.scientist_inspected = True
+            player.mission_ui.text = 'Talk to the Manager'
+            player.mission_ui.color = color.yellow
+        else:
+            state.scientist_npc.dialogue_ui.text = "Scientist: I used that special battery to make this drone for you. It's friendly."
+            player.scientist_talked = True
+            player.drone_teammate_unlocked = True
+            player.mission_ui.text = 'Drone teammate unlocked!'
+            player.mission_ui.color = color.cyan
+            drone = state.spawn_drone_companion()
+            drone.position = player.position + (-2, 1, -2)
+            drone.y = player.y + 1.5
+            drone.hp = drone.max_hp
+            drone.health_bar.scale_x = 1.1
+        state.scientist_npc.dialogue_ui.enabled = True
+        state.scientist_npc.exclamation.enabled = False
+        invoke(setattr, state.scientist_npc.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0 and not player.has_bow:
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player.has_bow = True
+        player.mission_ui.text = 'Find the Manager'
+        player.mission_ui.color = color.yellow
+        player.crosshair.enabled = True
+        player.bow_icon.enabled = True
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0 and player.level_4_cleared and not player.has_grenade:
+        ent.chef.dialogue_ui.text = 'Chef: Here take this shockwave grenade, press E to use it'
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player.has_grenade = True
+        player.mission_ui.text = 'Use the shockwave grenade'
+        player.mission_ui.color = color.yellow
+        player.grenade_icon.enabled = True
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0 and player.level_5_cleared and not player.teammate_unlocked:
+        ent.chef.dialogue_ui.text = 'Chef: This is my friend, the archer, he will help.'
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player.teammate_unlocked = True
+        teammate = state.spawn_archer_companion()
+        teammate.hp = teammate.max_hp
+        teammate.health_bar.scale_x = 1.2
+        teammate.position = player.position + (2, 0, -2)
+        player.mission_ui.text = 'Talk to the Manager'
+        player.mission_ui.color = color.yellow
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.chef.position) < 5.0:
+        ent.chef.dialogue_ui.text = 'Chef: Good luck out there!'
+        ent.chef.dialogue_ui.enabled = True
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if distance(actor.position, ent.manager.position) < 5.0:
+        if not player.has_bow:
+            ent.manager.dialogue_ui.text = "Manager: Talk to the Chef first, you need a weapon!"
+            ent.manager.dialogue_ui.enabled = True
+            invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+        elif not player.level_3_cleared:
+            ent.manager.dialogue_ui.text = "Manager: The portal is open."
+            ent.manager.dialogue_ui.enabled = True
+            ent.manager.exclamation.enabled = False
+            player.mission_ui.text = 'Enter the portal!'
+            player.mission_ui.color = color.magenta
+
+            ent.portal_2.position = ent.manager.position + ent.manager.forward * 4
+            ent.portal_2.y = 1.5
+            ent.portal_2.enabled = True
+
+            invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+        else:
+            if player.scientist_inspected and not player.level_7_cleared:
+                ent.manager.dialogue_ui.text = "Manager: The Level 7 arena is open."
+                player.level_7_portal_open = True
+                player.level_6_portal_open = False
+                player.mission_ui.text = 'Enter Level 7!'
+                player.mission_ui.color = color.magenta
+            elif player.level_7_cleared and not player.scientist_talked:
+                ent.manager.dialogue_ui.text = "Manager: Talk to the scientist."
+                player.mission_ui.text = 'Talk to scientist'
+                player.mission_ui.color = color.white
+                player.level_7_portal_open = False
+            elif player.teammate_unlocked and player.level_5_cleared:
+                ent.manager.dialogue_ui.text = "Manager: Great. The Level 6 portal is open."
+                player.mission_ui.text = 'Enter Level 6!'
+                player.level_5_portal_open = False
+                player.level_6_portal_open = True
+            else:
+                ent.manager.dialogue_ui.text = "Manager: Great. The boss arena is open."
+                player.mission_ui.text = 'Enter the portal!'
+                player.level_5_portal_open = True
+                player.level_6_portal_open = False
+            ent.manager.dialogue_ui.enabled = True
+            ent.manager.exclamation.enabled = False
+            world.ground_4.color = color.dark_gray
+            ent.portal_4.position = ent.manager.position + ent.manager.forward * 4
+            ent.portal_4.y = 1.5
+            ent.portal_4.enabled = True
+            player.mission_ui.color = color.magenta
+            invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    return False
+
 class ThirdPersonPlayer(Entity):
     def __init__(self):
         super().__init__(model='cube', color=color.azure, scale=(1, 2, 1), position=(0, 1, 0), collider='box')
@@ -82,6 +200,15 @@ class ThirdPersonPlayer(Entity):
         self.grenade_shockwave_push = 28
         self.crosshair = Text(parent=camera.ui, text='+', origin=(0, 0), position=(0, 0.19), scale=2, color=color.white, enabled=False)
         self.name_label = Text(parent=self, text=state.player_name, position=(0, 1.8), origin=(0, 0), scale=10, color=color.white, background=False, billboard=True)
+        self.control_hint = Text(
+            parent=camera.ui,
+            text='',
+            origin=(0, 0),
+            position=(0, 0.36),
+            scale=1.5,
+            color=color.white,
+            background=True,
+        )
         
         # --- Ability HUD ---
         self.grenade_max_cooldown = 1.25
@@ -106,6 +233,30 @@ class ThirdPersonPlayer(Entity):
 
         self.sword = Entity(parent=self, model='cube', color=color.light_gray, scale=(0.1, 1.2, 0.2), position=(0.7, 0.2, 0.5), rotation=(30, 0, 0))
         self.crossguard = Entity(parent=self.sword, model='cube', color=color.gold, scale=(4, 0.1, 1.5), position=(0, -0.4, 0))
+        self.update_control_hint()
+
+    def update_control_hint(self):
+        archer_alive = self.teammate_unlocked and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0
+        drone_alive = self.drone_teammate_unlocked and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0
+
+        if state.control_mode == 'archer' and archer_alive:
+            parts = ['Controlling Archer', 'L: Player']
+            if drone_alive:
+                parts.append('K: Drone')
+        elif state.control_mode == 'drone' and drone_alive:
+            parts = ['Controlling Drone', 'L: Archer']
+            if archer_alive:
+                parts.append('K: Player')
+        else:
+            parts = []
+            if archer_alive:
+                parts.append('L: Archer')
+            if drone_alive:
+                parts.append('K: Drone')
+            if not parts:
+                parts = ['No teammates unlocked']
+
+        self.control_hint.text = ' | '.join(parts)
 
     def take_damage(self, amount):
         if self.is_teleporting:
@@ -380,6 +531,7 @@ class ThirdPersonPlayer(Entity):
         self.y_velocity = 0
         self.clear_all_entities()
         self.level_3_phase = 0
+        state.set_control_mode('player')
         
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         if hasattr(self, 'boss_music') and self.boss_music:
@@ -389,6 +541,15 @@ class ThirdPersonPlayer(Entity):
         if not hasattr(self, 'safezone_music') or not self.safezone_music or not self.safezone_music.playing:
             if hasattr(self, 'safezone_music') and self.safezone_music: self.safezone_music.stop()
             self.safezone_music = Audio('Music/safezone.mp3', loop=True, autoplay=True, volume=0.5)
+
+        if self.teammate_unlocked:
+            companion = state.spawn_archer_companion()
+            companion.position = self.position + (2, 0, -2)
+            companion.y = self.y + (companion.scale_y / 2) - 1
+            companion.hp = max(1, min(companion.hp, companion.max_hp))
+            companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
+        elif state.archer_companion is not None:
+            state.dismiss_archer_companion()
         
         invoke(setattr, self, 'is_teleporting', False, delay=1.0)
         
@@ -621,6 +782,7 @@ class ThirdPersonPlayer(Entity):
         ent.portal_4.enabled = False
 
     def reset_game_state(self):
+        state.set_control_mode('player')
         self.position = self.spawn_point
         self.hp = self.max_hp
         self.health_ui.text = f'HP: {self.hp} / {self.max_hp}'
@@ -850,17 +1012,31 @@ class ThirdPersonPlayer(Entity):
                 self.spawn_timer = random.uniform(2.0, 5.0)
 
         previous_position = self.position
+        controlled_companion = None
+        if state.control_mode == 'archer' and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0:
+            controlled_companion = state.archer_companion
+        elif state.control_mode == 'drone' and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0:
+            controlled_companion = state.drone_companion
+        companion_controlled = controlled_companion is not None
         
         # Sprinting and FOV
         current_speed = self.speed
         target_fov = 90
-        if held_keys['left control']:
+        if not companion_controlled and held_keys['left control']:
             current_speed *= 1.6
             target_fov = 110
         
         camera.fov = lerp(camera.fov, target_fov, 5 * time.dt)
         
-        if not self.is_dashing:
+        if companion_controlled:
+            follow_target = controlled_companion.position + controlled_companion.right * 1.5 - controlled_companion.forward * 2.5
+            follow_target.y = self.y
+            to_follow = follow_target - self.position
+            to_follow.y = 0
+            if to_follow.length() > 0.5:
+                self.look_at_2d(controlled_companion, 'y')
+                self.position += to_follow.normalized() * (self.speed * 0.9) * time.dt
+        elif not self.is_dashing:
             direction = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
             self.position += direction * current_speed * time.dt
         if self.spawn_point == (4000, 2, 2230) or self.level_6_portal_open:
@@ -878,23 +1054,26 @@ class ThirdPersonPlayer(Entity):
             self.y_velocity -= self.gravity * time.dt
         self.y += self.y_velocity * time.dt
 
-        self.rotation_y += mouse.velocity[0] * 150
-        if self.level_5_cleared:
-            camera.rotation_x = clamp(camera.rotation_x - mouse.velocity[1] * 150, -25, 45)
+        if not companion_controlled:
+            self.rotation_y += mouse.velocity[0] * 150
+            if self.level_5_cleared:
+                camera.rotation_x = clamp(camera.rotation_x - mouse.velocity[1] * 150, -25, 45)
+            else:
+                camera.rotation_x = 15
+
+            if held_keys['space'] and self.grounded:
+                self.y_velocity = self.jump_force
+            if self.dash_cooldown > 0:
+                self.dash_cooldown -= time.dt
+            elif (held_keys['left shift'] or held_keys['shift']):
+                self.perform_dash()
+
+            if self.attack_cooldown > 0:
+                self.attack_cooldown -= time.dt
+            elif held_keys['left mouse']:
+                self.perform_attack()
         else:
-            camera.rotation_x = 15
-
-        if held_keys['space'] and self.grounded:
-            self.y_velocity = self.jump_force
-        if self.dash_cooldown > 0:
-            self.dash_cooldown -= time.dt
-        elif (held_keys['left shift'] or held_keys['shift']):
-            self.perform_dash()
-
-        if self.attack_cooldown > 0:
-            self.attack_cooldown -= time.dt
-        elif held_keys['left mouse']:
-            self.perform_attack()
+            self.attack_cooldown = max(0, self.attack_cooldown - time.dt)
         if self.grenade_cooldown > 0:
             self.grenade_cooldown -= time.dt
         if self.level_6_portal_open:
@@ -959,6 +1138,8 @@ class ThirdPersonPlayer(Entity):
             else:
                 self.dash_overlay.scale_y = 0
                 self.dash_icon.color = color.white
+
+        self.update_control_hint()
 
         # Hub (Level 2) logic: Regeneration and safe zone music overrides
         is_hub = self.current_level == 2
@@ -1052,6 +1233,7 @@ class ThirdPersonPlayer(Entity):
             'hp': self.hp,
             'spawn_x': self.spawn_point[0], 'spawn_y': self.spawn_point[1], 'spawn_z': self.spawn_point[2],
             'current_level': self.current_level,
+            'control_mode': state.control_mode,
             'enemies_killed': self.enemies_killed,
             'portal_enabled': ent.portal.enabled, 'portal_x': ent.portal.x, 'portal_y': ent.portal.y, 'portal_z': ent.portal.z,
             'portal_2_enabled': ent.portal_2.enabled, 'portal_2_x': ent.portal_2.x, 'portal_2_y': ent.portal_2.y, 'portal_2_z': ent.portal_2.z,
@@ -1176,6 +1358,7 @@ class ThirdPersonPlayer(Entity):
         self.scientist_inspected = save_data.get('scientist_inspected', self.scientist_talked)
         self.drone_teammate_unlocked = save_data.get('drone_teammate_unlocked', False)
         world.level_3_door.y = save_data.get('door_y', 5)
+        state.set_control_mode(save_data.get('control_mode', 'player'))
 
         if self.spawn_point == (1000, 1, 990) and (self.level_6_return_portal_open or self.scientist_spawned):
             scientist = state.spawn_scientist()
@@ -1331,6 +1514,7 @@ class ThirdPersonPlayer(Entity):
         self.crosshair.scale = 2
         self.crosshair.enabled = self.has_bow
         self.autosave_timer = self.autosave_interval
+        state.set_control_mode(save_data.get('control_mode', 'player'))
         print("Game Loaded!")
 
     def input(self, key):
@@ -1338,6 +1522,12 @@ class ThirdPersonPlayer(Entity):
             self.save_game()
         elif key == '9':
             self.load_game()
+        elif key == 'l':
+            if self.teammate_unlocked and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0:
+                state.set_control_mode('archer' if state.control_mode != 'archer' else 'player')
+        elif key == 'k':
+            if self.drone_teammate_unlocked and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0:
+                state.set_control_mode('drone' if state.control_mode != 'drone' else 'player')
         elif key == '/':
             self.spawn_point = (0, 1, 0)
             self.hub_regen_enabled = False
@@ -1349,108 +1539,8 @@ class ThirdPersonPlayer(Entity):
             if self.has_grenade and self.grenade_cooldown <= 0 and not self.is_teleporting:
                 self.throw_grenade()
         elif key == 'f':
-            if state.scientist_npc is not None and distance(self.position, state.scientist_npc.position) < 5.0:
-                if not self.scientist_inspected:
-                    state.scientist_npc.dialogue_ui.text = "Scientist: I need to check this thing out. Maybe it will be useful."
-                    self.scientist_inspected = True
-                    self.mission_ui.text = 'Talk to the Manager'
-                    self.mission_ui.color = color.yellow
-                else:
-                    state.scientist_npc.dialogue_ui.text = "Scientist: I used that special battery to make this drone for you. It's friendly."
-                    self.scientist_talked = True
-                    self.drone_teammate_unlocked = True
-                    self.mission_ui.text = 'Drone teammate unlocked!'
-                    self.mission_ui.color = color.cyan
-                    drone = state.spawn_drone_companion()
-                    drone.position = self.position + (-2, 1, -2)
-                    drone.y = self.y + 1.5
-                    drone.hp = drone.max_hp
-                    drone.health_bar.scale_x = 1.1
-                state.scientist_npc.dialogue_ui.enabled = True
-                state.scientist_npc.exclamation.enabled = False
-                invoke(setattr, state.scientist_npc.dialogue_ui, 'enabled', False, delay=4.0)
-                return
-            elif distance(self.position, ent.chef.position) < 5.0 and not self.has_bow:
-                ent.chef.dialogue_ui.enabled = True
-                ent.chef.exclamation.enabled = False
-                self.has_bow = True
-                self.mission_ui.text = 'Find the Manager'
-                self.mission_ui.color = color.yellow
-                self.crosshair.enabled = True
-                self.bow_icon.enabled = True
-                invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
-            elif distance(self.position, ent.chef.position) < 5.0 and self.level_4_cleared and not self.has_grenade:
-                ent.chef.dialogue_ui.text = 'Chef: Here take this shockwave grenade, press E to use it'
-                ent.chef.dialogue_ui.enabled = True
-                ent.chef.exclamation.enabled = False
-                self.has_grenade = True
-                self.mission_ui.text = 'Use the shockwave grenade'
-                self.mission_ui.color = color.yellow
-                self.grenade_icon.enabled = True
-                invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
-            elif distance(self.position, ent.chef.position) < 5.0 and self.level_5_cleared and not self.teammate_unlocked:
-                ent.chef.dialogue_ui.text = 'Chef: This is my friend, the archer, he will help.'
-                ent.chef.dialogue_ui.enabled = True
-                ent.chef.exclamation.enabled = False
-                self.teammate_unlocked = True
-                teammate = state.spawn_archer_companion()
-                teammate.hp = teammate.max_hp
-                teammate.health_bar.scale_x = 1.2
-                teammate.position = self.position + (2, 0, -2)
-                self.mission_ui.text = 'Talk to the Manager'
-                self.mission_ui.color = color.yellow
-                invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
-            elif distance(self.position, ent.chef.position) < 5.0:
-                ent.chef.dialogue_ui.text = 'Chef: Good luck out there!'
-                ent.chef.dialogue_ui.enabled = True
-                invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
-            elif distance(self.position, ent.manager.position) < 5.0:
-                if not self.has_bow:
-                    ent.manager.dialogue_ui.text = "Manager: Talk to the Chef first, you need a weapon!"
-                    ent.manager.dialogue_ui.enabled = True
-                    invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
-                elif not self.level_3_cleared:
-                    ent.manager.dialogue_ui.text = "Manager: The portal is open."
-                    ent.manager.dialogue_ui.enabled = True
-                    ent.manager.exclamation.enabled = False
-                    self.mission_ui.text = 'Enter the portal!'
-                    self.mission_ui.color = color.magenta
-
-                    ent.portal_2.position = ent.manager.position + ent.manager.forward * 4
-                    ent.portal_2.y = 1.5
-                    ent.portal_2.enabled = True
-
-                    invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
-                else:
-                    if self.scientist_inspected and not self.level_7_cleared:
-                        ent.manager.dialogue_ui.text = "Manager: The Level 7 arena is open."
-                        self.level_7_portal_open = True
-                        self.level_6_portal_open = False
-                        self.mission_ui.text = 'Enter Level 7!'
-                        self.mission_ui.color = color.magenta
-                    elif self.level_7_cleared and not self.scientist_talked:
-                        ent.manager.dialogue_ui.text = "Manager: Talk to the scientist."
-                        self.mission_ui.text = 'Talk to scientist'
-                        self.mission_ui.color = color.white
-                        self.level_7_portal_open = False
-                    elif self.teammate_unlocked and self.level_5_cleared:
-                        ent.manager.dialogue_ui.text = "Manager: Great. The Level 6 portal is open."
-                        self.mission_ui.text = 'Enter Level 6!'
-                        self.level_5_portal_open = False
-                        self.level_6_portal_open = True
-                    else:
-                        ent.manager.dialogue_ui.text = "Manager: Great. The boss arena is open."
-                        self.mission_ui.text = 'Enter the portal!'
-                        self.level_5_portal_open = True
-                        self.level_6_portal_open = False
-                    ent.manager.dialogue_ui.enabled = True
-                    ent.manager.exclamation.enabled = False
-                    world.ground_4.color = color.dark_gray
-                    ent.portal_4.position = ent.manager.position + ent.manager.forward * 4
-                    ent.portal_4.y = 1.5
-                    ent.portal_4.enabled = True
-                    self.mission_ui.color = color.magenta
-                    invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+            if state.control_mode == 'player':
+                state.handle_story_interaction(self)
 
         # Removed application.quit() from here as it's now in PauseHandler
 
