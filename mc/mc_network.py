@@ -43,6 +43,7 @@ class GameServer(NetworkManager):
         """Unified send method for both Client and Server."""
         data["id"] = "host"
         self.broadcast(data)
+        return True
 
     def start(self, world):
         self.world_ref = world
@@ -81,7 +82,9 @@ class GameServer(NetworkManager):
                     msg_raw, buffer = buffer.split(b'|END|', 1)
                     try:
                         msg = json.loads(msg_raw.decode('utf-8'))
-                        self.process_message(client_id, msg, conn) # Pass conn to exclude it
+                        new_client_id = self.process_message(client_id, msg, conn) # Pass conn to exclude it
+                        if new_client_id is not None:
+                            client_id = new_client_id
                     except Exception as e:
                         print(f"[SERVER] Packet error: {e}")
                         continue
@@ -92,6 +95,8 @@ class GameServer(NetworkManager):
         del self.clients[conn]
         if client_id in self.player_data:
             del self.player_data[client_id]
+        if self.world_ref is not None and client_id in self.world_ref.remote_players_data:
+            del self.world_ref.remote_players_data[client_id]
         self.broadcast({"type": "QUIT", "id": client_id})
         conn.close()
 
@@ -101,12 +106,16 @@ class GameServer(NetworkManager):
             print(f"[SERVER] Player {p_id} joined from {sender_conn.getpeername()}")
             self.clients[sender_conn] = p_id
             self.player_data[p_id] = msg.get("player_data", {})
+            if "name" not in self.player_data[p_id]:
+                self.player_data[p_id]["name"] = msg.get("name", p_id)
             
             # Now send the INIT packet with their specific data
             p_save = self.world_ref.remote_players_data.get(p_id)
             if not p_save:
                 p_save = msg.get("player_data", {})
             self.world_ref.remote_players_data[p_id] = p_save.copy() if isinstance(p_save, dict) else p_save
+            if isinstance(self.world_ref.remote_players_data[p_id], dict) and "name" not in self.world_ref.remote_players_data[p_id]:
+                self.world_ref.remote_players_data[p_id]["name"] = msg.get("name", p_id)
             init_msg = {
                 "type": "INIT",
                 "id": p_id,
@@ -116,13 +125,15 @@ class GameServer(NetworkManager):
                 "player_data": p_save # Send back their saved inventory/pos
             }
             self.send_json(sender_conn, init_msg)
-            return
+            return p_id
 
         msg["id"] = client_id 
         if msg["type"] in ("POS", "SYNC"):
             if client_id not in self.player_data:
                 self.player_data[client_id] = {}
             self.player_data[client_id].update(msg)
+            if "name" in msg:
+                self.player_data[client_id]["name"] = msg["name"]
             if self.world_ref is not None:
                 snapshot = self._extract_player_snapshot(msg)
                 if snapshot:
@@ -130,9 +141,12 @@ class GameServer(NetworkManager):
         elif msg["type"] == "BLOCK":
             with self.pending_world_updates_lock:
                 self.pending_world_updates.append(msg.copy())
+        elif msg["type"] == "CHAT":
+            print(f"[CHAT] {msg.get('name', client_id)}: {msg.get('text', '')}")
         
         # Relay to all OTHER clients
         self.broadcast(msg, exclude_conn=sender_conn)
+        return client_id
 
     def broadcast(self, data, exclude_conn=None):
         for conn in list(self.clients.keys()):

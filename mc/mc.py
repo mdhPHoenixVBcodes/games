@@ -3,6 +3,8 @@ import random
 import math
 import json
 import os
+import sys
+import threading
 from pathlib import Path
 import mc_network
 import discovery
@@ -33,18 +35,39 @@ COLOR_LEAVES_B = (50, 120, 50)
 COLOR_RED = (255, 0, 0)
 COLOR_DARK_RED = (200, 0, 0)
 
+def sanitize_display_name(raw_name):
+    name = "".join(ch for ch in raw_name.strip() if ch.isprintable())
+    if not name:
+        name = f"Player{random.randint(1000, 9999)}"
+    return name[:16]
+
+def draw_nameplate(surface, font, label, center_x, top_y, text_color=(255, 255, 255)):
+    if not label:
+        return
+    txt = font.render(label, True, text_color)
+    pad_x = 6
+    pad_y = 2
+    box_w = txt.get_width() + pad_x * 2
+    box_h = txt.get_height() + pad_y * 2
+    box_x = int(center_x - box_w / 2)
+    box_y = int(top_y - box_h - 4)
+    pygame.draw.rect(surface, (0, 0, 0), (box_x, box_y, box_w, box_h))
+    pygame.draw.rect(surface, (255, 255, 255), (box_x, box_y, box_w, box_h), 1)
+    surface.blit(txt, (box_x + pad_x, box_y + pad_y))
+
 BASE_DIR = Path(__file__).resolve().parent
 WORLDS_DIR = BASE_DIR / "worlds"
 WORLDS_DIR.mkdir(exist_ok=True)
 
 class RemotePlayer:
-    def __init__(self, p_id, x, y):
+    def __init__(self, p_id, x, y, display_name=None):
         self.id = p_id
         self.x = x
         self.y = y
         self.direction = 1
         self.anim_timer = 0
         self.armor = [None]*4
+        self.display_name = sanitize_display_name(display_name or p_id)
 
     def draw(self, surface, scroll_x, scroll_y, font):
         for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
@@ -61,8 +84,7 @@ class RemotePlayer:
             pygame.draw.line(surface, (255, 255, 255), (dx+12, dy+16), (ax_end, dy+16), 2)
 
             # Name tag
-            txt = font.render(self.id[:8], True, (255, 255, 255))
-            surface.blit(txt, (dx, dy - 20))
+            draw_nameplate(surface, font, self.display_name, dx + 12, dy)
 COLOR_WHITE = (255, 255, 255)
 
 COLOR_GRAY = (100, 100, 100)
@@ -251,7 +273,7 @@ PLACEABLE_BLOCKS = {
 }
 
 class Player:
-    def __init__(self):
+    def __init__(self, display_name="Player"):
         # Persistent ID for multiplayer saves
         self.persistent_id = "player_" + str(random.randint(1000, 9999))
         try:
@@ -263,6 +285,8 @@ class Player:
                 with open(player_id_file, "w") as f:
                     json.dump({"id": self.persistent_id}, f)
         except: pass
+
+        self.display_name = sanitize_display_name(display_name)
 
         self.rect = pygame.Rect(100, 50, 24, (TILE_SIZE * 2) - 2) 
         self.vel_y = 0
@@ -2065,7 +2089,8 @@ def save_game(world, player, filename):
             "health": player.health, "hunger": player.hunger,
             "h_timer": player.hunger_timer, "r_timer": player.regen_timer,
             "inventory": player.inventory, "armor": player.armor,
-            "offhand": getattr(player, 'offhand', None)
+            "offhand": getattr(player, 'offhand', None),
+            "name": getattr(player, "display_name", "Player")
         },
         "remote_players": world.remote_players_data,
         "mobs": [{"x": m.rect.x, "y": m.rect.y, "type": m.m_type, "hp": m.health} for m in world.mobs]
@@ -2082,9 +2107,9 @@ def load_game(world, player, filename):
             # Restore World
             world.data = {tuple(map(int, k.split(','))): v for k, v in sd["world_data"].items()}
             world.block_meta = {tuple(map(int, k.split(','))): v for k, v in sd.get("block_meta", {}).items()}
-            world.chest_data = {tuple(map(int, k.split(','))): v for k, v in sd["chest_data"].items()}
-            world.furnace_data = {tuple(map(int, k.split(','))): v for k, v in sd["furnace_data"].items()}
-            world.time = sd["time"]
+            world.chest_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("chest_data", {}).items()}
+            world.furnace_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("furnace_data", {}).items()}
+            world.time = sd.get("time", 0)
             if DIAMOND_ORE not in world.data.values():
                 for _ in range(max(8, WORLD_WIDTH // 24)):
                     vx = random.randint(0, WORLD_WIDTH - 1)
@@ -2105,6 +2130,7 @@ def load_game(world, player, filename):
             player.inventory = p_data.get("inventory", [None]*36)
             player.armor = p_data.get("armor", [None]*4)
             player.offhand = p_data.get("offhand", None)
+            player.display_name = sanitize_display_name(p_data.get("name", player.display_name))
 
             # Restore Remote Players
             world.remote_players_data = sd.get("remote_players", {})
@@ -2134,7 +2160,86 @@ def teleport_player_to(world, player, x, y):
     if any(player.rect.colliderect(block_rect) for block_rect in world.get_surrounding_blocks(player.rect)):
         world.find_safe_spawn(player)
 
+def start_terminal_chat(net, display_name, on_send=None):
+    def chat_loop():
+        while True:
+            try:
+                line = input()
+            except EOFError:
+                break
+            except Exception:
+                break
+
+            text = line.strip()
+            if not text:
+                continue
+            if not net or not getattr(net, "running", False):
+                break
+
+            payload = {
+                "type": "CHAT",
+                "name": display_name,
+                "text": text
+            }
+            if net.send(payload):
+                print(f"[YOU] {display_name}: {text}")
+                if on_send:
+                    on_send(display_name, text)
+            else:
+                print("[CHAT] Failed to send message.")
+
+    threading.Thread(target=chat_loop, daemon=True).start()
+
+def append_chat_message(chat_log, name, text, limit=6):
+    chat_log.append((sanitize_display_name(name), str(text)))
+    if len(chat_log) > limit:
+        del chat_log[:-limit]
+
+def draw_chat_feed(surface, font, chat_log):
+    if not chat_log:
+        return
+
+    max_width = 290
+    lines = []
+    for name, text in chat_log[-6:]:
+        raw = f"{name}: {text}"
+        if font.size(raw)[0] <= max_width - 16:
+            lines.append(raw)
+            continue
+
+        words = raw.split()
+        current = ""
+        for word in words:
+            candidate = word if not current else f"{current} {word}"
+            if font.size(candidate)[0] <= max_width - 16:
+                current = candidate
+            else:
+                if current:
+                    lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+
+    lines = lines[-6:]
+    line_h = font.get_height() + 2
+    box_w = max_width
+    box_h = line_h * len(lines) + 10
+    x = SCREEN_WIDTH - box_w - 12
+    y = 82
+
+    panel = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+    panel.fill((0, 0, 0, 140))
+    surface.blit(panel, (x, y))
+    pygame.draw.rect(surface, (255, 255, 255), (x, y, box_w, box_h), 1)
+
+    for i, line in enumerate(lines):
+        txt = font.render(line, True, COLOR_WHITE)
+        surface.blit(txt, (x + 8, y + 5 + i * line_h))
+
 def main():
+    print("Enter your username for LAN and local display.")
+    player_name = sanitize_display_name(input("Username: ").strip())
+    print()
     print("="*30)
     print("   MINECRAFT 2D - MAIN MENU")
     print("="*30)
@@ -2172,24 +2277,37 @@ def main():
         if not world_name: return
 
     # Resolve filename
-    save_filename = WORLDS_DIR / f"savegame_{world_name}.json"
-    if world_name == "default":
-        save_filename = WORLDS_DIR / "savegame.json"
-    elif (WORLDS_DIR / f"savegame{world_name}.json").exists():
-        save_filename = WORLDS_DIR / f"savegame{world_name}.json"
-    elif (WORLDS_DIR / f"savegame_{world_name}.json").exists():
-        save_filename = WORLDS_DIR / f"savegame_{world_name}.json"
+    save_filename = None
+    candidate_files = [
+        WORLDS_DIR / "savegame.json",
+        WORLDS_DIR / f"savegame_{world_name}.json",
+        WORLDS_DIR / f"savegame{world_name}.json",
+    ]
+    for candidate in candidate_files:
+        if candidate.exists():
+            save_filename = candidate
+            break
+    if save_filename is None:
+        save_filename = candidate_files[1] if world_name != "default" else candidate_files[0]
+    if mode == "single" and not save_filename.exists():
+        existing_saves = sorted(
+            p for p in WORLDS_DIR.iterdir()
+            if p.is_file() and p.name.startswith("savegame") and p.name.endswith(".json")
+        )
+        if len(existing_saves) == 1:
+            save_filename = existing_saves[0]
     
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 24)
 
-    world, player = World(), Player()
+    world, player = World(), Player(player_name)
     
     net = None
     discovery_service = None
     remote_players = {}
+    chat_log = []
 
     if mode == "host":
         load_game(world, player, save_filename)
@@ -2198,6 +2316,7 @@ def main():
         if net.start(world):
             discovery_service = discovery.DiscoveryBroadcaster(world_name)
             discovery_service.start()
+            start_terminal_chat(net, player.display_name, on_send=lambda name, text: append_chat_message(chat_log, name, text))
             import socket
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -2220,6 +2339,7 @@ def main():
                 net.send({
                     "type": "JOIN", 
                     "p_id": player.persistent_id,
+                    "name": player.display_name,
                     "player_data": {
                         "inventory": player.inventory,
                         "health": player.health,
@@ -2227,9 +2347,11 @@ def main():
                         "armor": player.armor,
                         "offhand": getattr(player, 'offhand', None),
                         "x": player.rect.x,
-                        "y": player.rect.y
+                        "y": player.rect.y,
+                        "name": player.display_name
                     }
                 })
+                start_terminal_chat(net, player.display_name, on_send=lambda name, text: append_chat_message(chat_log, name, text))
             else:
                 screen.fill((50, 0, 0))
                 txt = font.render(f"Failed to connect to {host_ip}", True, (255, 255, 255))
@@ -2262,6 +2384,29 @@ def main():
     running = True
     while running:
         screen.fill(COLOR_SKY_BLUE)
+        
+        if mode == "host":
+            active_remote_ids = set()
+            for p_id, p_data in world.remote_players_data.items():
+                if p_id == "host" or not isinstance(p_data, dict):
+                    continue
+                active_remote_ids.add(p_id)
+                if p_id not in remote_players:
+                    remote_players[p_id] = RemotePlayer(
+                        p_id,
+                        p_data.get("x", player.rect.x),
+                        p_data.get("y", player.rect.y),
+                        p_data.get("name", p_id),
+                    )
+                rp = remote_players[p_id]
+                rp.x = p_data.get("x", rp.x)
+                rp.y = p_data.get("y", rp.y)
+                rp.direction = p_data.get("dir", rp.direction)
+                if "name" in p_data:
+                    rp.display_name = sanitize_display_name(p_data.get("name", rp.display_name))
+            for p_id in list(remote_players.keys()):
+                if p_id not in active_remote_ids:
+                    del remote_players[p_id]
         
         # --- FIXED INFINITE CAMERA LOGIC ---
         target_scroll_x = player.rect.centerx - SCREEN_WIDTH // 2
@@ -2315,6 +2460,7 @@ def main():
                             player.armor = p_save.get("armor", player.armor)
                             player.offhand = p_save.get("offhand", player.offhand)
                             player.health = p_save.get("health", player.health)
+                            player.display_name = sanitize_display_name(p_save.get("name", player.display_name))
                         
                         world.find_safe_spawn(player)
                         print("World Sync Complete!")
@@ -2335,7 +2481,8 @@ def main():
                     "hunger": player.hunger,
                     "inventory": player.inventory,
                     "armor": player.armor,
-                    "offhand": getattr(player, 'offhand', None)
+                    "offhand": getattr(player, 'offhand', None),
+                    "name": player.display_name
                 })
                 network_timer = 0
             
@@ -2363,14 +2510,18 @@ def main():
                     
                     world.time = msg.get("time", 0)
                     world.find_safe_spawn(player)
+                    if "player_data" in msg and isinstance(msg["player_data"], dict):
+                        player.display_name = sanitize_display_name(msg["player_data"].get("name", player.display_name))
                     print("World Sync Complete!")
                 elif msg["type"] == "POS":
                     p_id = msg.get("id", "host")
                     if p_id != getattr(net, 'client_id', None):
                         if p_id not in remote_players:
-                            remote_players[p_id] = RemotePlayer(p_id, msg["x"], msg["y"])
+                            remote_players[p_id] = RemotePlayer(p_id, msg["x"], msg["y"], msg.get("name", p_id))
                         rp = remote_players[p_id]
                         rp.x, rp.y, rp.direction = msg["x"], msg["y"], msg["dir"]
+                        if "name" in msg:
+                            rp.display_name = sanitize_display_name(msg["name"])
                 elif msg["type"] == "HURT":
                     target = msg["target_id"]
                     # Determine if I am the one getting hit
@@ -2396,6 +2547,11 @@ def main():
                 elif msg["type"] == "QUIT":
                     p_id = msg["id"]
                     if p_id in remote_players: del remote_players[p_id]
+                elif msg["type"] == "CHAT":
+                    chat_name = msg.get("name", msg.get("id", "unknown"))
+                    chat_text = msg.get("text", "")
+                    append_chat_message(chat_log, chat_name, chat_text)
+                    print(f"[CHAT] {chat_name}: {chat_text}")
 
         if sleep_anim_timer > 0:
             sleep_anim_timer -= 1
@@ -3042,7 +3198,8 @@ def main():
                         "armor": player.armor,
                         "offhand": getattr(player, 'offhand', None),
                         "x": player.rect.x,
-                        "y": player.rect.y
+                        "y": player.rect.y,
+                        "name": player.display_name
                     })
 
                 save_game(world, player, save_filename)
@@ -3145,6 +3302,7 @@ def main():
                 # Hand/Tool indicator
                 ax_end = px_draw + 12 + (player.direction * 10)
                 pygame.draw.line(screen, COLOR_WHITE, (px_draw+12, py_draw+16), (ax_end, py_draw+16), 2)
+                draw_nameplate(screen, font, player.display_name, px_draw + player.rect.width / 2, py_draw)
                 
                 if player.blocking:
                     # Draw Shield in front
@@ -3422,6 +3580,8 @@ def main():
                 msg = font.render(save_msg_text, True, (100, 255, 100))
                 screen.blit(msg, (SCREEN_WIDTH - msg.get_width() - 20, 45))
                 save_msg_timer -= 1
+
+            draw_chat_feed(screen, font, chat_log)
             
             # --- Draw Hotbar ---
             hotbar_y = SCREEN_HEIGHT - 50
