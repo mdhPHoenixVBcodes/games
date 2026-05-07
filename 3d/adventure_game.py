@@ -224,8 +224,16 @@ class ThirdPersonPlayer(Entity):
         
         self.attack_max_cooldown = 0.5
         self.arrow_strike_max_cooldown = 10.0
+        self.rapid_fire_max_cooldown = 20.0
+        self.rapid_fire_duration = 10.0
+        self.rapid_fire_shot_interval = 0.12
+        self.rapid_fire_active = False
+        self.rapid_fire_timer = 0.0
+        self.rapid_fire_cooldown = 0.0
         self.bow_icon = Entity(parent=camera.ui, model='quad', texture='Logo/image1.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
         self.bow_overlay = Entity(parent=self.bow_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        self.rapid_fire_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast2.png', color=color.white, scale=(0.14, 0.14), position=(0.0, -0.4), enabled=False)
+        self.rapid_fire_overlay = Entity(parent=self.rapid_fire_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         mouse.locked = True
 
@@ -271,17 +279,31 @@ class ThirdPersonPlayer(Entity):
                 self.arrow_strike_icon.enabled = True
                 self.arrow_strike_icon.color = color.white if self.grenade_cooldown <= 0 else color.gray
                 self.arrow_strike_overlay.scale_y = self.grenade_cooldown / self.arrow_strike_max_cooldown if self.grenade_cooldown > 0 else 0
+                self.rapid_fire_icon.enabled = True
+                if self.rapid_fire_active:
+                    self.rapid_fire_icon.color = color.white
+                    self.rapid_fire_overlay.scale_y = self.rapid_fire_timer / self.rapid_fire_duration if self.rapid_fire_duration > 0 else 0
+                elif self.rapid_fire_cooldown > 0:
+                    self.rapid_fire_icon.color = color.gray
+                    self.rapid_fire_overlay.scale_y = self.rapid_fire_cooldown / self.rapid_fire_max_cooldown
+                else:
+                    self.rapid_fire_icon.color = color.white
+                    self.rapid_fire_overlay.scale_y = 0
             else:
                 self.arrow_strike_icon.enabled = False
                 self.arrow_strike_overlay.scale_y = 0
+                self.rapid_fire_icon.enabled = False
+                self.rapid_fire_overlay.scale_y = 0
                 self.grenade_icon.enabled = True
                 self.grenade_icon.color = color.white if self.grenade_cooldown <= 0 else color.gray
                 self.grenade_overlay.scale_y = self.grenade_cooldown / self.grenade_max_cooldown if self.grenade_cooldown > 0 else 0
         else:
             self.grenade_icon.enabled = False
             self.arrow_strike_icon.enabled = False
+            self.rapid_fire_icon.enabled = False
             self.grenade_overlay.scale_y = 0
             self.arrow_strike_overlay.scale_y = 0
+            self.rapid_fire_overlay.scale_y = 0
 
     def take_damage(self, amount):
         if self.is_teleporting:
@@ -823,9 +845,13 @@ class ThirdPersonPlayer(Entity):
         self.stop_rbtc_music()
         if hasattr(self, 'low_health_music') and self.low_health_music:
             self.low_health_music.stop()
+        self.rapid_fire_active = False
+        self.rapid_fire_timer = 0.0
+        self.rapid_fire_cooldown = 0.0
             
         self.crosshair.position = (0, 0.19)
         self.clear_all_entities()
+        self.update_ability_hud()
 
         if self.spawn_point == (0, 1, 0):
             self.has_bow = False
@@ -1099,6 +1125,26 @@ class ThirdPersonPlayer(Entity):
                 self.perform_attack()
         else:
             self.attack_cooldown = max(0, self.attack_cooldown - time.dt)
+
+        if self.rapid_fire_active and state.control_mode != 'archer':
+            self.rapid_fire_active = False
+            self.rapid_fire_timer = 0.0
+            self.rapid_fire_cooldown = self.rapid_fire_max_cooldown
+
+        if self.rapid_fire_active:
+            self.rapid_fire_timer -= time.dt
+            if self.rapid_fire_timer <= 0:
+                self.rapid_fire_active = False
+                self.rapid_fire_timer = 0.0
+                self.rapid_fire_cooldown = self.rapid_fire_max_cooldown
+                self.attack_cooldown = 0
+            elif self.attack_cooldown <= 0:
+                self.shoot_arrow(cooldown=self.rapid_fire_shot_interval)
+        elif self.rapid_fire_cooldown > 0:
+            self.rapid_fire_cooldown -= time.dt
+            if self.rapid_fire_cooldown < 0:
+                self.rapid_fire_cooldown = 0
+
         if self.grenade_cooldown > 0:
             self.grenade_cooldown -= time.dt
         if self.level_6_portal_open:
@@ -1222,8 +1268,8 @@ class ThirdPersonPlayer(Entity):
             if distance(self.position, c.position) <= self.attack_range:
                 c.take_damage(self.attack_damage)
 
-    def shoot_arrow(self):
-        self.attack_cooldown = 0.5
+    def shoot_arrow(self, cooldown=0.5):
+        self.attack_cooldown = cooldown
         spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.5
         
         # Precision aiming: Find what the crosshair is looking at
@@ -1285,6 +1331,15 @@ class ThirdPersonPlayer(Entity):
         burst.animate_color(color.rgba(255, 220, 120, 0), duration=0.25)
         destroy(burst, delay=0.3)
 
+    def start_rapid_fire(self):
+        if not self.has_grenade or self.rapid_fire_cooldown > 0 or self.rapid_fire_active:
+            return
+        if state.control_mode != 'archer':
+            return
+        self.rapid_fire_active = True
+        self.rapid_fire_timer = self.rapid_fire_duration
+        self.attack_cooldown = 0
+
     def save_game(self):
         save_data = {
             'x': self.x, 'y': self.y, 'z': self.z,
@@ -1300,6 +1355,9 @@ class ThirdPersonPlayer(Entity):
             'has_bow': self.has_bow,
             'has_grenade': self.has_grenade,
             'grenade_used': self.grenade_used,
+            'rapid_fire_active': self.rapid_fire_active,
+            'rapid_fire_timer': self.rapid_fire_timer,
+            'rapid_fire_cooldown': self.rapid_fire_cooldown,
             'exclamation_enabled': ent.chef.exclamation.enabled,
             'manager_exclamation_enabled': ent.manager.exclamation.enabled,
             'level_3_phase': self.level_3_phase,
@@ -1384,6 +1442,9 @@ class ThirdPersonPlayer(Entity):
         self.has_bow = save_data.get('has_bow', False)
         self.has_grenade = save_data.get('has_grenade', False)
         self.grenade_used = save_data.get('grenade_used', False)
+        self.rapid_fire_active = save_data.get('rapid_fire_active', False)
+        self.rapid_fire_timer = save_data.get('rapid_fire_timer', 0.0)
+        self.rapid_fire_cooldown = save_data.get('rapid_fire_cooldown', 0.0)
         self.crosshair.enabled = self.has_bow
         self.bow_icon.enabled = self.has_bow
         self.grenade_icon.enabled = self.has_grenade
@@ -1571,9 +1632,9 @@ class ThirdPersonPlayer(Entity):
         self.crosshair.position = (0, 0) if self.level_5_cleared else (0, 0.19)
         self.crosshair.scale = 2
         self.crosshair.enabled = self.has_bow
-        self.update_ability_hud()
         self.autosave_timer = self.autosave_interval
         state.set_control_mode(save_data.get('control_mode', 'player'))
+        self.update_ability_hud()
         print("Game Loaded!")
 
     def input(self, key):
@@ -1592,11 +1653,14 @@ class ThirdPersonPlayer(Entity):
             self.hub_regen_enabled = False
             self.reset_game_state()
         elif key == 'right mouse down':
-            if self.has_bow and self.attack_cooldown <= 0:
+            if self.has_bow and self.attack_cooldown <= 0 and not self.rapid_fire_active:
                 self.shoot_arrow()
         elif key == '1':
             if self.has_grenade and self.grenade_cooldown <= 0 and not self.is_teleporting:
                 self.throw_grenade()
+        elif key == '2':
+            if state.control_mode == 'archer' and not self.is_teleporting:
+                self.start_rapid_fire()
         elif key == 'f':
             if state.control_mode == 'player':
                 state.handle_story_interaction(self)

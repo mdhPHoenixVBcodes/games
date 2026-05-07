@@ -240,6 +240,7 @@ class ArcherCompanion(Entity):
         self.jump_force = 12
         self.grounded = False
         self.dash_cooldown = 0
+        self.dash_max_cooldown = 0.8
         self.dash_duration = 0.15
         self.dash_speed = 45
         self.is_dashing = False
@@ -276,7 +277,7 @@ class ArcherCompanion(Entity):
         Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction, damage=15)
 
     def perform_dash(self):
-        self.dash_cooldown = self.dash_duration
+        self.dash_cooldown = self.dash_max_cooldown
         self.is_dashing = True
         dash_dir = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
         if dash_dir.length() <= 0.001:
