@@ -214,6 +214,8 @@ class ThirdPersonPlayer(Entity):
         self.grenade_max_cooldown = 1.25
         self.grenade_icon = Entity(parent=camera.ui, model='quad', texture='Logo/image.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
         self.grenade_overlay = Entity(parent=self.grenade_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        self.arrow_strike_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast1.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
+        self.arrow_strike_overlay = Entity(parent=self.arrow_strike_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         self.dash_max_cooldown = 0.8
         self.dash_icon_shadow = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 180), scale=(0.14, 0.14), position=(0.44, -0.4), z=0.1, enabled=True)
@@ -221,6 +223,7 @@ class ThirdPersonPlayer(Entity):
         self.dash_overlay = Entity(parent=self.dash_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         self.attack_max_cooldown = 0.5
+        self.arrow_strike_max_cooldown = 10.0
         self.bow_icon = Entity(parent=camera.ui, model='quad', texture='Logo/image1.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
         self.bow_overlay = Entity(parent=self.bow_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
@@ -234,6 +237,7 @@ class ThirdPersonPlayer(Entity):
         self.sword = Entity(parent=self, model='cube', color=color.light_gray, scale=(0.1, 1.2, 0.2), position=(0.7, 0.2, 0.5), rotation=(30, 0, 0))
         self.crossguard = Entity(parent=self.sword, model='cube', color=color.gold, scale=(4, 0.1, 1.5), position=(0, -0.4, 0))
         self.update_control_hint()
+        self.update_ability_hud()
 
     def update_control_hint(self):
         archer_alive = self.teammate_unlocked and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0
@@ -257,6 +261,27 @@ class ThirdPersonPlayer(Entity):
                 parts = ['No teammates unlocked']
 
         self.control_hint.text = ' | '.join(parts)
+
+    def update_ability_hud(self):
+        archer_mode = state.control_mode == 'archer'
+        if self.has_grenade:
+            if archer_mode:
+                self.grenade_icon.enabled = False
+                self.grenade_overlay.scale_y = 0
+                self.arrow_strike_icon.enabled = True
+                self.arrow_strike_icon.color = color.white if self.grenade_cooldown <= 0 else color.gray
+                self.arrow_strike_overlay.scale_y = self.grenade_cooldown / self.arrow_strike_max_cooldown if self.grenade_cooldown > 0 else 0
+            else:
+                self.arrow_strike_icon.enabled = False
+                self.arrow_strike_overlay.scale_y = 0
+                self.grenade_icon.enabled = True
+                self.grenade_icon.color = color.white if self.grenade_cooldown <= 0 else color.gray
+                self.grenade_overlay.scale_y = self.grenade_cooldown / self.grenade_max_cooldown if self.grenade_cooldown > 0 else 0
+        else:
+            self.grenade_icon.enabled = False
+            self.arrow_strike_icon.enabled = False
+            self.grenade_overlay.scale_y = 0
+            self.arrow_strike_overlay.scale_y = 0
 
     def take_damage(self, amount):
         if self.is_teleporting:
@@ -1123,21 +1148,14 @@ class ThirdPersonPlayer(Entity):
                 self.bow_overlay.scale_y = 0
                 self.bow_icon.color = color.white
         
-        if self.has_grenade:
-            self.grenade_icon.enabled = True
-            if self.grenade_cooldown > 0:
-                self.grenade_overlay.scale_y = self.grenade_cooldown / self.grenade_max_cooldown
-                self.grenade_icon.color = color.gray
-            else:
-                self.grenade_overlay.scale_y = 0
-                self.grenade_icon.color = color.white
+        self.update_ability_hud()
 
-            if self.dash_cooldown > 0:
-                self.dash_overlay.scale_y = self.dash_cooldown / self.dash_max_cooldown
-                self.dash_icon.color = color.gray
-            else:
-                self.dash_overlay.scale_y = 0
-                self.dash_icon.color = color.white
+        if self.dash_cooldown > 0:
+            self.dash_overlay.scale_y = self.dash_cooldown / self.dash_max_cooldown
+            self.dash_icon.color = color.gray
+        else:
+            self.dash_overlay.scale_y = 0
+            self.dash_icon.color = color.white
 
         self.update_control_hint()
 
@@ -1223,9 +1241,49 @@ class ThirdPersonPlayer(Entity):
         ent.Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction)
 
     def throw_grenade(self):
+        if state.control_mode == 'archer':
+            self.perform_arrow_strike()
+            return
         self.grenade_cooldown = 1.25
         spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.3
         ent.ShockwaveGrenade(position=spawn_pos, rotation=self.rotation)
+
+    def perform_arrow_strike(self):
+        self.grenade_cooldown = self.arrow_strike_max_cooldown
+        ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
+        if ray.hit:
+            aim_point = ray.world_point
+        else:
+            aim_point = camera.world_position + (camera.forward * 500)
+
+        ground_ray = raycast(aim_point + (0, 12, 0), direction=(0, -1, 0), distance=30, ignore=(self,))
+        if ground_ray.hit:
+            strike_center = ground_ray.world_point
+        else:
+            strike_center = aim_point
+
+        strike_center = Vec3(strike_center.x, strike_center.y + 0.1, strike_center.z)
+        strike_box = Entity(
+            model='cube',
+            color=color.rgba(255, 255, 255, 90),
+            scale=(4, 0.08, 4),
+            position=strike_center,
+        )
+        strike_box.animate_scale((5, 0.08, 5), duration=0.2)
+        strike_box.animate_color(color.rgba(255, 255, 255, 0), duration=0.35)
+        destroy(strike_box, delay=0.4)
+
+        for i in range(8):
+            angle = (math.tau / 8) * i
+            offset = Vec3(math.cos(angle) * random.uniform(0.0, 1.5), 0, math.sin(angle) * random.uniform(0.0, 1.5))
+            arrow_start = strike_center + offset + (0, 12, 0)
+            arrow_dir = Vec3(0, -1, 0)
+            ent.Arrow(position=arrow_start, rotation=(90, 0, 0), direction=arrow_dir, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True, damage=25)
+
+        burst = Entity(model='sphere', color=color.rgba(255, 220, 120, 120), position=strike_center + (0, 0.5, 0), scale=0.7)
+        burst.animate_scale(3.5, duration=0.25)
+        burst.animate_color(color.rgba(255, 220, 120, 0), duration=0.25)
+        destroy(burst, delay=0.3)
 
     def save_game(self):
         save_data = {
@@ -1513,6 +1571,7 @@ class ThirdPersonPlayer(Entity):
         self.crosshair.position = (0, 0) if self.level_5_cleared else (0, 0.19)
         self.crosshair.scale = 2
         self.crosshair.enabled = self.has_bow
+        self.update_ability_hud()
         self.autosave_timer = self.autosave_interval
         state.set_control_mode(save_data.get('control_mode', 'player'))
         print("Game Loaded!")
@@ -1535,7 +1594,7 @@ class ThirdPersonPlayer(Entity):
         elif key == 'right mouse down':
             if self.has_bow and self.attack_cooldown <= 0:
                 self.shoot_arrow()
-        elif key == 'e':
+        elif key == '1':
             if self.has_grenade and self.grenade_cooldown <= 0 and not self.is_teleporting:
                 self.throw_grenade()
         elif key == 'f':
