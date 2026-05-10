@@ -316,7 +316,7 @@ class ThirdPersonPlayer(Entity):
         self.grenade_overlay = Entity(parent=self.grenade_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         self.arrow_strike_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast1.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
         self.arrow_strike_overlay = Entity(parent=self.arrow_strike_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
-        self.soldier_special_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast5.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
+        self.soldier_special_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast5.png', color=color.white, scale=(0.25, 0.14), position=(0.62, -0.4), enabled=False)
         self.soldier_special_overlay = Entity(parent=self.soldier_special_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         self.dash_max_cooldown = 0.8

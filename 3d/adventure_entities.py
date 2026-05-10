@@ -771,10 +771,14 @@ class SoldierCompanion(Entity):
         hit_any = False
         slash_radius = 3.6
         slash_damage = 16
+        slash_origin = self.position + self.forward * 1.5 + (0, 1.1, 0)
+        SlashVFX(slash_origin, direction=self.forward, length=2.8, thickness=0.18, tint=color.rgb(180, 255, 255))
         for enemy in list(state.enemies):
             if distance(self.position, enemy.position) <= slash_radius:
                 enemy.take_damage(slash_damage)
                 hit_any = True
+                enemy_pos = enemy.world_position + (0, 1.0, 0)
+                SlashVFX(enemy_pos, direction=enemy.position - self.position, length=2.0, thickness=0.14, tint=color.white)
 
         if hit_any:
             self.color = color.white
@@ -1168,6 +1172,23 @@ class DamageMarker(Text):
         self.animate_color(color.rgba(255, 245, 120, 0), duration=0.45, delay=0.08)
         destroy(self.shadow, delay=0.6)
         destroy(self, delay=0.6)
+
+
+class SlashVFX(Entity):
+    def __init__(self, position, direction=None, length=2.4, thickness=0.16, tint=color.white):
+        super().__init__(
+            model='quad',
+            color=color.rgba(tint.r, tint.g, tint.b, 220),
+            position=position,
+            scale=(length, thickness),
+            billboard=False
+        )
+        if direction is not None:
+            self.rotation_y = math.degrees(math.atan2(direction.x, direction.z))
+        self.rotation_z = random.uniform(-32, 32)
+        self.animate_scale((length * 1.15, thickness * 0.65), duration=0.14, curve=curve.out_expo)
+        self.animate_color(color.rgba(tint.r, tint.g, tint.b, 0), duration=0.14)
+        destroy(self, delay=0.16)
 
 
 class PauseHandler(Entity):
