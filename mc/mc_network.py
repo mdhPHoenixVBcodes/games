@@ -119,7 +119,7 @@ class GameServer(NetworkManager):
             init_msg = {
                 "type": "INIT",
                 "id": p_id,
-                "world_data": {f"{k[0]},{k[1]}": v for k, v in self.world_ref.data.items()},
+                "world_data": {f"{pos[0]},{pos[1]}": b_type for chunk in self.world_ref.chunks.values() for pos, b_type in chunk.items()},
                 "block_meta": {f"{k[0]},{k[1]}": v for k, v in self.world_ref.block_meta.items()},
                 "time": self.world_ref.time,
                 "player_data": p_save # Send back their saved inventory/pos
