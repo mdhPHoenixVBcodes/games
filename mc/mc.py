@@ -172,6 +172,14 @@ RAW_CHICKEN = 77
 COOKED_CHICKEN = 78
 FEATHER = 79
 EGG = 80
+TORCH = 81
+RAW_COD = 82
+COOKED_COD = 83
+FISHING_ROD = 84
+RAW_SALMON = 85
+COOKED_SALMON = 86
+RAW_FISH = RAW_COD
+COOKED_FISH = COOKED_COD
 
 # Tool IDs
 W_PICK = 100; S_PICK = 101; I_PICK = 110
@@ -193,7 +201,7 @@ BLOCK_HARDNESS = {
     FURNACE: 3.5, SMOKER: 3.5, BLAST_FURNACE: 3.5, COBBLESTONE: 2.0, SMOOTH_STONE: 2.0, IRON_BLOCK_PROD: 5.0,
     CHEST: 2.5, HAY_BALE: 0.5, FARMLAND: 0.6, FENCE: 2.0, FENCE_GATE: 2.0,
     DOOR: 3.0, TRAPDOOR: 3.0, W_STAIRS: 2.0, C_STAIRS: 2.0, SS_STAIRS: 2.0, I_STAIRS: 3.0,
-    W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, I_SLAB: 3.0, LADDER: 0.4
+    W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, I_SLAB: 3.0, LADDER: 0.4, TORCH: 0.1
 }
 
 BLOCK_NAMES = {
@@ -248,7 +256,13 @@ BLOCK_NAMES = {
     RAW_CHICKEN: "Raw Chicken",
     COOKED_CHICKEN: "Cooked Chicken",
     FEATHER: "Feather",
-    EGG: "Egg"
+    EGG: "Egg",
+    RAW_COD: "Cod",
+    COOKED_COD: "Cooked Cod",
+    RAW_SALMON: "Salmon",
+    COOKED_SALMON: "Cooked Salmon",
+    FISHING_ROD: "Fishing Rod",
+    TORCH: "Torch"
 }
 
 MAX_DURABILITY = {
@@ -259,6 +273,7 @@ MAX_DURABILITY = {
     I_HELMET: 165, I_CHEST: 240, I_LEGS: 225, I_BOOTS: 195,
     D_HELMET: 363, D_CHEST: 528, D_LEGS: 495, D_BOOTS: 429,
     BOW: 384,
+    FISHING_ROD: 64,
     SHIELD: 336
 }
 
@@ -269,7 +284,7 @@ PLACEABLE_BLOCKS = {
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
     LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS,
     W_SLAB, C_SLAB, SS_SLAB, I_SLAB, FARMLAND, HAY_BALE, CHEST,
-    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT
+    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH
 }
 
 class Player:
@@ -315,6 +330,7 @@ class Player:
         self.offhand = None
         self.blocking = False
         self.jump_attack_timer = 0
+        self.fishing_hook = None
         
         self.held_item = None
         self.show_inventory = False
@@ -500,6 +516,7 @@ class Player:
         self.regen_timer = 0
         self.invincible_until = pygame.time.get_ticks() + 5000
         self.jump_attack_timer = 0
+        self.fishing_hook = None
 
     def take_damage(self, amount):
         if pygame.time.get_ticks() < self.invincible_until: return
@@ -544,6 +561,7 @@ class World:
         self.projectiles = [] # ThrownPearl instances
         self.egg_projectiles = [] # EggShot instances
         self.arrows = [] # ArrowShot instances
+        self.fishing_hooks = [] # FishingHook instances
         self.time = 0 # 0 corresponds to 6:00 AM (Sunrise)
         self.generate_world()
 
@@ -707,7 +725,7 @@ class World:
                 tx, ty = (p_x + x_off) % WORLD_WIDTH, p_y + y_off
                 if (tx, ty) in self.data:
                     b_type = self.data[(tx, ty)]
-                    if b_type == TALL_GRASS or WHEAT_STG0 <= b_type <= WHEAT_STG3 or b_type in (FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR_OPEN, WATER, LADDER, BOAT): continue # Non-solid / rideable
+                    if b_type == TALL_GRASS or WHEAT_STG0 <= b_type <= WHEAT_STG3 or b_type in (FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR_OPEN, WATER, LADDER, BOAT, TORCH): continue # Non-solid / rideable
                     bx, by = (p_x + x_off) * TILE_SIZE, ty * TILE_SIZE
                     if b_type == FARMLAND:
                         blocks.append(pygame.Rect(bx, by + 4, TILE_SIZE, TILE_SIZE - 4))
@@ -749,6 +767,7 @@ class World:
         pygame.draw.circle(surface, (220, 220, 255), (int(moon_x), int(moon_y)), 25) # Moon
         
         # Draw the world 3 times to cover the infinite wrap smoothly
+        torch_glows = []
         for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
             for (x, y), b_type in self.data.items():
                 draw_x = x * TILE_SIZE - scroll_x + offset
@@ -831,6 +850,35 @@ class World:
                         pygame.draw.rect(surface, (220, 200, 50), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
                         pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 8, TILE_SIZE, 3)) # Rope
                         pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 22, TILE_SIZE, 3)) # Rope
+                    elif b_type == TORCH:
+                        facing = self.block_meta.get((x, y), {}).get("facing", 0)
+                        if facing == 1:
+                            torch_glows.append((draw_x + 5, draw_y + 11))
+                            pygame.draw.line(surface, (90, 55, 20), (draw_x + 6, draw_y + 18), (draw_x + 3, draw_y + 8), 3)
+                            pygame.draw.polygon(surface, (255, 180, 60), [
+                                (draw_x + 1, draw_y + 10),
+                                (draw_x + 5, draw_y + 3),
+                                (draw_x + 9, draw_y + 11)
+                            ])
+                            pygame.draw.circle(surface, (255, 245, 200), (draw_x + 5, draw_y + 6), 2)
+                        elif facing == -1:
+                            torch_glows.append((draw_x + 11, draw_y + 11))
+                            pygame.draw.line(surface, (90, 55, 20), (draw_x + 10, draw_y + 18), (draw_x + 13, draw_y + 8), 3)
+                            pygame.draw.polygon(surface, (255, 180, 60), [
+                                (draw_x + 7, draw_y + 11),
+                                (draw_x + 11, draw_y + 3),
+                                (draw_x + 15, draw_y + 10)
+                            ])
+                            pygame.draw.circle(surface, (255, 245, 200), (draw_x + 11, draw_y + 6), 2)
+                        else:
+                            torch_glows.append((draw_x + 8, draw_y + 14))
+                            pygame.draw.rect(surface, (90, 55, 20), (draw_x + 7, draw_y + 11, 4, 17))
+                            pygame.draw.polygon(surface, (255, 180, 60), [
+                                (draw_x + 5, draw_y + 11),
+                                (draw_x + 9, draw_y + 2),
+                                (draw_x + 13, draw_y + 11)
+                            ])
+                            pygame.draw.circle(surface, (255, 245, 200), (draw_x + 9, draw_y + 6), 2)
                     elif b_type == BED:
                         pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
                         pygame.draw.rect(surface, COLOR_WHITE, (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE // 4))
@@ -912,6 +960,14 @@ class World:
                         elif b_type == COAL_BLOCK_ITEM:
                             pygame.draw.rect(surface, (60, 60, 60), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
 
+        if torch_glows:
+            glow_layer = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            for gx, gy in torch_glows:
+                pygame.draw.circle(glow_layer, (255, 220, 120, 50), (gx, gy), 96)
+                pygame.draw.circle(glow_layer, (255, 180, 80, 34), (gx, gy), 58)
+                pygame.draw.circle(glow_layer, (255, 245, 200, 72), (gx, gy), 18)
+            surface.blit(glow_layer, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
 
     def draw_cracks(self, surface, scroll_x, scroll_y, pos, progress):
         if progress <= 0: return
@@ -947,7 +1003,7 @@ class DroppedItem:
         
         # Collision (simple)
         bx, by = int(self.rect.centerx // TILE_SIZE) % WORLD_WIDTH, int(self.rect.bottom // TILE_SIZE)
-        if (bx, by) in world.data and world.data[(bx, by)] not in (AIR, WATER, TALL_GRASS, LADDER):
+        if (bx, by) in world.data and world.data[(bx, by)] not in (AIR, WATER, TALL_GRASS, LADDER, TORCH):
             self.rect.bottom = by * TILE_SIZE
             self.vel_y = 0
             self.vel_x *= 0.9
@@ -1133,6 +1189,125 @@ class EggShot:
                 continue
             pygame.draw.line(surface, (245, 245, 245), (dx0, dy0), (dx1, dy1), 3)
             pygame.draw.ellipse(surface, (240, 235, 220), (dx1 - 4, dy1 - 4, 8, 10))
+            break
+
+class FishingHook:
+    def __init__(self, player, x, y, target_x, target_y):
+        self.player = player
+        self.x = float(x)
+        self.y = float(y)
+        self.prev_x = self.x
+        self.prev_y = self.y
+        self.target_x = float(target_x)
+        self.target_y = float(target_y)
+        self.speed = 12.0
+        self.state = "flying"
+        self.bob_timer = 0
+        self.catch_timer = random.randint(80, 180)
+        self.rect = pygame.Rect(int(self.x) - 3, int(self.y) - 3, 6, 6)
+        self.spawn_time = pygame.time.get_ticks()
+
+    def _wrap_dx(self, dx):
+        if dx > WORLD_PIXELS / 2:
+            dx -= WORLD_PIXELS
+        elif dx < -WORLD_PIXELS / 2:
+            dx += WORLD_PIXELS
+        return dx
+
+    def _tile_at(self):
+        return (int(self.rect.centerx // TILE_SIZE) % WORLD_WIDTH, int(self.rect.centery // TILE_SIZE))
+
+    def _is_water(self, world):
+        tx, ty = self._tile_at()
+        return world.data.get((tx, ty)) == WATER
+
+    def _finish(self):
+        if self.player and getattr(self.player, "fishing_hook", None) is self:
+            self.player.fishing_hook = None
+        return True
+
+    def _give_reward(self, world):
+        rewards = [
+            (RAW_COD, 1, 45),
+            (RAW_COD, 2, 8),
+            (RAW_SALMON, 1, 30),
+            (RAW_SALMON, 2, 6),
+            (STRING_ITEM, 1, 5),
+            (BONE, 1, 3),
+            (COAL, 1, 3),
+        ]
+        choices = [r[0] for r in rewards]
+        weights = [r[2] for r in rewards]
+        item_type = random.choices(choices, weights=weights, k=1)[0]
+        count = next(r[1] for r in rewards if r[0] == item_type)
+        if not add_item_to_inventory(self.player, item_type, count):
+            world.dropped_items.append(DroppedItem(self.player.rect.centerx, self.player.rect.centery, item_type, count))
+        print(f"[FISHING] Caught {BLOCK_NAMES.get(item_type, 'Item')}")
+
+    def update(self, world):
+        self.prev_x, self.prev_y = self.x, self.y
+
+        if self.state == "flying":
+            dx = self._wrap_dx(self.target_x - self.x)
+            dy = self.target_y - self.y
+            dist = math.hypot(dx, dy)
+
+            if dist <= self.speed or dist == 0:
+                self.x = self.target_x
+                self.y = self.target_y
+                self.rect.center = (int(self.x), int(self.y))
+                if self._is_water(world):
+                    self.state = "bob"
+                    self.bob_timer = 0
+                else:
+                    return self._finish()
+            else:
+                self.x = (self.x + (dx / dist) * self.speed) % WORLD_PIXELS
+                self.y += (dy / dist) * self.speed
+                self.rect.center = (int(self.x), int(self.y))
+
+                hit_solid = False
+                for block_rect in world.get_surrounding_blocks(self.rect):
+                    if self.rect.colliderect(block_rect):
+                        hit_solid = True
+                        break
+                if hit_solid:
+                    return self._finish()
+
+                if self._is_water(world):
+                    self.state = "bob"
+                    self.bob_timer = 0
+        else:
+            self.bob_timer += 1
+            self.y += math.sin(self.bob_timer * 0.25) * 0.15
+            self.rect.center = (int(self.x), int(self.y))
+            if not self._is_water(world):
+                if self.bob_timer > 30:
+                    return self._finish()
+            elif self.bob_timer >= self.catch_timer:
+                self._give_reward(world)
+                return self._finish()
+
+        if pygame.time.get_ticks() - self.spawn_time > 10000:
+            return self._finish()
+
+        return False
+
+    def draw(self, surface, scroll_x, scroll_y):
+        player_x = self.player.rect.centerx
+        player_y = self.player.rect.centery - 8
+        for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
+            px = player_x - int(scroll_x) + offset
+            py = player_y - int(scroll_y)
+            hx = self.rect.centerx - int(scroll_x) + offset
+            hy = self.rect.centery - int(scroll_y)
+            if max(px, hx) < -50 or min(px, hx) > SCREEN_WIDTH + 50:
+                continue
+            if max(py, hy) < -50 or min(py, hy) > SCREEN_HEIGHT + 50:
+                continue
+            pygame.draw.line(surface, (210, 190, 140), (px, py), (hx, hy), 2)
+            pygame.draw.circle(surface, (240, 240, 240), (hx, hy), 4)
+            pygame.draw.circle(surface, (180, 40, 40), (hx, hy), 2)
             break
 
 class Mob:
@@ -1514,6 +1689,50 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type == EGG:
         pygame.draw.ellipse(screen, (245, 240, 220), (x + 5, y + 3, size - 10, size - 6))
         pygame.draw.ellipse(screen, (220, 210, 190), (x + 6, y + 4, size - 12, size - 8), 1)
+    elif b_type == RAW_COD:
+        pygame.draw.ellipse(screen, (70, 170, 220), (x + 2, y + 5, size - 6, size - 10))
+        pygame.draw.polygon(screen, (50, 140, 190), [
+            (x + size - 5, y + size // 2),
+            (x + size - 1, y + 4),
+            (x + size - 1, y + size - 4),
+        ])
+        pygame.draw.circle(screen, (240, 240, 240), (x + 7, y + 9), 1)
+    elif b_type == COOKED_COD:
+        pygame.draw.ellipse(screen, (170, 120, 70), (x + 2, y + 5, size - 6, size - 10))
+        pygame.draw.polygon(screen, (140, 90, 50), [
+            (x + size - 5, y + size // 2),
+            (x + size - 1, y + 4),
+            (x + size - 1, y + size - 4),
+        ])
+        pygame.draw.circle(screen, (240, 220, 180), (x + 7, y + 9), 1)
+    elif b_type == RAW_SALMON:
+        pygame.draw.ellipse(screen, (240, 120, 90), (x + 2, y + 5, size - 6, size - 10))
+        pygame.draw.polygon(screen, (210, 90, 60), [
+            (x + size - 5, y + size // 2),
+            (x + size - 1, y + 4),
+            (x + size - 1, y + size - 4),
+        ])
+        pygame.draw.circle(screen, (255, 240, 230), (x + 7, y + 9), 1)
+    elif b_type == COOKED_SALMON:
+        pygame.draw.ellipse(screen, (170, 90, 60), (x + 2, y + 5, size - 6, size - 10))
+        pygame.draw.polygon(screen, (130, 70, 45), [
+            (x + size - 5, y + size // 2),
+            (x + size - 1, y + 4),
+            (x + size - 1, y + size - 4),
+        ])
+        pygame.draw.circle(screen, (245, 220, 200), (x + 7, y + 9), 1)
+    elif b_type == FISHING_ROD:
+        pygame.draw.line(screen, (101, 67, 33), (x + 4, y + size - 4), (x + size - 7, y + 5), 3)
+        pygame.draw.line(screen, (240, 240, 240), (x + size - 7, y + 5), (x + size - 3, y + 1), 1)
+        pygame.draw.circle(screen, (240, 240, 240), (x + size - 3, y + 1), 2)
+    elif b_type == TORCH:
+        pygame.draw.rect(screen, (90, 55, 20), (x + size//2 - 1, y + 5, 2, size - 7))
+        pygame.draw.polygon(screen, (255, 180, 60), [
+            (x + size//2 - 3, y + 6),
+            (x + size//2, y + 1),
+            (x + size//2 + 3, y + 6)
+        ])
+        pygame.draw.circle(screen, (255, 245, 200), (x + size//2, y + 4), 1)
     elif b_type == DOOR:
         pygame.draw.rect(screen, (120, 80, 40), (x + size//4, y, size//2, size))
         pygame.draw.rect(screen, (0, 0, 0), (x + size//2 + 4, y + size//2, 4, 4)) # Handle
@@ -1686,6 +1905,11 @@ def update_crafting(player):
         res = {"type": STICK, "count": 4}
     if grid[1] == PLANKS and grid[3] == PLANKS and grid[0] is None and grid[2] is None:
         res = {"type": STICK, "count": 4}
+
+    # 1 Coal + 1 Stick -> 4 Torches
+    if ((grid.count(COAL) == 1 and grid.count(STICK) == 1 and grid.count(None) == 2) or
+        (grid.count(CHARCOAL) == 1 and grid.count(STICK) == 1 and grid.count(None) == 2)):
+        res = {"type": TORCH, "count": 4}
         
     # 4 Planks -> 1 Crafting Table
     if all(g == PLANKS for g in grid):
@@ -1711,6 +1935,11 @@ def update_crafting(player):
         for row in range(2):
             if grid3[row*3 + col] == PLANKS and grid3[(row+1)*3 + col] == PLANKS and grid3.count(PLANKS) == 2 and grid3.count(None) == 7:
                 res3 = {"type": STICK, "count": 4}
+
+    # 1 Coal + 1 Stick -> 4 Torches (Anywhere in 3x3)
+    if ((grid3.count(COAL) == 1 and grid3.count(STICK) == 1 and grid3.count(None) == 7) or
+        (grid3.count(CHARCOAL) == 1 and grid3.count(STICK) == 1 and grid3.count(None) == 7)):
+        res3 = {"type": TORCH, "count": 4}
 
     # 4 Planks -> Crafting Table (2x2 square anywhere in 3x3)
     for col in range(2):
@@ -1780,6 +2009,8 @@ def update_crafting(player):
     match([W,I,W, W,W,W, N,W,N], {"type": SHIELD, "count": 1, "durability": 336})
     # Bow
     match([STR,T,N, STR,N,T, STR,T,N], {"type": BOW, "count": 1, "durability": 384})
+    # Fishing Rod
+    match([N,N,ST, N,ST,STR, ST,N,STR], {"type": FISHING_ROD, "count": 1, "durability": 64})
     # Furnace
     match([S,S,S, S,N,S, S,S,S], {"type": FURNACE, "count": 1})
     # Iron Products
@@ -2031,13 +2262,15 @@ def update_furnaces(world):
             elif i_type == RAW_BEEF: result_type = STEAK
             elif i_type == RAW_MUTTON: result_type = COOKED_MUTTON
             elif i_type == RAW_CHICKEN: result_type = COOKED_CHICKEN
+            elif i_type == RAW_COD: result_type = COOKED_COD
+            elif i_type == RAW_SALMON: result_type = COOKED_SALMON
             elif i_type in (OAK_LOG, BIRCH_LOG): result_type = CHARCOAL
             
             if result_type:
                 can_smelt = True
                 b_at_pos = world.data.get(pos)
                 # Filtering
-                if b_at_pos == SMOKER and i_type not in (RAW_BEEF, RAW_MUTTON, RAW_CHICKEN): can_smelt = False
+                if b_at_pos == SMOKER and i_type not in (RAW_BEEF, RAW_MUTTON, RAW_CHICKEN, RAW_COD, RAW_SALMON): can_smelt = False
                 if b_at_pos == BLAST_FURNACE and i_type not in (IRON_BLOCK, COBBLESTONE): can_smelt = False
                 
                 if data["output"] and (data["output"]["type"] != result_type or data["output"]["count"] >= 80):
@@ -2142,6 +2375,112 @@ def load_game(world, player, filename):
                 world.mobs.append(m)
     except Exception as e:
         print(f"Load error: {e}")
+
+def add_item_to_inventory(player, item_type, count=1, durability=None):
+    for slot in player.inventory:
+        if slot and slot["type"] == item_type and slot["count"] < 80:
+            slot["count"] += count
+            if durability is not None and "durability" not in slot:
+                slot["durability"] = durability
+            return True
+
+    for i in range(36):
+        if player.inventory[i] is None:
+            player.inventory[i] = {"type": item_type, "count": count}
+            if durability is not None:
+                player.inventory[i]["durability"] = durability
+            return True
+
+    return False
+
+def _can_smelt_in_furnace(item_type):
+    return item_type in (
+        COBBLESTONE, IRON_BLOCK, RAW_BEEF, RAW_MUTTON, RAW_CHICKEN, RAW_COD,
+        RAW_SALMON, OAK_LOG, BIRCH_LOG
+    )
+
+def _is_furnace_fuel(item_type):
+    return item_type in (
+        COAL_BLOCK, COAL_BLOCK_ITEM, COAL, CHARCOAL,
+        OAK_LOG, BIRCH_LOG, PLANKS, STICK,
+        CRAFTING_TABLE, DOOR, TRAPDOOR
+    )
+
+def _move_inventory_stack_to_chest(player, world, inv_idx, chest_slots):
+    slot = player.inventory[inv_idx]
+    if not slot:
+        return False
+
+    for chest_slot in chest_slots:
+        if chest_slot and chest_slot["type"] == slot["type"] and chest_slot["count"] < 80:
+            transfer = min(slot["count"], 80 - chest_slot["count"])
+            chest_slot["count"] += transfer
+            slot["count"] -= transfer
+            if slot["count"] <= 0:
+                player.inventory[inv_idx] = None
+            return True
+
+    for i in range(len(chest_slots)):
+        if chest_slots[i] is None:
+            chest_slots[i] = slot.copy()
+            player.inventory[inv_idx] = None
+            return True
+
+    return False
+
+def _move_inventory_stack_to_crafting(player, inv_idx, grid):
+    slot = player.inventory[inv_idx]
+    if not slot:
+        return False
+
+    for i in range(len(grid)):
+        if grid[i] is None:
+            grid[i] = slot.copy()
+            player.inventory[inv_idx] = None
+            return True
+
+    return False
+
+def _move_inventory_stack_to_furnace(player, inv_idx, f_data):
+    slot = player.inventory[inv_idx]
+    if not slot:
+        return False
+
+    item_type = slot["type"]
+    target_key = None
+    if _can_smelt_in_furnace(item_type):
+        target_key = "input"
+    elif _is_furnace_fuel(item_type):
+        target_key = "fuel"
+    else:
+        return False
+
+    target_slot = f_data[target_key]
+    if target_slot is None:
+        f_data[target_key] = slot.copy()
+        player.inventory[inv_idx] = None
+        return True
+
+    if target_slot["type"] == item_type and target_slot["count"] < 80:
+        transfer = min(slot["count"], 80 - target_slot["count"])
+        target_slot["count"] += transfer
+        slot["count"] -= transfer
+        if slot["count"] <= 0:
+            player.inventory[inv_idx] = None
+        return True
+
+    return False
+
+def _get_hovered_inventory_slot(mx, my, player):
+    inv_x, inv_y = SCREEN_WIDTH // 2 - 200, 360
+    for i in range(36):
+        if i < 9:
+            sx, sy = inv_x + i * 44, inv_y + 150
+        else:
+            sx, sy = inv_x + ((i - 9) % 9) * 44, inv_y + ((i - 9) // 9) * 44
+        if sx <= mx <= sx + 40 and sy <= my <= sy + 40:
+            return i
+    return None
 
 def teleport_player_to(world, player, x, y):
     # Place the player at the pearl landing spot, then nudge upward if needed.
@@ -2570,7 +2909,35 @@ def main():
                 save_game(world, player, save_filename)
                 running = False
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_f: target_mode = (target_mode + 1) % 5
+                if event.key == pygame.K_f:
+                    if player.show_inventory and (player.active_furnace_pos or player.active_chest_pos or player.show_3x3):
+                        mx, my = pygame.mouse.get_pos()
+                        hovered_idx = _get_hovered_inventory_slot(mx, my, player)
+                        if hovered_idx is not None:
+                            moved = False
+                            if player.active_furnace_pos:
+                                f_data = world.furnace_data[player.active_furnace_pos]
+                                moved = _move_inventory_stack_to_furnace(player, hovered_idx, f_data)
+                                if moved:
+                                    update_furnaces(world)
+                            elif player.active_chest_pos:
+                                tx, ty = player.active_chest_pos
+                                master_pos = (tx, ty)
+                                if (tx-1, ty) in world.chest_data:
+                                    master_pos = (tx-1, ty)
+                                c_slots = world.chest_data.get(master_pos, [])
+                                moved = _move_inventory_stack_to_chest(player, world, hovered_idx, c_slots)
+                            elif player.show_3x3:
+                                moved = _move_inventory_stack_to_crafting(player, hovered_idx, player.crafting_3x3)
+                                if moved:
+                                    update_crafting(player)
+                            else:
+                                moved = _move_inventory_stack_to_crafting(player, hovered_idx, player.crafting_grid)
+                                if moved:
+                                    update_crafting(player)
+                            if moved:
+                                continue
+                    target_mode = (target_mode + 1) % 5
                 if event.key == pygame.K_q: 
                     if save_game(world, player, save_filename):
                         save_msg_timer = 120
@@ -2818,6 +3185,19 @@ def main():
                         player.inventory[player.selected_slot] = None
                     player.last_action_time = now
                     action_taken = True
+            elif slot and slot["type"] == FISHING_ROD:
+                mx, my = pygame.mouse.get_pos()
+                target_x = (scroll_x + mx) % WORLD_PIXELS
+                target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
+                if slot.get("durability", 0) > 0 and getattr(player, "fishing_hook", None) is None:
+                    hook = FishingHook(player, player.rect.centerx, player.rect.centery - 4, target_x, target_y)
+                    player.fishing_hook = hook
+                    world.fishing_hooks.append(hook)
+                    slot["durability"] -= 1
+                    if slot["durability"] <= 0:
+                        player.inventory[player.selected_slot] = None
+                    player.last_action_time = now
+                    action_taken = True
 
             for tx, ty in ([] if action_taken else valid_targets):
                 if (tx, ty) in world.data and world.data[(tx, ty)] == BOAT:
@@ -2848,9 +3228,9 @@ def main():
                         break
 
                 # Eating / Drinking
-                if slot and slot["type"] in (BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON, MILK_BUCKET):
+                if slot and slot["type"] in (BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON, RAW_COD, COOKED_COD, RAW_SALMON, COOKED_SALMON, MILK_BUCKET):
                     if slot["type"] == MILK_BUCKET or player.hunger < player.max_hunger:
-                        fill = {BREAD: 5, RAW_BEEF: 3, STEAK: 8, ROTTEN_FLESH: 4, RAW_MUTTON: 3, COOKED_MUTTON: 7, MILK_BUCKET: 2}[slot["type"]]
+                        fill = {BREAD: 5, RAW_BEEF: 3, STEAK: 8, ROTTEN_FLESH: 4, RAW_MUTTON: 3, COOKED_MUTTON: 7, RAW_COD: 2, COOKED_COD: 5, RAW_SALMON: 2, COOKED_SALMON: 6, MILK_BUCKET: 2}[slot["type"]]
                         player.hunger = min(player.max_hunger, player.hunger + fill)
                         if slot["type"] == MILK_BUCKET:
                             slot["type"] = BUCKET # Return empty bucket
@@ -3023,6 +3403,18 @@ def main():
                             world.data[(tx, ty)] = slot["type"]
                             if slot["type"] in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
                                 world.block_meta[(tx, ty)] = {"facing": player.direction}
+                            elif slot["type"] == TORCH:
+                                wall_facing = None
+                                left_block = world.data.get(((tx - 1) % WORLD_WIDTH, ty))
+                                right_block = world.data.get(((tx + 1) % WORLD_WIDTH, ty))
+                                if left_block and left_block != AIR and left_block != WATER:
+                                    wall_facing = 1
+                                elif right_block and right_block != AIR and right_block != WATER:
+                                    wall_facing = -1
+                                if wall_facing is not None:
+                                    world.block_meta[(tx, ty)] = {"facing": wall_facing}
+                                elif (tx, ty + 1) in world.data and world.data[(tx, ty + 1)] not in (AIR, WATER, TALL_GRASS):
+                                    world.block_meta[(tx, ty)] = {"facing": 0}
                             
                             if net:
                                 net.send({"type": "BLOCK", "pos": f"{tx},{ty}", "b_type": slot["type"], "meta": world.block_meta.get((tx, ty))})
@@ -3231,6 +3623,14 @@ def main():
                 world.arrows.remove(arrow)
             else:
                 arrow.draw(screen, scroll_x, scroll_y)
+
+        # Update and Draw Fishing Hooks
+        for hook in world.fishing_hooks[:]:
+            if hook.update(world):
+                if hook in world.fishing_hooks:
+                    world.fishing_hooks.remove(hook)
+            else:
+                hook.draw(screen, scroll_x, scroll_y)
 
         # Update and Draw Dropped Items
         for di in world.dropped_items[:]:

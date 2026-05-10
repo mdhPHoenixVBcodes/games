@@ -15,6 +15,7 @@ player_name = os.getenv('GAME_USERNAME', 'Player')
 player = None
 archer_companion = None
 drone_companion = None
+soldier_companion = None
 scientist_npc = None
 control_mode = 'player'
 
@@ -31,10 +32,18 @@ def get_active_party_targets():
         targets.append(archer_companion)
     if drone_companion is not None and getattr(drone_companion, 'hp', 0) > 0:
         targets.append(drone_companion)
+    if soldier_companion is not None and getattr(soldier_companion, 'hp', 0) > 0:
+        targets.append(soldier_companion)
     return targets
 
 
 def get_nearest_party_target(origin):
+    if control_mode == 'archer' and archer_companion is not None and getattr(archer_companion, 'hp', 0) > 0:
+        return archer_companion
+    if control_mode == 'drone' and drone_companion is not None and getattr(drone_companion, 'hp', 0) > 0:
+        return drone_companion
+    if control_mode == 'soldier' and soldier_companion is not None and getattr(soldier_companion, 'hp', 0) > 0:
+        return soldier_companion
     targets = get_active_party_targets()
     return min(targets, key=lambda target: distance(origin, target.position)) if targets else None
 
@@ -50,10 +59,12 @@ def dismiss_archer_companion():
 
 def set_control_mode(mode):
     global control_mode
-    mode = mode if mode in ('player', 'archer', 'drone') else 'player'
+    mode = mode if mode in ('player', 'archer', 'drone', 'soldier') else 'player'
     if mode == 'archer' and (archer_companion is None or getattr(archer_companion, 'hp', 0) <= 0):
         mode = 'player'
     if mode == 'drone' and (drone_companion is None or getattr(drone_companion, 'hp', 0) <= 0):
+        mode = 'player'
+    if mode == 'soldier' and (soldier_companion is None or getattr(soldier_companion, 'hp', 0) <= 0):
         mode = 'player'
     control_mode = mode
 
@@ -62,6 +73,8 @@ def set_control_mode(mode):
         target = archer_companion
     elif mode == 'drone' and drone_companion is not None:
         target = drone_companion
+    elif mode == 'soldier' and soldier_companion is not None:
+        target = soldier_companion
     if target is not None:
         camera.parent = target
         camera.position = (0, 3, -7)
@@ -86,7 +99,7 @@ def handle_story_interaction(actor):
             scientist_npc.dialogue_ui.text = "Scientist: I used that special battery to make this drone for you. It's friendly."
             player_obj.scientist_talked = True
             player_obj.drone_teammate_unlocked = True
-            player_obj.mission_ui.text = 'Drone teammate unlocked!'
+            player_obj.mission_ui.text = 'Talk to the Manager'
             player_obj.mission_ui.color = color.cyan
             drone = spawn_drone_companion()
             drone.position = player_obj.position + (-2, 1, -2)
@@ -134,10 +147,84 @@ def handle_story_interaction(actor):
         invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
         return True
 
+    if distance(actor.position, ent.chef.position) < 5.0 and player_obj.level_8_cleared and not player_obj.level_9_cleared and not player_obj.level_9_portal_open:
+        ent.chef.dialogue_ui.text = 'Chef: I heard a survivor is still surviving in an area, where is he?'
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player_obj.level_9_portal_open = True
+        player_obj.mission_ui.text = 'Enter Level 9!'
+        player_obj.mission_ui.color = color.magenta
+
+        ent.portal_4.position = ent.chef.position + ent.chef.forward * 4
+        ent.portal_4.y = 1.5
+        ent.portal_4.enabled = True
+
+        manager_exit_point = ent.portal_4.position + ent.portal_4.forward * 1.25
+        ent.manager.position = ent.portal_4.position
+        ent.manager.y = 1.0
+        ent.manager.enabled = True
+        ent.manager.dialogue_ui.text = 'Manager: HELP'
+        ent.manager.dialogue_ui.enabled = True
+        ent.manager.look_at_2d(ent.portal_4.position, 'y')
+        ent.manager.animate_position(manager_exit_point, duration=1.1)
+
+        def chef_followup():
+            ent.chef.dialogue_ui.text = 'Chef: Where did he go? Go save him!'
+            ent.chef.dialogue_ui.enabled = True
+            invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+
+        invoke(chef_followup, delay=2.0)
+        invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=0.8)
+        invoke(setattr, ent.manager, 'enabled', False, delay=1.15)
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if getattr(player_obj, 'level_9_cleared', False) and distance(actor.position, ent.chef.position) < 5.0:
+        if not getattr(player_obj, 'soldier_spawned', False):
+            ent.chef.dialogue_ui.text = 'Chef: I found another survivor. Go meet the soldier.'
+            ent.chef.dialogue_ui.enabled = True
+            ent.chef.exclamation.enabled = False
+            player_obj.soldier_spawned = True
+            player_obj.mission_ui.text = 'Talk to soldier'
+            player_obj.mission_ui.color = color.yellow
+            soldier = spawn_soldier_companion()
+            soldier.position = player_obj.position + (3, 0, -2)
+            soldier.y = player_obj.y + 0.9
+            soldier.hp = soldier.max_hp
+            soldier.health_bar.scale_x = 1.25
+            player_obj.soldier_x = soldier.x
+            player_obj.soldier_y = soldier.y
+            player_obj.soldier_z = soldier.z
+            invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+            return True
+        if not getattr(player_obj, 'soldier_teammate_unlocked', False):
+            ent.chef.dialogue_ui.text = 'Chef: Talk to the soldier. He can join you.'
+            ent.chef.dialogue_ui.enabled = True
+            player_obj.mission_ui.text = 'Talk to soldier'
+            player_obj.mission_ui.color = color.yellow
+            invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+            return True
+
     if distance(actor.position, ent.chef.position) < 5.0:
         ent.chef.dialogue_ui.text = 'Chef: Good luck out there!'
         ent.chef.dialogue_ui.enabled = True
         invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if getattr(player_obj, 'soldier_spawned', False) and soldier_companion is not None and distance(actor.position, soldier_companion.position) < 5.0:
+        if not getattr(player_obj, 'soldier_teammate_unlocked', False):
+            soldier_companion.dialogue_ui.text = 'Soldier: I am in. Press J to control me.'
+            soldier_companion.dialogue_ui.enabled = True
+            soldier_companion.exclamation.enabled = False
+            player_obj.soldier_teammate_unlocked = True
+            player_obj.mission_ui.text = 'Press J to control soldier'
+            player_obj.mission_ui.color = color.cyan
+            player_obj.soldier_hud_hint = True
+            invoke(setattr, soldier_companion.dialogue_ui, 'enabled', False, delay=4.0)
+            return True
+        soldier_companion.dialogue_ui.text = 'Soldier: Press J if you want me to lead.'
+        soldier_companion.dialogue_ui.enabled = True
+        invoke(setattr, soldier_companion.dialogue_ui, 'enabled', False, delay=4.0)
         return True
 
     if distance(actor.position, ent.manager.position) < 5.0:
@@ -145,7 +232,7 @@ def handle_story_interaction(actor):
             ent.manager.dialogue_ui.text = "Manager: Talk to the Chef first, you need a weapon!"
             ent.manager.dialogue_ui.enabled = True
             invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
-        elif not player_obj.level_3_cleared:
+        elif not player_obj.level_3_cleared and not player_obj.level_8_cleared and not player_obj.level_9_portal_open:
             ent.manager.dialogue_ui.text = "Manager: The portal is open."
             ent.manager.dialogue_ui.enabled = True
             ent.manager.exclamation.enabled = False
@@ -158,7 +245,19 @@ def handle_story_interaction(actor):
 
             invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
         else:
-            if player_obj.scientist_inspected and not player_obj.level_7_cleared:
+            if player_obj.level_8_cleared and not player_obj.level_9_portal_open:
+                player_obj.mission_ui.text = 'Talk to chef'
+                player_obj.mission_ui.color = color.yellow
+                player_obj.crosshair.enabled = True
+                return True
+            elif player_obj.drone_teammate_unlocked and not player_obj.level_8_cleared:
+                ent.manager.dialogue_ui.text = "Manager: The Level 8 portal is open."
+                player_obj.level_8_portal_open = True
+                player_obj.level_7_portal_open = False
+                player_obj.level_6_portal_open = False
+                player_obj.mission_ui.text = 'Enter Level 8!'
+                player_obj.mission_ui.color = color.magenta
+            elif player_obj.scientist_inspected and not player_obj.level_7_cleared:
                 ent.manager.dialogue_ui.text = "Manager: The Level 7 arena is open."
                 player_obj.level_7_portal_open = True
                 player_obj.level_6_portal_open = False
@@ -169,7 +268,7 @@ def handle_story_interaction(actor):
                 player_obj.mission_ui.text = 'Talk to scientist'
                 player_obj.mission_ui.color = color.white
                 player_obj.level_7_portal_open = False
-            elif player_obj.teammate_unlocked and player_obj.level_5_cleared:
+            elif player_obj.teammate_unlocked and player_obj.level_5_cleared and not player_obj.drone_teammate_unlocked:
                 ent.manager.dialogue_ui.text = "Manager: Great. The Level 6 portal is open."
                 player_obj.mission_ui.text = 'Enter Level 6!'
                 player_obj.level_5_portal_open = False
@@ -208,6 +307,14 @@ def spawn_drone_companion():
     return drone_companion
 
 
+def spawn_soldier_companion():
+    global soldier_companion
+    if soldier_companion is None:
+        from adventure_entities import SoldierCompanion
+        soldier_companion = SoldierCompanion()
+    return soldier_companion
+
+
 def spawn_scientist():
     global scientist_npc
     if scientist_npc is None:
@@ -230,6 +337,15 @@ def dismiss_drone_companion():
             set_control_mode('player')
         destroy(drone_companion)
         drone_companion = None
+
+
+def dismiss_soldier_companion():
+    global soldier_companion
+    if soldier_companion is not None:
+        if control_mode == 'soldier':
+            set_control_mode('player')
+        destroy(soldier_companion)
+        soldier_companion = None
 
 
 def clear_level_6_pillars():

@@ -20,7 +20,7 @@ def handle_story_interaction(actor):
             state.scientist_npc.dialogue_ui.text = "Scientist: I used that special battery to make this drone for you. It's friendly."
             player.scientist_talked = True
             player.drone_teammate_unlocked = True
-            player.mission_ui.text = 'Drone teammate unlocked!'
+            player.mission_ui.text = 'Talk to the Manager'
             player.mission_ui.color = color.cyan
             drone = state.spawn_drone_companion()
             drone.position = player.position + (-2, 1, -2)
@@ -68,10 +68,83 @@ def handle_story_interaction(actor):
         invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
         return True
 
+    if distance(actor.position, ent.chef.position) < 5.0 and player.level_8_cleared and not player.level_9_cleared and not player.level_9_portal_open:
+        ent.chef.dialogue_ui.text = 'Chef: I heard a survivor is still surviving in an area, where is he?'
+        ent.chef.dialogue_ui.enabled = True
+        ent.chef.exclamation.enabled = False
+        player.level_9_portal_open = True
+        player.mission_ui.text = 'Enter Level 9!'
+        player.mission_ui.color = color.magenta
+
+        ent.portal_4.position = ent.chef.position + ent.chef.forward * 4
+        ent.portal_4.y = 1.5
+        ent.portal_4.enabled = True
+
+        manager_exit_point = ent.portal_4.position + ent.portal_4.forward * 1.25
+        ent.manager.position = ent.portal_4.position
+        ent.manager.y = 1.0
+        ent.manager.enabled = True
+        ent.manager.dialogue_ui.text = 'Manager: HELP'
+        ent.manager.dialogue_ui.enabled = True
+        ent.manager.look_at_2d(ent.portal_4.position, 'y')
+        ent.manager.animate_position(manager_exit_point, duration=1.1)
+
+        def chef_followup():
+            ent.chef.dialogue_ui.text = 'Chef: Where did he go? Go save him!'
+            ent.chef.dialogue_ui.enabled = True
+            invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+
+        invoke(chef_followup, delay=2.0)
+        invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=0.8)
+        invoke(setattr, ent.manager, 'enabled', False, delay=1.15)
+        invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if getattr(player, 'level_9_cleared', False) and distance(actor.position, ent.chef.position) < 5.0:
+        if not getattr(player, 'soldier_spawned', False):
+            ent.chef.dialogue_ui.text = 'Chef: I found another survivor. Go meet the soldier.'
+            ent.chef.dialogue_ui.enabled = True
+            ent.chef.exclamation.enabled = False
+            player.soldier_spawned = True
+            player.mission_ui.text = 'Talk to soldier'
+            player.mission_ui.color = color.yellow
+            soldier = state.spawn_soldier_companion()
+            soldier.position = player.position + (3, 0, -2)
+            soldier.y = player.y + 0.9
+            soldier.hp = soldier.max_hp
+            soldier.health_bar.scale_x = 1.25
+            player.soldier_x = soldier.x
+            player.soldier_y = soldier.y
+            player.soldier_z = soldier.z
+            invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+            return True
+        if not getattr(player, 'soldier_teammate_unlocked', False):
+            ent.chef.dialogue_ui.text = 'Chef: Talk to the soldier. He can join you.'
+            ent.chef.dialogue_ui.enabled = True
+            player.mission_ui.text = 'Talk to soldier'
+            player.mission_ui.color = color.yellow
+            invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+            return True
+
     if distance(actor.position, ent.chef.position) < 5.0:
         ent.chef.dialogue_ui.text = 'Chef: Good luck out there!'
         ent.chef.dialogue_ui.enabled = True
         invoke(setattr, ent.chef.dialogue_ui, 'enabled', False, delay=4.0)
+        return True
+
+    if getattr(player, 'soldier_spawned', False) and state.soldier_companion is not None and distance(actor.position, state.soldier_companion.position) < 5.0:
+        if not getattr(player, 'soldier_teammate_unlocked', False):
+            state.soldier_companion.dialogue_ui.text = 'Soldier: I am in. Press J to control me.'
+            state.soldier_companion.dialogue_ui.enabled = True
+            state.soldier_companion.exclamation.enabled = False
+            player.soldier_teammate_unlocked = True
+            player.mission_ui.text = 'Press J to control soldier'
+            player.mission_ui.color = color.cyan
+            invoke(setattr, state.soldier_companion.dialogue_ui, 'enabled', False, delay=4.0)
+            return True
+        state.soldier_companion.dialogue_ui.text = 'Soldier: Press J if you want me to lead.'
+        state.soldier_companion.dialogue_ui.enabled = True
+        invoke(setattr, state.soldier_companion.dialogue_ui, 'enabled', False, delay=4.0)
         return True
 
     if distance(actor.position, ent.manager.position) < 5.0:
@@ -79,7 +152,7 @@ def handle_story_interaction(actor):
             ent.manager.dialogue_ui.text = "Manager: Talk to the Chef first, you need a weapon!"
             ent.manager.dialogue_ui.enabled = True
             invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
-        elif not player.level_3_cleared:
+        elif not player.level_3_cleared and not player.level_8_cleared and not player.level_9_portal_open:
             ent.manager.dialogue_ui.text = "Manager: The portal is open."
             ent.manager.dialogue_ui.enabled = True
             ent.manager.exclamation.enabled = False
@@ -92,7 +165,19 @@ def handle_story_interaction(actor):
 
             invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
         else:
-            if player.scientist_inspected and not player.level_7_cleared:
+            if player.level_8_cleared and not player.level_9_portal_open:
+                player.mission_ui.text = 'Talk to chef'
+                player.mission_ui.color = color.yellow
+                player.crosshair.enabled = True
+                return True
+            elif player.drone_teammate_unlocked and not player.level_8_cleared:
+                ent.manager.dialogue_ui.text = "Manager: The Level 8 portal is open."
+                player.level_8_portal_open = True
+                player.level_7_portal_open = False
+                player.level_6_portal_open = False
+                player.mission_ui.text = 'Enter Level 8!'
+                player.mission_ui.color = color.magenta
+            elif player.scientist_inspected and not player.level_7_cleared:
                 ent.manager.dialogue_ui.text = "Manager: The Level 7 arena is open."
                 player.level_7_portal_open = True
                 player.level_6_portal_open = False
@@ -103,7 +188,7 @@ def handle_story_interaction(actor):
                 player.mission_ui.text = 'Talk to scientist'
                 player.mission_ui.color = color.white
                 player.level_7_portal_open = False
-            elif player.teammate_unlocked and player.level_5_cleared:
+            elif player.teammate_unlocked and player.level_5_cleared and not player.drone_teammate_unlocked:
                 ent.manager.dialogue_ui.text = "Manager: Great. The Level 6 portal is open."
                 player.mission_ui.text = 'Enter Level 6!'
                 player.level_5_portal_open = False
@@ -164,6 +249,12 @@ class ThirdPersonPlayer(Entity):
         self.level_6_drop_z = 0
         self.level_7_portal_open = False
         self.level_7_cleared = False
+        self.level_8_portal_open = False
+        self.level_8_cleared = False
+        self.level_9_portal_open = False
+        self.level_9_cleared = False
+        self.level_8_phase = 0
+        self.level_8_drones_spawned = False
         self.scientist_talked = False
         self.drone_teammate_unlocked = False
         self.level_6_return_portal_x = 0
@@ -174,9 +265,18 @@ class ThirdPersonPlayer(Entity):
         self.scientist_y = 1
         self.scientist_z = 0
         self.level_6_broadcast_shown = False
+        self.soldier_spawned = False
+        self.soldier_teammate_unlocked = False
+        self.soldier_x = 0
+        self.soldier_y = 1
+        self.soldier_z = 0
+        self.soldier_special_max_cooldown = 8.0
+        self.soldier_special_cooldown = 0.0
         self.teammate_unlocked = False
         self.scientist_inspected = False
         self.level_7_pillars = []
+        self.level_8_walls = []
+        self.level_9_walls = []
         self.archer_respawn_timer = 0.0
         self.drone_respawn_timer = 0.0
         self.hub_regen_enabled = True
@@ -216,6 +316,8 @@ class ThirdPersonPlayer(Entity):
         self.grenade_overlay = Entity(parent=self.grenade_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         self.arrow_strike_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast1.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
         self.arrow_strike_overlay = Entity(parent=self.arrow_strike_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        self.soldier_special_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast5.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
+        self.soldier_special_overlay = Entity(parent=self.soldier_special_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         self.dash_max_cooldown = 0.8
         self.dash_icon_shadow = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 180), scale=(0.14, 0.14), position=(0.44, -0.4), z=0.1, enabled=True)
@@ -232,8 +334,25 @@ class ThirdPersonPlayer(Entity):
         self.rapid_fire_cooldown = 0.0
         self.bow_icon = Entity(parent=camera.ui, model='quad', texture='Logo/image1.png', color=color.white, scale=(0.14, 0.14), position=(0.8, -0.4), enabled=False)
         self.bow_overlay = Entity(parent=self.bow_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
-        self.rapid_fire_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast2.png', color=color.white, scale=(0.14, 0.14), position=(0.0, -0.4), enabled=False)
+        self.rapid_fire_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast2.png', color=color.white, scale=(0.39, 0.21), position=(0.0, -0.4), enabled=False)
         self.rapid_fire_overlay = Entity(parent=self.rapid_fire_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        self.drone_rocket_max_cooldown = 10.0
+        self.drone_rocket_duration = 10.0
+        self.drone_rocket_shot_interval = 0.2
+        self.drone_rocket_active = False
+        self.drone_rocket_timer = 0.0
+        self.drone_rocket_cooldown = 0.0
+        self.drone_rocket_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast3.png', color=color.white, scale=(0.14, 0.14), position=(0.62, -0.4), enabled=False)
+        self.drone_rocket_overlay = Entity(parent=self.drone_rocket_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
+        self.drone_orb_ult_max_cooldown = 20.0
+        self.drone_orb_ult_active = False
+        self.drone_orb_ult_timer = 0.0
+        self.drone_orb_ult_cooldown = 0.0
+        self.drone_orb_ult_shots_left = 0
+        self.drone_orb_ult_shot_delay = 0.9
+        self.drone_orb_ult_shot_timer = 0.0
+        self.drone_orb_ult_icon = Entity(parent=camera.ui, model='quad', texture='Logo/ast4.png', color=color.white, scale=(0.14, 0.14), position=(0.0, -0.4), enabled=False)
+        self.drone_orb_ult_overlay = Entity(parent=self.drone_orb_ult_icon, model='quad', color=color.black66, scale=(1, 0), z=-0.1, origin_y=-0.5)
         
         mouse.locked = True
 
@@ -250,29 +369,88 @@ class ThirdPersonPlayer(Entity):
     def update_control_hint(self):
         archer_alive = self.teammate_unlocked and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0
         drone_alive = self.drone_teammate_unlocked and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0
+        soldier_alive = self.soldier_teammate_unlocked and state.soldier_companion is not None and getattr(state.soldier_companion, 'hp', 0) > 0
 
         if state.control_mode == 'archer' and archer_alive:
             parts = ['Controlling Archer', 'L: Player']
             if drone_alive:
                 parts.append('K: Drone')
+            if soldier_alive:
+                parts.append('J: Soldier')
         elif state.control_mode == 'drone' and drone_alive:
             parts = ['Controlling Drone', 'L: Archer']
             if archer_alive:
                 parts.append('K: Player')
+            if soldier_alive:
+                parts.append('J: Soldier')
+        elif state.control_mode == 'soldier' and soldier_alive:
+            parts = ['Controlling Soldier', 'J: Player']
+            if archer_alive:
+                parts.append('L: Archer')
+            if drone_alive:
+                parts.append('K: Drone')
         else:
             parts = []
             if archer_alive:
                 parts.append('L: Archer')
             if drone_alive:
                 parts.append('K: Drone')
-            if not parts:
-                parts = ['No teammates unlocked']
+            if soldier_alive:
+                parts.append('J: Soldier')
 
         self.control_hint.text = ' | '.join(parts)
 
     def update_ability_hud(self):
         archer_mode = state.control_mode == 'archer'
-        if self.has_grenade:
+        drone_mode = state.control_mode == 'drone'
+        soldier_mode = state.control_mode == 'soldier'
+        if state.soldier_companion is not None:
+            self.soldier_special_cooldown = getattr(state.soldier_companion, 'special_cooldown', self.soldier_special_cooldown)
+        if drone_mode and self.drone_teammate_unlocked:
+            self.grenade_icon.enabled = False
+            self.arrow_strike_icon.enabled = False
+            self.rapid_fire_icon.enabled = False
+            self.soldier_special_icon.enabled = False
+            self.grenade_overlay.scale_y = 0
+            self.arrow_strike_overlay.scale_y = 0
+            self.rapid_fire_overlay.scale_y = 0
+            self.drone_rocket_icon.enabled = True
+            if self.drone_rocket_active:
+                self.drone_rocket_icon.color = color.white
+                self.drone_rocket_overlay.scale_y = self.drone_rocket_timer / self.drone_rocket_duration if self.drone_rocket_duration > 0 else 0
+            elif self.drone_rocket_cooldown > 0:
+                self.drone_rocket_icon.color = color.gray
+                self.drone_rocket_overlay.scale_y = self.drone_rocket_cooldown / self.drone_rocket_max_cooldown
+            else:
+                self.drone_rocket_icon.color = color.white
+                self.drone_rocket_overlay.scale_y = 0
+            self.drone_orb_ult_icon.enabled = True
+            if self.drone_orb_ult_active:
+                self.drone_orb_ult_icon.color = color.white
+                self.drone_orb_ult_overlay.scale_y = self.drone_orb_ult_shot_timer / self.drone_orb_ult_shot_delay if self.drone_orb_ult_shot_timer > 0 else 0
+            elif self.drone_orb_ult_cooldown > 0:
+                self.drone_orb_ult_icon.color = color.gray
+                self.drone_orb_ult_overlay.scale_y = self.drone_orb_ult_cooldown / self.drone_orb_ult_max_cooldown
+            else:
+                self.drone_orb_ult_icon.color = color.white
+                self.drone_orb_ult_overlay.scale_y = 0
+        elif soldier_mode and self.soldier_teammate_unlocked:
+            self.grenade_icon.enabled = False
+            self.arrow_strike_icon.enabled = False
+            self.rapid_fire_icon.enabled = False
+            self.drone_rocket_icon.enabled = False
+            self.drone_orb_ult_icon.enabled = False
+            self.grenade_overlay.scale_y = 0
+            self.arrow_strike_overlay.scale_y = 0
+            self.rapid_fire_overlay.scale_y = 0
+            self.drone_rocket_overlay.scale_y = 0
+            self.drone_orb_ult_overlay.scale_y = 0
+            self.soldier_special_icon.enabled = True
+            self.soldier_special_icon.color = color.white if self.soldier_special_cooldown <= 0 else color.gray
+            self.soldier_special_overlay.scale_y = self.soldier_special_cooldown / self.soldier_special_max_cooldown if self.soldier_special_cooldown > 0 else 0
+        elif self.has_grenade:
+            self.soldier_special_icon.enabled = False
+            self.soldier_special_overlay.scale_y = 0
             if archer_mode:
                 self.grenade_icon.enabled = False
                 self.grenade_overlay.scale_y = 0
@@ -280,6 +458,10 @@ class ThirdPersonPlayer(Entity):
                 self.arrow_strike_icon.color = color.white if self.grenade_cooldown <= 0 else color.gray
                 self.arrow_strike_overlay.scale_y = self.grenade_cooldown / self.arrow_strike_max_cooldown if self.grenade_cooldown > 0 else 0
                 self.rapid_fire_icon.enabled = True
+                self.drone_rocket_icon.enabled = False
+                self.drone_orb_ult_icon.enabled = False
+                self.drone_rocket_overlay.scale_y = 0
+                self.drone_orb_ult_overlay.scale_y = 0
                 if self.rapid_fire_active:
                     self.rapid_fire_icon.color = color.white
                     self.rapid_fire_overlay.scale_y = self.rapid_fire_timer / self.rapid_fire_duration if self.rapid_fire_duration > 0 else 0
@@ -294,6 +476,8 @@ class ThirdPersonPlayer(Entity):
                 self.arrow_strike_overlay.scale_y = 0
                 self.rapid_fire_icon.enabled = False
                 self.rapid_fire_overlay.scale_y = 0
+                self.drone_orb_ult_icon.enabled = False
+                self.drone_orb_ult_overlay.scale_y = 0
                 self.grenade_icon.enabled = True
                 self.grenade_icon.color = color.white if self.grenade_cooldown <= 0 else color.gray
                 self.grenade_overlay.scale_y = self.grenade_cooldown / self.grenade_max_cooldown if self.grenade_cooldown > 0 else 0
@@ -301,12 +485,25 @@ class ThirdPersonPlayer(Entity):
             self.grenade_icon.enabled = False
             self.arrow_strike_icon.enabled = False
             self.rapid_fire_icon.enabled = False
+            self.drone_rocket_icon.enabled = False
+            self.drone_orb_ult_icon.enabled = False
+            self.soldier_special_icon.enabled = False
+            self.soldier_special_overlay.scale_y = 0
             self.grenade_overlay.scale_y = 0
             self.arrow_strike_overlay.scale_y = 0
             self.rapid_fire_overlay.scale_y = 0
+            self.drone_rocket_overlay.scale_y = 0
+            self.drone_orb_ult_overlay.scale_y = 0
 
     def take_damage(self, amount):
         if self.is_teleporting:
+            return
+
+        if state.control_mode == 'archer' and state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0:
+            state.archer_companion.take_damage(amount)
+            return
+        if state.control_mode == 'drone' and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0:
+            state.drone_companion.take_damage(amount)
             return
 
         self.hp -= amount
@@ -418,7 +615,11 @@ class ThirdPersonPlayer(Entity):
         ent.portal_4.enabled = False
         self.save_game()
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 255), duration=1.0)
-        if self.level_7_portal_open:
+        if self.level_9_portal_open:
+            invoke(self.teleport_to_level_9, delay=1.0)
+        elif self.level_8_portal_open:
+            invoke(self.teleport_to_level_8, delay=1.0)
+        elif self.level_7_portal_open:
             invoke(self.teleport_to_level_7, delay=1.0)
         elif self.level_6_portal_open or (self.teammate_unlocked and self.level_5_cleared):
             invoke(self.teleport_to_level_6, delay=1.0)
@@ -442,8 +643,23 @@ class ThirdPersonPlayer(Entity):
         for pillar in self.level_7_pillars:
             destroy(pillar)
         self.level_7_pillars.clear()
+        for wall in getattr(self, 'level_8_walls', []):
+            destroy(wall)
+        if hasattr(self, 'level_8_walls'):
+            self.level_8_walls.clear()
+        for platform in getattr(self, 'level_8_platforms', []):
+            destroy(platform)
+        if hasattr(self, 'level_8_platforms'):
+            self.level_8_platforms.clear()
+        for wall in getattr(self, 'level_9_walls', []):
+            destroy(wall)
+        if hasattr(self, 'level_9_walls'):
+            self.level_9_walls.clear()
         state.clear_level_6_pillars()
         state.clear_level_6_sphere_drop()
+        world.ground_8.enabled = False
+        world.ground_9.enabled = False
+        self.level_8_drones_spawned = False
 
     def start_cannonhallway_music(self):
         if self.cannonhallway_music and self.cannonhallway_music.playing:
@@ -527,6 +743,147 @@ class ThirdPersonPlayer(Entity):
         for pos in enemy_positions:
             state.enemies.append(SphereEnemy(target=self, spawn_pos=pos))
 
+    def spawn_level_8_drones(self):
+        if self.level_8_drones_spawned and len(state.enemies) > 0:
+            return
+
+        from adventure_entities import SphereEnemy
+
+        drone_positions = [
+            (5990, 5, 2405),
+            (6000, 5, 2415),
+            (6010, 5, 2405),
+        ]
+        for pos in drone_positions:
+            state.enemies.append(SphereEnemy(target=self, spawn_pos=pos))
+        self.level_8_drones_spawned = True
+
+    def setup_level_8_hallway(self):
+        self.clear_all_entities()
+        self.level_8_phase = 1
+        self.level_8_cleared = False
+        world.ground_8.enabled = True
+        world.ground_8.position = (6000, 0, 2300)
+        world.ground_8.scale = (20, 1, 200)
+        world.ground_8.color = color.blue
+        world.ground_8.collider = 'box'
+
+        self.level_8_walls = []
+        wall_specs = [
+            ((5990, 5, 2300), (1, 10, 200)),
+            ((6010, 5, 2300), (1, 10, 200)),
+        ]
+        for pos, scale in wall_specs:
+            wall = Entity(model='cube', color=color.blue, collider='box', position=pos, scale=scale)
+            self.level_8_walls.append(wall)
+
+        self.level_8_platforms = []
+        end_platform = Entity(model='cube', color=color.azure, collider='box', position=(6000, 1, 2400), scale=(20, 2, 20))
+        self.level_8_platforms.append(end_platform)
+
+        cannon_z_positions = [2230, 2250, 2270, 2290, 2310, 2330, 2350, 2370, 2390]
+        for idx, z in enumerate(cannon_z_positions):
+            if idx % 2 == 0:
+                state.cannons.append(ent.Cannon(position=(5990, 1.5, z), fixed_fire_direction=Vec3(1, 0, 0), fire_damage=10, fire_interval_range=(2.0, 2.0)))
+            else:
+                state.cannons.append(ent.Cannon(position=(6010, 1.5, z), fixed_fire_direction=Vec3(-1, 0, 0), fire_damage=10, fire_interval_range=(2.0, 2.0)))
+
+    def setup_level_9_arena(self, spawn_boss=True):
+        self.clear_all_entities()
+        world.ground_9.enabled = True
+        world.ground_9.position = (7000, 0, 2300)
+        world.ground_9.scale = (160, 1, 160)
+        world.ground_9.color = color.azure
+        world.ground_9.collider = 'box'
+
+        self.level_9_walls = []
+
+        if spawn_boss:
+            state.enemies.append(ent.SphereBoss(target=self, spawn_pos=(7000, 2.0, 2355)))
+
+    def teleport_to_level_8(self):
+        self.disable_all_portals()
+        self.current_level = 8
+        self.spawn_point = (6000, 2, 2200)
+        self.position = self.spawn_point
+        self.y_velocity = 0
+        self.grounded = True
+        self.level_8_portal_open = False
+        self.level_8_cleared = False
+        self.level_8_phase = 1
+        self.setup_level_8_hallway()
+
+        if self.teammate_unlocked:
+            companion = state.spawn_archer_companion()
+            companion.position = self.position + (2, 0, -2)
+            companion.y = self.y + (companion.scale_y / 2) - 1
+            companion.hp = max(1, min(companion.hp, companion.max_hp))
+            companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
+
+        if self.drone_teammate_unlocked:
+            drone = state.spawn_drone_companion()
+            drone.position = self.position + (-2, 1, -2)
+            drone.y = self.y + 1.5
+            drone.hp = max(1, min(drone.hp, drone.max_hp))
+            drone.health_bar.scale_x = max(drone.hp / drone.max_hp, 0) * 1.1
+
+        if self.safezone_music:
+            self.safezone_music.stop()
+        self.stop_cannonhallway_music()
+        self.stop_rbtc_music()
+        if self.boss_music:
+            self.boss_music.stop()
+
+        ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
+        invoke(setattr, self, 'is_teleporting', False, delay=1.0)
+
+        self.mission_ui.text = 'Reach the other side!'
+        self.mission_ui.color = color.azure
+        self.crosshair.enabled = True
+
+    def teleport_to_level_9(self):
+        self.disable_all_portals()
+        self.current_level = 9
+        self.spawn_point = (7000, 2, 2300)
+        self.position = self.spawn_point
+        self.y_velocity = 0
+        self.grounded = True
+        self.level_9_portal_open = False
+        self.level_9_cleared = False
+        self.setup_level_9_arena(spawn_boss=True)
+
+        if self.teammate_unlocked:
+            companion = state.spawn_archer_companion()
+            companion.position = self.position + (2, 0, -2)
+            companion.y = self.y + (companion.scale_y / 2) - 1
+            companion.hp = max(1, min(companion.hp, companion.max_hp))
+            companion.health_bar.scale_x = max(companion.hp / companion.max_hp, 0) * 1.2
+
+        if self.drone_teammate_unlocked:
+            drone = state.spawn_drone_companion()
+            drone.position = self.position + (-2, 1, -2)
+            drone.y = self.y + 1.5
+            drone.hp = max(1, min(drone.hp, drone.max_hp))
+            drone.health_bar.scale_x = max(drone.hp / drone.max_hp, 0) * 1.1
+
+        ent.manager.enabled = False
+        ent.manager.dialogue_ui.enabled = False
+
+        if self.safezone_music:
+            self.safezone_music.stop()
+        self.stop_cannonhallway_music()
+        self.stop_rbtc_music()
+        if self.boss_music:
+            self.boss_music.stop()
+        self.boss_music = Audio('Music/boss1.mp3', loop=True, autoplay=True, volume=0.6)
+
+        ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
+        invoke(setattr, self, 'is_teleporting', False, delay=1.0)
+
+        self.mission_ui.text = 'Defeat the sphere boss!'
+        self.mission_ui.color = color.azure
+        self.crosshair.enabled = True
+
     def teleport_to_level_7(self):
         self.disable_all_portals()
         self.current_level = 7
@@ -579,6 +936,11 @@ class ThirdPersonPlayer(Entity):
         self.clear_all_entities()
         self.level_3_phase = 0
         state.set_control_mode('player')
+        self.level_9_portal_open = False
+        ent.manager.enabled = True
+        ent.manager.position = (990, 1, 1010)
+        ent.manager.dialogue_ui.enabled = False
+        ent.manager.exclamation.enabled = not self.level_9_cleared
         
         ent.black_screen.animate_color(color.rgba(0, 0, 0, 0), duration=1.0)
         if hasattr(self, 'boss_music') and self.boss_music:
@@ -605,8 +967,12 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.text = 'Talk to chef'
             self.mission_ui.color = color.cyan
             self.crosshair.enabled = False
+        elif self.drone_teammate_unlocked and not self.level_8_cleared:
+            self.mission_ui.text = 'Enter Level 8!'
+            self.mission_ui.color = color.magenta
+            self.crosshair.enabled = True
         elif self.drone_teammate_unlocked:
-            self.mission_ui.text = 'Drone teammate ready.'
+            self.mission_ui.text = 'Talk to the Manager'
             self.mission_ui.color = color.cyan
             self.crosshair.enabled = True
         elif self.level_7_cleared:
@@ -848,6 +1214,14 @@ class ThirdPersonPlayer(Entity):
         self.rapid_fire_active = False
         self.rapid_fire_timer = 0.0
         self.rapid_fire_cooldown = 0.0
+        self.drone_rocket_active = False
+        self.drone_rocket_timer = 0.0
+        self.drone_rocket_cooldown = 0.0
+        self.drone_orb_ult_active = False
+        self.drone_orb_ult_timer = 0.0
+        self.drone_orb_ult_cooldown = 0.0
+        self.drone_orb_ult_shots_left = 0
+        self.drone_orb_ult_shot_timer = 0.0
             
         self.crosshair.position = (0, 0.19)
         self.clear_all_entities()
@@ -861,8 +1235,18 @@ class ThirdPersonPlayer(Entity):
             state.dismiss_archer_companion()
             self.drone_teammate_unlocked = False
             state.dismiss_drone_companion()
+            self.soldier_spawned = False
+            self.soldier_teammate_unlocked = False
+            self.soldier_special_cooldown = 0.0
+            state.dismiss_soldier_companion()
+            self.soldier_x = 0
+            self.soldier_y = 1
+            self.soldier_z = 0
             ent.chef.exclamation.enabled = True
             ent.manager.exclamation.enabled = True
+            ent.manager.enabled = True
+            ent.manager.position = (990, 1, 1010)
+            ent.manager.dialogue_ui.enabled = False
             self.level_3_phase = 0
             self.level_3_cleared = False
             self.level_4_portal_open = False
@@ -877,6 +1261,12 @@ class ThirdPersonPlayer(Entity):
             self.level_6_drop_z = 0
             self.level_7_portal_open = False
             self.level_7_cleared = False
+            self.level_8_portal_open = False
+            self.level_8_cleared = False
+            self.level_9_portal_open = False
+            self.level_9_cleared = False
+            self.level_8_phase = 0
+            self.level_8_drones_spawned = False
             self.scientist_talked = False
             self.scientist_spawned = False
             state.dismiss_scientist()
@@ -892,8 +1282,28 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = False
+            elif self.level_9_portal_open and not self.level_9_cleared:
+                self.mission_ui.text = 'Enter Level 9!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
+            elif self.soldier_spawned and not self.soldier_teammate_unlocked:
+                self.mission_ui.text = 'Talk to soldier'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
+            elif self.soldier_teammate_unlocked:
+                self.mission_ui.text = 'Press J to control soldier'
+                self.mission_ui.color = color.cyan
+                self.crosshair.enabled = True
+            elif self.level_8_cleared and not self.level_9_portal_open:
+                self.mission_ui.text = 'Talk to chef'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
+            elif self.drone_teammate_unlocked and not self.level_8_cleared:
+                self.mission_ui.text = 'Enter Level 8!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
             elif self.drone_teammate_unlocked:
-                self.mission_ui.text = 'Drone teammate ready.'
+                self.mission_ui.text = 'Talk to the Manager'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = True
             elif self.level_7_cleared:
@@ -1047,6 +1457,38 @@ class ThirdPersonPlayer(Entity):
             ent.portal.y = 1.5
             ent.portal.enabled = True
 
+        if self.current_level == 8 and not self.level_8_cleared:
+            if self.level_8_phase == 1 and self.position.z >= 2388:
+                self.level_8_phase = 2
+                self.mission_ui.text = 'Defeat the drones!'
+                self.mission_ui.color = color.azure
+                self.spawn_level_8_drones()
+            if self.level_8_phase == 2 and len(state.enemies) == 0 and self.level_8_drones_spawned:
+                self.level_8_cleared = True
+                self.level_8_phase = 3
+                self.mission_ui.text = 'Return portal open!'
+                self.mission_ui.color = color.cyan
+                ent.portal.position = self.position + self.forward * 4
+                ent.portal.y = 1.5
+                ent.portal.enabled = True
+
+        if self.current_level == 9 and not self.level_9_cleared and len(state.enemies) == 0:
+            self.level_9_cleared = True
+            self.level_9_portal_open = False
+            self.mission_ui.text = 'Manager: oh my god, you saved me.'
+            self.mission_ui.color = color.cyan
+            if self.boss_music:
+                self.boss_music.fade_out(duration=2)
+            ent.manager.enabled = True
+            ent.manager.position = self.position + self.forward * 4
+            ent.manager.y = 1.0
+            ent.manager.dialogue_ui.text = 'Manager: oh my god, you saved me.'
+            ent.manager.dialogue_ui.enabled = True
+            invoke(setattr, ent.manager.dialogue_ui, 'enabled', False, delay=4.0)
+            ent.portal.position = self.position + self.forward * 4
+            ent.portal.y = 1.5
+            ent.portal.enabled = True
+
         if self.spawn_point == (0, 1, 0) or (self.level_3_phase == 2 and len(state.cannons) > 0):
             self.spawn_timer -= time.dt
             if self.spawn_timer <= 0:
@@ -1068,6 +1510,8 @@ class ThirdPersonPlayer(Entity):
             controlled_companion = state.archer_companion
         elif state.control_mode == 'drone' and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0:
             controlled_companion = state.drone_companion
+        elif state.control_mode == 'soldier' and state.soldier_companion is not None and getattr(state.soldier_companion, 'hp', 0) > 0:
+            controlled_companion = state.soldier_companion
         companion_controlled = controlled_companion is not None
         
         # Sprinting and FOV
@@ -1145,6 +1589,52 @@ class ThirdPersonPlayer(Entity):
             if self.rapid_fire_cooldown < 0:
                 self.rapid_fire_cooldown = 0
 
+        if self.drone_rocket_active and state.control_mode != 'drone':
+            self.drone_rocket_active = False
+            self.drone_rocket_timer = 0.0
+            self.drone_rocket_cooldown = self.drone_rocket_max_cooldown
+
+        if self.drone_rocket_active:
+            self.drone_rocket_timer -= time.dt
+            if self.drone_rocket_timer <= 0:
+                self.drone_rocket_active = False
+                self.drone_rocket_timer = 0.0
+                self.drone_rocket_cooldown = self.drone_rocket_max_cooldown
+                self.attack_cooldown = 0
+            elif self.attack_cooldown <= 0:
+                self.fire_drone_rocket()
+                self.attack_cooldown = self.drone_rocket_shot_interval
+        elif self.drone_rocket_cooldown > 0:
+            self.drone_rocket_cooldown -= time.dt
+            if self.drone_rocket_cooldown < 0:
+                self.drone_rocket_cooldown = 0
+
+        if self.drone_orb_ult_active and state.control_mode != 'drone':
+            self.drone_orb_ult_active = False
+            self.drone_orb_ult_shots_left = 0
+            self.drone_orb_ult_shot_timer = 0.0
+            self.drone_orb_ult_cooldown = self.drone_orb_ult_max_cooldown
+
+        if self.drone_orb_ult_active:
+            if self.drone_orb_ult_shots_left > 0:
+                if self.drone_orb_ult_shot_timer > 0:
+                    self.drone_orb_ult_shot_timer -= time.dt
+                if self.drone_orb_ult_shot_timer <= 0:
+                    self.fire_drone_orb()
+                    self.drone_orb_ult_shots_left -= 1
+                    if self.drone_orb_ult_shots_left > 0:
+                        self.drone_orb_ult_shot_timer = self.drone_orb_ult_shot_delay
+                    else:
+                        self.drone_orb_ult_active = False
+                        self.drone_orb_ult_shot_timer = 0.0
+            else:
+                self.drone_orb_ult_active = False
+                self.drone_orb_ult_shot_timer = 0.0
+        elif self.drone_orb_ult_cooldown > 0:
+            self.drone_orb_ult_cooldown -= time.dt
+            if self.drone_orb_ult_cooldown < 0:
+                self.drone_orb_ult_cooldown = 0
+
         if self.grenade_cooldown > 0:
             self.grenade_cooldown -= time.dt
         if self.level_6_portal_open:
@@ -1163,7 +1653,10 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.color = color.orange
             if self.archer_respawn_timer <= 0:
                 companion = state.spawn_archer_companion()
-                companion.position = self.position + self.right * 2
+                if self.current_level == 2:
+                    companion.position = self.spawn_point + (2, 0, -2)
+                else:
+                    companion.position = self.position + self.right * 2
                 companion.hp = companion.max_hp
                 companion.health_bar.scale_x = 1.2
                 self.mission_ui.text = 'Archer respawned!'
@@ -1177,7 +1670,10 @@ class ThirdPersonPlayer(Entity):
             self.mission_ui.color = color.orange
             if self.drone_respawn_timer <= 0:
                 drone = state.spawn_drone_companion()
-                drone.position = self.position - self.right * 2
+                if self.current_level == 2:
+                    drone.position = self.spawn_point + (-2, 1, -2)
+                else:
+                    drone.position = self.position - self.right * 2
                 drone.hp = drone.max_hp
                 drone.health_bar.scale_x = 1.1
                 self.mission_ui.text = 'Drone respawned!'
@@ -1214,6 +1710,12 @@ class ThirdPersonPlayer(Entity):
                 if self.hp > self.max_hp:
                     self.hp = self.max_hp
                 self.health_ui.text = f'HP: {int(self.hp)} / {self.max_hp}'
+            if state.archer_companion is not None and getattr(state.archer_companion, 'hp', 0) > 0:
+                state.archer_companion.hp = min(state.archer_companion.max_hp, state.archer_companion.hp + 20 * time.dt)
+                state.archer_companion.health_bar.scale_x = max(state.archer_companion.hp / state.archer_companion.max_hp, 0) * 1.2
+            if state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0:
+                state.drone_companion.hp = min(state.drone_companion.max_hp, state.drone_companion.hp + 20 * time.dt)
+                state.drone_companion.health_bar.scale_x = max(state.drone_companion.hp / state.drone_companion.max_hp, 0) * 1.1
         
         # Low Health Music Management
         in_cannonhallway_area = self.current_level in (3, 4)
@@ -1287,6 +1789,8 @@ class ThirdPersonPlayer(Entity):
         ent.Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction)
 
     def throw_grenade(self):
+        if state.control_mode == 'drone':
+            return
         if state.control_mode == 'archer':
             self.perform_arrow_strike()
             return
@@ -1340,6 +1844,49 @@ class ThirdPersonPlayer(Entity):
         self.rapid_fire_timer = self.rapid_fire_duration
         self.attack_cooldown = 0
 
+    def start_drone_rocket_barrage(self):
+        if not self.drone_teammate_unlocked or self.drone_rocket_cooldown > 0 or self.drone_rocket_active:
+            return
+        if state.control_mode != 'drone':
+            return
+        self.drone_rocket_active = True
+        self.drone_rocket_timer = self.drone_rocket_duration
+        self.attack_cooldown = 0
+
+    def start_drone_orb_ult(self):
+        if not self.drone_teammate_unlocked or self.drone_orb_ult_cooldown > 0 or self.drone_orb_ult_active:
+            return
+        if state.control_mode != 'drone':
+            return
+        self.drone_orb_ult_active = True
+        self.drone_orb_ult_timer = 0.0
+        self.drone_orb_ult_shots_left = 3
+        self.drone_orb_ult_shot_timer = 0.0
+        self.drone_orb_ult_cooldown = self.drone_orb_ult_max_cooldown
+        self.attack_cooldown = 0
+
+    def fire_drone_orb(self):
+        ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
+        if ray.hit:
+            aim_point = ray.world_point
+        else:
+            aim_point = camera.world_position + (camera.forward * 500)
+
+        spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.4
+        direction = (aim_point - spawn_pos).normalized()
+        ent.PurpleOrb(position=spawn_pos, direction=direction, damage=25, explosion_radius=6, stun_duration=3.0)
+
+    def fire_drone_rocket(self):
+        ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
+        if ray.hit:
+            aim_point = ray.world_point
+        else:
+            aim_point = camera.world_position + (camera.forward * 500)
+
+        spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.4
+        direction = (aim_point - spawn_pos).normalized()
+        ent.Rocket(position=spawn_pos, direction=direction, damage=35, explosion_radius=6)
+
     def save_game(self):
         save_data = {
             'x': self.x, 'y': self.y, 'z': self.z,
@@ -1358,8 +1905,20 @@ class ThirdPersonPlayer(Entity):
             'rapid_fire_active': self.rapid_fire_active,
             'rapid_fire_timer': self.rapid_fire_timer,
             'rapid_fire_cooldown': self.rapid_fire_cooldown,
+            'drone_rocket_active': self.drone_rocket_active,
+            'drone_rocket_timer': self.drone_rocket_timer,
+            'drone_rocket_cooldown': self.drone_rocket_cooldown,
+            'drone_orb_ult_active': self.drone_orb_ult_active,
+            'drone_orb_ult_timer': self.drone_orb_ult_timer,
+            'drone_orb_ult_cooldown': self.drone_orb_ult_cooldown,
+            'drone_orb_ult_shots_left': self.drone_orb_ult_shots_left,
+            'drone_orb_ult_shot_timer': self.drone_orb_ult_shot_timer,
             'exclamation_enabled': ent.chef.exclamation.enabled,
             'manager_exclamation_enabled': ent.manager.exclamation.enabled,
+            'manager_enabled': ent.manager.enabled,
+            'manager_x': ent.manager.x,
+            'manager_y': ent.manager.y,
+            'manager_z': ent.manager.z,
             'level_3_phase': self.level_3_phase,
             'level_3_cleared': self.level_3_cleared,
             'level_4_portal_open': self.level_4_portal_open,
@@ -1375,6 +1934,13 @@ class ThirdPersonPlayer(Entity):
             'scientist_x': self.scientist_x,
             'scientist_y': self.scientist_y,
             'scientist_z': self.scientist_z,
+            'soldier_spawned': self.soldier_spawned,
+            'soldier_teammate_unlocked': self.soldier_teammate_unlocked,
+            'soldier_special_cooldown': self.soldier_special_cooldown,
+            'soldier_hp': getattr(state.soldier_companion, 'hp', 120),
+            'soldier_x': getattr(state.soldier_companion, 'x', self.soldier_x),
+            'soldier_y': getattr(state.soldier_companion, 'y', self.soldier_y),
+            'soldier_z': getattr(state.soldier_companion, 'z', self.soldier_z),
             'level_6_drop_spawned': self.level_6_drop_spawned,
             'level_6_drop_x': self.level_6_drop_x,
             'level_6_drop_y': self.level_6_drop_y,
@@ -1383,6 +1949,12 @@ class ThirdPersonPlayer(Entity):
             'teammate_unlocked': self.teammate_unlocked,
             'level_7_portal_open': self.level_7_portal_open,
             'level_7_cleared': self.level_7_cleared,
+            'level_8_portal_open': self.level_8_portal_open,
+            'level_8_cleared': self.level_8_cleared,
+            'level_9_portal_open': self.level_9_portal_open,
+            'level_9_cleared': self.level_9_cleared,
+            'level_8_phase': self.level_8_phase,
+            'level_8_drones_spawned': self.level_8_drones_spawned,
             'scientist_talked': self.scientist_talked,
             'scientist_inspected': self.scientist_inspected,
             'drone_teammate_unlocked': self.drone_teammate_unlocked,
@@ -1445,11 +2017,25 @@ class ThirdPersonPlayer(Entity):
         self.rapid_fire_active = save_data.get('rapid_fire_active', False)
         self.rapid_fire_timer = save_data.get('rapid_fire_timer', 0.0)
         self.rapid_fire_cooldown = save_data.get('rapid_fire_cooldown', 0.0)
+        self.drone_rocket_active = save_data.get('drone_rocket_active', False)
+        self.drone_rocket_timer = save_data.get('drone_rocket_timer', 0.0)
+        self.drone_rocket_cooldown = save_data.get('drone_rocket_cooldown', 0.0)
+        self.drone_orb_ult_active = save_data.get('drone_orb_ult_active', False)
+        self.drone_orb_ult_timer = save_data.get('drone_orb_ult_timer', 0.0)
+        self.drone_orb_ult_cooldown = save_data.get('drone_orb_ult_cooldown', 0.0)
+        self.drone_orb_ult_shots_left = save_data.get('drone_orb_ult_shots_left', 0)
+        self.drone_orb_ult_shot_timer = save_data.get('drone_orb_ult_shot_timer', 0.0)
         self.crosshair.enabled = self.has_bow
         self.bow_icon.enabled = self.has_bow
         self.grenade_icon.enabled = self.has_grenade
         ent.chef.exclamation.enabled = save_data.get('exclamation_enabled', True)
         ent.manager.exclamation.enabled = save_data.get('manager_exclamation_enabled', True)
+        ent.manager.enabled = save_data.get('manager_enabled', True)
+        ent.manager.position = (
+            save_data.get('manager_x', ent.manager.x),
+            save_data.get('manager_y', ent.manager.y),
+            save_data.get('manager_z', ent.manager.z),
+        )
         self.level_3_phase = save_data.get('level_3_phase', 0)
         self.level_3_cleared = save_data.get('level_3_cleared', False)
         self.level_4_portal_open = save_data.get('level_4_portal_open', False)
@@ -1465,6 +2051,12 @@ class ThirdPersonPlayer(Entity):
         self.scientist_x = save_data.get('scientist_x', 0)
         self.scientist_y = save_data.get('scientist_y', 1)
         self.scientist_z = save_data.get('scientist_z', 0)
+        self.soldier_spawned = save_data.get('soldier_spawned', False)
+        self.soldier_teammate_unlocked = save_data.get('soldier_teammate_unlocked', False)
+        self.soldier_special_cooldown = save_data.get('soldier_special_cooldown', 0.0)
+        self.soldier_x = save_data.get('soldier_x', 0)
+        self.soldier_y = save_data.get('soldier_y', 1)
+        self.soldier_z = save_data.get('soldier_z', 0)
         self.level_6_drop_spawned = save_data.get('level_6_drop_spawned', False)
         self.level_6_drop_x = save_data.get('level_6_drop_x', 0)
         self.level_6_drop_y = save_data.get('level_6_drop_y', 0)
@@ -1473,11 +2065,49 @@ class ThirdPersonPlayer(Entity):
         self.teammate_unlocked = save_data.get('teammate_unlocked', False)
         self.level_7_portal_open = save_data.get('level_7_portal_open', False)
         self.level_7_cleared = save_data.get('level_7_cleared', False)
+        self.level_8_portal_open = save_data.get('level_8_portal_open', False)
+        self.level_8_cleared = save_data.get('level_8_cleared', False)
+        self.level_9_portal_open = save_data.get('level_9_portal_open', False)
+        self.level_9_cleared = save_data.get('level_9_cleared', False)
+        self.level_8_phase = save_data.get('level_8_phase', 0)
+        self.level_8_drones_spawned = save_data.get('level_8_drones_spawned', False)
         self.scientist_talked = save_data.get('scientist_talked', False)
         self.scientist_inspected = save_data.get('scientist_inspected', self.scientist_talked)
         self.drone_teammate_unlocked = save_data.get('drone_teammate_unlocked', False)
         world.level_3_door.y = save_data.get('door_y', 5)
         state.set_control_mode(save_data.get('control_mode', 'player'))
+
+        if self.soldier_spawned or self.soldier_teammate_unlocked:
+            soldier = state.spawn_soldier_companion()
+            soldier.position = (
+                save_data.get('soldier_x', self.x + 3),
+                save_data.get('soldier_y', self.y),
+                save_data.get('soldier_z', self.z - 2),
+            )
+            soldier.hp = save_data.get('soldier_hp', soldier.max_hp)
+            soldier.special_cooldown = save_data.get('soldier_special_cooldown', 0.0)
+            soldier.health_bar.scale_x = max(soldier.hp / soldier.max_hp, 0) * 1.25
+            self.soldier_x = soldier.x
+            self.soldier_y = soldier.y
+            self.soldier_z = soldier.z
+        else:
+            state.dismiss_soldier_companion()
+
+        if self.level_9_portal_open and not self.level_9_cleared:
+            ent.portal_4.position = (
+                save_data.get('portal_4_x', ent.manager.x),
+                save_data.get('portal_4_y', 1.5),
+                save_data.get('portal_4_z', ent.manager.z + 4),
+            )
+            ent.portal_4.enabled = True
+            ent.manager.enabled = False
+            self.mission_ui.text = 'Enter Level 9!'
+            self.mission_ui.color = color.magenta
+        elif self.level_9_cleared:
+            ent.portal_4.enabled = False
+        elif self.level_8_cleared:
+            self.mission_ui.text = 'Talk to chef'
+            self.mission_ui.color = color.yellow
 
         if self.spawn_point == (1000, 1, 990) and (self.level_6_return_portal_open or self.scientist_spawned):
             scientist = state.spawn_scientist()
@@ -1530,8 +2160,28 @@ class ThirdPersonPlayer(Entity):
                 self.mission_ui.text = 'Talk to chef'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = False
+            elif self.level_9_portal_open and not self.level_9_cleared:
+                self.mission_ui.text = 'Enter Level 9!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
+            elif self.soldier_spawned and not self.soldier_teammate_unlocked:
+                self.mission_ui.text = 'Talk to soldier'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
+            elif self.soldier_teammate_unlocked:
+                self.mission_ui.text = 'Press J to control soldier'
+                self.mission_ui.color = color.cyan
+                self.crosshair.enabled = True
+            elif self.level_8_cleared and not self.level_9_portal_open:
+                self.mission_ui.text = 'Talk to chef'
+                self.mission_ui.color = color.yellow
+                self.crosshair.enabled = True
+            elif self.drone_teammate_unlocked and not self.level_8_cleared:
+                self.mission_ui.text = 'Enter Level 8!'
+                self.mission_ui.color = color.magenta
+                self.crosshair.enabled = True
             elif self.drone_teammate_unlocked:
-                self.mission_ui.text = 'Drone teammate ready.'
+                self.mission_ui.text = 'Talk to the Manager'
                 self.mission_ui.color = color.cyan
                 self.crosshair.enabled = True
             elif self.level_7_cleared:
@@ -1612,6 +2262,43 @@ class ThirdPersonPlayer(Entity):
             else:
                 self.mission_ui.text = 'Defeat the drones!'
                 self.mission_ui.color = color.azure
+        elif self.spawn_point == (6000, 2, 2200):
+            self.setup_level_8_hallway()
+            self.crosshair.enabled = True
+            if self.level_8_phase == 2 and not self.level_8_cleared:
+                self.spawn_level_8_drones()
+            if self.level_8_cleared:
+                ent.portal.position = self.position + self.forward * 4
+                ent.portal.y = 1.5
+                ent.portal.enabled = True
+                self.mission_ui.text = 'Return portal open!'
+                self.mission_ui.color = color.cyan
+            else:
+                self.mission_ui.text = 'Reach the other side!'
+                self.mission_ui.color = color.azure
+        elif self.spawn_point == (7000, 2, 2300):
+            self.setup_level_9_arena(spawn_boss=not self.level_9_cleared)
+            self.crosshair.enabled = True
+            if self.safezone_music:
+                self.safezone_music.stop()
+            self.stop_cannonhallway_music()
+            self.stop_rbtc_music()
+            if self.boss_music:
+                self.boss_music.stop()
+            if not self.level_9_cleared:
+                ent.manager.enabled = False
+                self.boss_music = Audio('Music/boss1.mp3', loop=True, autoplay=True, volume=0.6)
+            else:
+                ent.manager.enabled = True
+            if self.level_9_cleared:
+                ent.portal.position = self.position + self.forward * 4
+                ent.portal.y = 1.5
+                ent.portal.enabled = True
+                self.mission_ui.text = 'Return portal open!'
+                self.mission_ui.color = color.cyan
+            else:
+                self.mission_ui.text = 'Defeat the sphere boss!'
+                self.mission_ui.color = color.azure
         elif self.spawn_point == (4000, 2, 2230):
             self.setup_level_6_arena()
             self.crosshair.enabled = True
@@ -1648,6 +2335,12 @@ class ThirdPersonPlayer(Entity):
         elif key == 'k':
             if self.drone_teammate_unlocked and state.drone_companion is not None and getattr(state.drone_companion, 'hp', 0) > 0:
                 state.set_control_mode('drone' if state.control_mode != 'drone' else 'player')
+        elif key == 'j':
+            if self.soldier_teammate_unlocked and state.soldier_companion is not None and getattr(state.soldier_companion, 'hp', 0) > 0:
+                state.set_control_mode('soldier' if state.control_mode != 'soldier' else 'player')
+        elif key == '5':
+            if state.control_mode == 'soldier' and self.soldier_teammate_unlocked and state.soldier_companion is not None and getattr(state.soldier_companion, 'hp', 0) > 0:
+                state.soldier_companion.start_special_attack()
         elif key == '/':
             self.spawn_point = (0, 1, 0)
             self.hub_regen_enabled = False
@@ -1655,12 +2348,18 @@ class ThirdPersonPlayer(Entity):
         elif key == 'right mouse down':
             if self.has_bow and self.attack_cooldown <= 0 and not self.rapid_fire_active:
                 self.shoot_arrow()
-        elif key == '1':
-            if self.has_grenade and self.grenade_cooldown <= 0 and not self.is_teleporting:
+        elif key == 'e' or key == '1':
+            if state.control_mode not in ('drone', 'soldier') and self.has_grenade and self.grenade_cooldown <= 0 and not self.is_teleporting:
                 self.throw_grenade()
         elif key == '2':
             if state.control_mode == 'archer' and not self.is_teleporting:
                 self.start_rapid_fire()
+        elif key == '3':
+            if state.control_mode == 'drone' and not self.is_teleporting:
+                self.start_drone_rocket_barrage()
+        elif key == '4':
+            if state.control_mode == 'drone' and not self.is_teleporting:
+                self.start_drone_orb_ult()
         elif key == 'f':
             if state.control_mode == 'player':
                 state.handle_story_interaction(self)

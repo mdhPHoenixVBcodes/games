@@ -55,10 +55,13 @@ scientist = None
 
 
 class Cannon(Entity):
-    def __init__(self, position):
+    def __init__(self, position, fixed_fire_direction=None, fire_damage=15, fire_interval_range=(3.0, 5.0)):
         super().__init__(model='cube', color=color.red, scale=(2, 2, 2), position=position, collider='box')
         self.hp = 50
-        self.shoot_timer = random.uniform(3.0, 5.0)
+        self.fixed_fire_direction = fixed_fire_direction.normalized() if fixed_fire_direction is not None else None
+        self.fire_damage = fire_damage
+        self.fire_interval_range = fire_interval_range
+        self.shoot_timer = random.uniform(*fire_interval_range)
 
     def take_damage(self, amount):
         self.hp -= amount
@@ -76,21 +79,35 @@ class Cannon(Entity):
 
         self.shoot_timer -= time.dt
         if self.shoot_timer <= 0:
-            target = state.get_nearest_party_target(self.position)
-            sphere = CannonSphere(self.position + (0, 1, 0), target=target)
-            state.cannon_spheres.append(sphere)
-            self.shoot_timer = random.uniform(3.0, 5.0)
+            if self.fixed_fire_direction is not None:
+                sphere = CannonSphere(
+                    self.position + self.fixed_fire_direction * 1.5 + (0, 1, 0),
+                    target=state.get_nearest_party_target(self.position),
+                    fixed_direction=self.fixed_fire_direction,
+                    damage=self.fire_damage,
+                )
+                state.cannon_spheres.append(sphere)
+                self.shoot_timer = random.uniform(*self.fire_interval_range)
+            else:
+                target = state.get_nearest_party_target(self.position)
+                sphere = CannonSphere(self.position + (0, 1, 0), target=target)
+                state.cannon_spheres.append(sphere)
+                self.shoot_timer = random.uniform(3.0, 5.0)
 
 
 class CannonSphere(Entity):
-    def __init__(self, position, target=None):
+    def __init__(self, position, target=None, fixed_direction=None, damage=15):
         self.target = target or state.player
         super().__init__(model='sphere', color=color.orange, scale=2.5, position=position)
         self.speed = 10
-        self.look_at_2d(self.target, 'y')
+        self.fixed_direction = fixed_direction.normalized() if fixed_direction is not None else None
+        self.damage = damage
+        if self.fixed_direction is None:
+            self.look_at_2d(self.target, 'y')
         self.lifetime = 8.0
 
     def take_damage(self, amount):
+        DamageMarker(amount, self.world_position + (0, 1, 0))
         if self in state.cannon_spheres:
             state.cannon_spheres.remove(self)
         destroy(self)
@@ -106,11 +123,14 @@ class CannonSphere(Entity):
             destroy(self)
             return
 
-        self.position += self.forward * self.speed * time.dt
+        if self.fixed_direction is not None:
+            self.position += self.fixed_direction * self.speed * time.dt
+        else:
+            self.position += self.forward * self.speed * time.dt
 
         for target in state.get_active_party_targets():
             if distance(self.position, target.position) < 2.5:
-                target.take_damage(15)
+                target.take_damage(self.damage)
                 if self in state.cannon_spheres:
                     state.cannon_spheres.remove(self)
                 destroy(self)
@@ -220,6 +240,146 @@ class Arrow(Entity):
                     return
 
 
+class Rocket(Entity):
+    def __init__(self, position, direction=None, damage=35, explosion_radius=6):
+        super().__init__(model='sphere', color=color.orange, scale=0.28, position=position, collider='box')
+        self.speed = 42
+        self.damage = damage
+        self.explosion_radius = explosion_radius
+        self.direction = (direction.normalized() if direction is not None else self.forward)
+        self.life = 3.0
+        self.exploded = False
+        destroy(self, delay=4.0)
+
+    def update(self):
+        if self.exploded or state.player.is_teleporting:
+            return
+
+        self.position += self.direction * self.speed * time.dt
+        self.life -= time.dt
+
+        for enemy in state.enemies:
+            if distance(self.position, enemy.position) <= 1.4:
+                self.explode()
+                return
+
+        for cannon in state.cannons:
+            if distance(self.position, cannon.position) <= 1.6:
+                self.explode()
+                return
+
+        for sphere in state.cannon_spheres:
+            if distance(self.position, sphere.position) <= 1.8:
+                self.explode()
+                return
+
+        if self.life <= 0:
+            self.explode()
+
+    def explode(self):
+        if self.exploded:
+            return
+
+        self.exploded = True
+        flash = Entity(
+            model='sphere',
+            color=color.rgba(255, 230, 160, 150),
+            position=self.position,
+            scale=0.35
+        )
+        flash.animate_scale(1.8, duration=0.18)
+        flash.animate_color(color.rgba(255, 230, 160, 0), duration=0.18)
+        destroy(flash, delay=0.2)
+
+        blast = Entity(
+            model='sphere',
+            color=color.rgba(255, 180, 70, 140),
+            position=self.position,
+            scale=0.8
+        )
+        blast.animate_scale(self.explosion_radius * 0.8, duration=0.25)
+        blast.animate_color(color.rgba(255, 180, 70, 0), duration=0.25)
+        destroy(blast, delay=0.3)
+
+        for enemy in list(state.enemies):
+            if distance(self.position, enemy.position) <= self.explosion_radius:
+                DamageMarker(self.damage, enemy.world_position + (0, 1.5, 0))
+                enemy.take_damage(self.damage)
+
+        for cannon in list(state.cannons):
+            if distance(self.position, cannon.position) <= self.explosion_radius:
+                DamageMarker(self.damage, cannon.world_position + (0, 1, 0))
+                cannon.take_damage(self.damage)
+
+        for sphere in list(state.cannon_spheres):
+            if distance(self.position, sphere.position) <= self.explosion_radius:
+                DamageMarker(self.damage, sphere.world_position + (0, 1, 0))
+                sphere.take_damage(self.damage)
+
+        destroy(self)
+
+
+class PurpleOrb(Entity):
+    def __init__(self, position, direction=None, damage=25, explosion_radius=6, stun_duration=3.0):
+        super().__init__(model='sphere', color=color.violet, scale=0.32, position=position, collider='box')
+        self.speed = 38
+        self.damage = damage
+        self.explosion_radius = explosion_radius
+        self.stun_duration = stun_duration
+        self.direction = (direction.normalized() if direction is not None else self.forward)
+        self.life = 3.5
+        self.exploded = False
+        destroy(self, delay=4.5)
+
+    def update(self):
+        if self.exploded or state.player.is_teleporting:
+            return
+
+        self.position += self.direction * self.speed * time.dt
+        self.life -= time.dt
+
+        for enemy in state.enemies:
+            if distance(self.position, enemy.position) <= 1.4:
+                self.explode()
+                return
+
+        if self.life <= 0:
+            self.explode()
+
+    def explode(self):
+        if self.exploded:
+            return
+
+        self.exploded = True
+        flash = Entity(
+            model='sphere',
+            color=color.rgba(210, 120, 255, 160),
+            position=self.position,
+            scale=0.35
+        )
+        flash.animate_scale(1.9, duration=0.18)
+        flash.animate_color(color.rgba(210, 120, 255, 0), duration=0.18)
+        destroy(flash, delay=0.2)
+
+        blast = Entity(
+            model='sphere',
+            color=color.rgba(180, 80, 255, 140),
+            position=self.position,
+            scale=0.9
+        )
+        blast.animate_scale(self.explosion_radius * 0.85, duration=0.25)
+        blast.animate_color(color.rgba(180, 80, 255, 0), duration=0.25)
+        destroy(blast, delay=0.3)
+
+        for enemy in list(state.enemies):
+            if distance(self.position, enemy.position) <= self.explosion_radius:
+                DamageMarker(self.damage, enemy.world_position + (0, 1.5, 0))
+                enemy.take_damage(self.damage)
+                enemy.stun_timer = max(enemy.stun_timer, self.stun_duration)
+
+        destroy(self)
+
+
 class ArcherCompanion(Entity):
     def __init__(self):
         super().__init__(
@@ -258,8 +418,7 @@ class ArcherCompanion(Entity):
                 state.player.archer_respawn_timer = 30.0
                 state.player.mission_ui.text = 'Archer KO! Respawning in 30s...'
                 state.player.mission_ui.color = color.orange
-            if state.control_mode == 'archer':
-                state.set_control_mode('player')
+            state.set_control_mode('player')
             state.dismiss_archer_companion()
 
     def shoot_arrow(self):
@@ -403,8 +562,7 @@ class DroneCompanion(Entity):
                 state.player.drone_respawn_timer = 30.0
                 state.player.mission_ui.text = 'Drone KO! Respawning in 30s...'
                 state.player.mission_ui.color = color.orange
-            if state.control_mode == 'drone':
-                state.set_control_mode('player')
+            state.set_control_mode('player')
             state.dismiss_drone_companion()
 
     def snap_to_ground(self):
@@ -509,6 +667,204 @@ class DroneCompanion(Entity):
                 self.look_at(target.position + (0, 0.5, 0))
                 Arrow(position=self.position + self.forward * 1.2 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True, damage=10)
                 self.attack_cooldown = 1.8
+
+
+class SoldierCompanion(Entity):
+    def __init__(self):
+        super().__init__(
+            model='cube',
+            color=color.rgb(90, 120, 90),
+            scale=(1.0, 2.0, 1.0),
+            position=state.player.position + (3, 0, -2),
+            collider='box'
+        )
+        self.max_hp = 170
+        self.hp = self.max_hp
+        self.speed = 7.5
+        self.follow_distance = 2.6
+        self.attack_range = 20
+        self.attack_cooldown = 0
+        self.melee_range = 3.0
+        self.melee_damage = 18
+        self.special_max_cooldown = 8.0
+        self.special_cooldown = 0.0
+        self.y_velocity = 0
+        self.gravity = 25
+        self.jump_force = 12
+        self.grounded = False
+        self.dash_cooldown = 0
+        self.dash_duration = 0.15
+        self.is_dashing = False
+        self.health_bar = Entity(parent=self, y=1.0, model='cube', color=color.green, scale=(1.25, 0.12, 0.12))
+        self.weapon = Entity(parent=self, model='cube', color=color.dark_gray, scale=(0.12, 0.9, 0.12), position=(0.55, 0.1, 0.2), rotation=(0, 0, 20))
+        self.dialogue_ui = Text(text='Soldier: ...', position=(0, -0.35), origin=(0, 0), scale=2, color=color.white, background=True, enabled=False)
+        self.exclamation = Text(parent=self, text='!', scale=50, color=color.yellow, position=(0, 1.2), billboard=True, origin=(0, 0))
+
+    def take_damage(self, amount):
+        self.hp -= amount
+        self.health_bar.scale_x = max(self.hp / self.max_hp, 0) * 1.25
+        self.color = color.white
+        invoke(setattr, self, 'color', color.rgb(90, 120, 90), delay=0.1)
+        if self.hp <= 0:
+            state.set_control_mode('player')
+            state.dismiss_soldier_companion()
+
+    def snap_to_ground(self):
+        ground_ray = raycast(self.position + (0, 2, 0), direction=(0, -1, 0), ignore=(self, state.player, state.archer_companion, state.drone_companion), distance=8)
+        if ground_ray.hit:
+            self.y = ground_ray.world_point[1] + (self.scale_y / 2)
+            self.y_velocity = 0
+            self.grounded = True
+            return True
+        return False
+
+    def input(self, key):
+        if state.control_mode != 'soldier':
+            return
+        if key == 'f':
+            state.handle_story_interaction(self)
+
+    def perform_melee_attack(self):
+        if self.attack_cooldown > 0:
+            return
+        hit_target = None
+        hit_distance = self.melee_range
+        for enemy in state.enemies:
+            dist = distance(self.position, enemy.position)
+            if dist <= hit_distance:
+                hit_target = enemy
+                hit_distance = dist
+        if hit_target is not None:
+            self.look_at(hit_target.position + (0, 0.5, 0))
+            hit_target.take_damage(self.melee_damage)
+            self.attack_cooldown = 0.45
+        else:
+            self.attack_cooldown = 0.2
+
+    def start_special_attack(self):
+        if self.special_cooldown > 0 or state.control_mode != 'soldier':
+            return
+        self.special_cooldown = self.special_max_cooldown
+        self.attack_cooldown = max(self.attack_cooldown, 0.1)
+
+        dash_dir = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+        if dash_dir.length() <= 0.001:
+            dash_dir = self.forward
+        else:
+            dash_dir = dash_dir.normalized()
+
+        self.is_dashing = True
+        dash_target = self.position + dash_dir * 9.5
+        self.animate_position(dash_target, duration=0.18, curve=curve.out_expo)
+        invoke(setattr, self, 'is_dashing', False, delay=0.18)
+        invoke(self.slice_and_dice, delay=0.06)
+
+    def slice_and_dice(self):
+        pulse_delays = (0.0, 0.09, 0.18)
+        for delay in pulse_delays:
+            invoke(self._slice_pulse, delay=delay)
+
+    def _slice_pulse(self):
+        if state.control_mode != 'soldier' or self.hp <= 0:
+            return
+
+        hit_any = False
+        slash_radius = 3.6
+        slash_damage = 16
+        for enemy in list(state.enemies):
+            if distance(self.position, enemy.position) <= slash_radius:
+                enemy.take_damage(slash_damage)
+                hit_any = True
+
+        if hit_any:
+            self.color = color.white
+            invoke(setattr, self, 'color', color.rgb(90, 120, 90), delay=0.08)
+        self.attack_cooldown = max(self.attack_cooldown, 0.12)
+
+    def update(self):
+        if state.player.is_teleporting:
+            return
+
+        if state.control_mode == 'soldier':
+            if self.attack_cooldown > 0:
+                self.attack_cooldown -= time.dt
+            if self.special_cooldown > 0:
+                self.special_cooldown -= time.dt
+            if self.dash_cooldown > 0:
+                self.dash_cooldown -= time.dt
+
+            current_speed = self.speed
+            target_fov = 90
+            if held_keys['left control']:
+                current_speed *= 1.55
+                target_fov = 108
+            camera.fov = lerp(camera.fov, target_fov, 5 * time.dt)
+
+            if not self.is_dashing:
+                direction = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+                self.position += direction * current_speed * time.dt
+
+            previous_position = self.position
+            if getattr(state.player, 'current_level', None) == 7:
+                state.player.resolve_level_7_pillar_collision(self, previous_position)
+
+            if not self.snap_to_ground():
+                self.grounded = False
+                self.y_velocity -= self.gravity * time.dt
+            self.y += self.y_velocity * time.dt
+            self.snap_to_ground()
+
+            self.rotation_y += mouse.velocity[0] * 150
+            camera.rotation_x = clamp(camera.rotation_x - mouse.velocity[1] * 150, -25, 45)
+
+            if held_keys['space'] and self.grounded:
+                self.y_velocity = self.jump_force
+            if (held_keys['left shift'] or held_keys['shift']) and self.dash_cooldown <= 0:
+                self.dash_cooldown = 0.8
+                self.is_dashing = True
+                dash_dir = self.forward * (held_keys['w'] - held_keys['s']) + self.right * (held_keys['d'] - held_keys['a'])
+                if dash_dir.length() <= 0.001:
+                    dash_dir = self.forward
+                else:
+                    dash_dir = dash_dir.normalized()
+                self.animate_position(self.position + dash_dir * 8, duration=0.15, curve=curve.out_expo)
+                invoke(setattr, self, 'is_dashing', False, delay=0.15)
+            if held_keys['right mouse'] and self.attack_cooldown <= 0:
+                self.attack_cooldown = 0.45
+                spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.4
+                ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
+                if ray.hit:
+                    target_point = ray.world_point
+                else:
+                    target_point = camera.world_position + (camera.forward * 500)
+                shot_direction = (target_point - spawn_pos).normalized()
+                Arrow(position=spawn_pos, rotation=self.rotation, direction=shot_direction, damage=12)
+            if held_keys['left mouse'] and self.attack_cooldown <= 0:
+                self.perform_melee_attack()
+            return
+
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= time.dt
+
+        if getattr(state.player, 'soldier_teammate_unlocked', False):
+            follow_target = state.player.position + state.player.right * 1.5 - state.player.forward * 2.2
+            follow_target.y = self.y
+            to_follow = follow_target - self.position
+            to_follow.y = 0
+            previous_position = self.position
+            if to_follow.length() > self.follow_distance:
+                self.position += to_follow.normalized() * self.speed * time.dt
+            if getattr(state.player, 'current_level', None) == 7:
+                state.player.resolve_level_7_pillar_collision(self, previous_position)
+
+            self.snap_to_ground()
+
+            if self.attack_cooldown <= 0 and len(state.enemies) > 0:
+                target = min(state.enemies, key=lambda enemy: distance(self.position, enemy.position))
+                if distance(self.position, target.position) <= self.attack_range:
+                    self.look_at(target.position + (0, 0.5, 0))
+                    Arrow(position=self.position + self.forward * 1.3 + (0, 1.0, 0), rotation=self.rotation, direction=self.forward, hit_party=False, hit_enemies=True, hit_cannons=True, hit_spheres=True, damage=12)
+                    self.attack_cooldown = 1.2
 
 
 class Enemy(Entity):
@@ -714,6 +1070,70 @@ class BossCube(Entity):
             self.shoot_timer = random.uniform(2.5, 4.0)
 
 
+class SphereBoss(Entity):
+    def __init__(self, target, spawn_pos):
+        super().__init__(
+            model='sphere',
+            texture='Logo/boss_texture2.png',
+            color=color.white,
+            scale=(5.5, 7.0, 5.5),
+            position=spawn_pos,
+            collider='box'
+        )
+        self.target = target
+        self.speed = 1.3
+        self.max_hp = 500
+        self.hp = self.max_hp
+        self.attack_range = 5.5
+        self.attack_damage = 22
+        self.attack_cooldown = 0
+        self.shoot_timer = random.uniform(1.2, 2.4)
+        self.health_bar = Entity(parent=self, y=0.8, model='cube', color=color.green, scale=(1.4, 0.08, 0.08))
+
+    def take_damage(self, amount):
+        self.hp -= amount
+        DamageMarker(amount, self.world_position + (0, 2, 0))
+        self.health_bar.scale_x = max(self.hp / self.max_hp, 0) * 2.2
+        self.color = color.gray
+        invoke(setattr, self, 'color', color.white, delay=0.1)
+        if self.hp <= 0:
+            if self in state.enemies:
+                state.enemies.remove(self)
+            destroy(self)
+
+    def update(self):
+        if self.target.is_teleporting:
+            return
+
+        target = state.player
+        dist = distance(self.position, target.position)
+        self.shoot_timer -= time.dt
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= time.dt
+
+        if dist > self.attack_range:
+            self.look_at_2d(target, 'y')
+            self.position += self.forward * self.speed * time.dt
+        elif self.attack_cooldown <= 0:
+            target.take_damage(self.attack_damage)
+            self.attack_cooldown = 1.5
+
+        if dist < 90 and self.shoot_timer <= 0:
+            arrow_start = self.position + (0, 2.0, 0) + self.forward * 2.8
+            shot_dir = (target.position + (0, 1.0, 0) - arrow_start).normalized()
+            Arrow(
+                position=arrow_start,
+                rotation=self.rotation,
+                direction=shot_dir,
+                hit_party=True,
+                hit_enemies=False,
+                hit_cannons=False,
+                hit_spheres=False,
+                damage=14,
+            )
+            self.shoot_timer = random.uniform(1.5, 2.8)
+
+
 black_screen = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(3, 3), z=-10)
 controls_ui = Text(text='8 - Save\n9 - Load\n0 - Pause', position=(-0.82, -0.35), scale=2.5, color=color.white, background=True)
 
@@ -723,15 +1143,31 @@ class DamageMarker(Text):
         super().__init__(
             text=str(int(amount)),
             position=position,
-            scale=1.5,
-            color=color.red,
+            scale=2.2,
+            color=color.white,
             origin=(0, 0),
             billboard=True,
-            background=True
+            background=False
         )
-        self.animate_y(self.y + 2, duration=0.6)
-        self.animate_color(color.clear, duration=0.5, delay=0.1)
-        destroy(self, delay=0.7)
+        self.shadow = Text(
+            parent=self,
+            text=str(int(amount)),
+            position=(0.04, -0.04),
+            scale=2.2,
+            color=color.black,
+            origin=(0, 0),
+            billboard=True,
+            background=False
+        )
+        self.animate_y(self.y + 2.6, duration=0.55, curve=curve.out_expo)
+        self.animate_scale(2.7, duration=0.12)
+        self.animate_color(color.rgb(255, 245, 120), duration=0.08)
+        self.shadow.animate_y(self.shadow.y + 2.6, duration=0.55, curve=curve.out_expo)
+        self.shadow.animate_scale(2.7, duration=0.12)
+        self.shadow.animate_color(color.rgba(0, 0, 0, 0), duration=0.45, delay=0.08)
+        self.animate_color(color.rgba(255, 245, 120, 0), duration=0.45, delay=0.08)
+        destroy(self.shadow, delay=0.6)
+        destroy(self, delay=0.6)
 
 
 class PauseHandler(Entity):

@@ -50,3 +50,5 @@ Entity(model='cube', color=color.gray, collider='box', scale=(1, 10, 60), positi
 ground_5 = Entity(model='cube', color=color.white, collider='box', scale=(100, 1, 100), position=(3000, 0, 2230))
 ground_6 = Entity(model='cube', color=color.gray, collider='box', scale=(150, 1, 150), position=(4000, 0, 2230))
 ground_7 = Entity(model='cube', color=color.gray, collider='box', scale=(150, 1, 150), position=(5000, 0, 2230))
+ground_8 = Entity(model='cube', color=color.azure, collider='box', scale=(140, 1, 220), position=(6000, 0, 2300), enabled=False)
+ground_9 = Entity(model='cube', color=color.azure, collider='box', scale=(160, 1, 160), position=(7000, 0, 2300), enabled=False)
