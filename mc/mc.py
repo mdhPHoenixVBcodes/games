@@ -14,7 +14,8 @@ import time
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 TILE_SIZE = 32
-WORLD_WIDTH = 400
+WORLD_WIDTH = 1024
+CHUNK_SIZE = 16
 WORLD_PIXELS = WORLD_WIDTH * TILE_SIZE
 WORLD_HEIGHT = 128 
 GRAVITY = 0.5
@@ -348,6 +349,8 @@ class Player:
         self.max_hunger = 20
         self.hunger_timer = 0
         self.regen_timer = 0
+        self.air = 10 # 10 bubbles
+        self.air_timer = 0 # Timer for air depletion
         self.show_inventory = False # Ensure movement isn't locked on start
 
     def update(self, world):
@@ -384,6 +387,27 @@ class Player:
         if (px, py) in world.data and world.data[(px, py)] == WATER:
             in_water = True
 
+        head_underwater = False
+        hx, hy = self.rect.centerx // TILE_SIZE, self.rect.top // TILE_SIZE
+        if (hx, hy) in world.data and world.data[(hx, hy)] == WATER:
+            head_underwater = True
+
+        # Drowning Logic
+        if head_underwater:
+            self.air_timer += 1
+            if self.air_timer >= 60: # Every 1 second
+                if self.air > 0:
+                    self.air -= 1
+                else:
+                    self.take_damage(4) # 2 Hearts damage
+                self.air_timer = 0
+        else:
+            if self.air < 10:
+                self.air_timer += 1
+                if self.air_timer >= 10: # Faster refill
+                    self.air = 10
+                    self.air_timer = 0
+
         # Boat Speed Boost
         below_x, below_y = self.rect.centerx // TILE_SIZE, (self.rect.bottom + 2) // TILE_SIZE
         speed_mult = 1.0
@@ -419,10 +443,10 @@ class Player:
                 self.blocking = True
                 dx *= 0.3 # Slow down while blocking
 
-        if keys[pygame.K_SPACE]:
+        if keys[pygame.K_SPACE] or keys[pygame.K_w]:
             if in_water:
-                self.vel_y = -3 # Swim up
-            elif self.on_ground:
+                self.vel_y = -4 # Stronger swim up
+            elif self.on_ground and keys[pygame.K_SPACE]:
                 self.vel_y = self.jump_strength * (1.2 if sprinting else 1.0)
                 self.jump_attack_timer = 12
 
@@ -551,7 +575,7 @@ class Player:
 
 class World:
     def __init__(self):
-        self.data = {}
+        self.chunks = {} 
         self.block_meta = {} # (tx, ty) -> {"facing": 1 or -1}
         self.furnace_data = {} # (tx, ty) -> {"input": slot, "fuel": slot, "output": slot, "cook_time": float, "fuel_time": float}
         self.chest_data = {} # (tx, ty) -> [slots]
@@ -563,7 +587,132 @@ class World:
         self.arrows = [] # ArrowShot instances
         self.fishing_hooks = [] # FishingHook instances
         self.time = 0 # 0 corresponds to 6:00 AM (Sunrise)
+        self.active_water = set() # Track coordinates of flowing water
         self.generate_world()
+
+    def get_chunk_id(self, tx, ty):
+        return ((tx % WORLD_WIDTH) // CHUNK_SIZE, ty // CHUNK_SIZE)
+
+    def set_block(self, tx, ty, b_type):
+        cid = self.get_chunk_id(tx, ty)
+        
+        if b_type is None or b_type == AIR:
+            # Wake up adjacent water blocks when a block is broken
+            for nx, ny in [(tx-1, ty), (tx+1, ty), (tx, ty-1), (tx, ty+1)]:
+                if self.get_block(nx, ny) == WATER:
+                    self.active_water.add((nx, ny))
+                    
+            if cid in self.chunks and (tx, ty) in self.chunks[cid]:
+                del self.chunks[cid][(tx, ty)]
+                if not self.chunks[cid]: del self.chunks[cid]
+            return
+            
+        if cid not in self.chunks: self.chunks[cid] = {}
+        self.chunks[cid][(tx, ty)] = b_type
+        
+        if b_type == WATER:
+            self.active_water.add((tx, ty))
+
+    def get_block(self, tx, ty):
+        cid = self.get_chunk_id(tx, ty)
+        if cid in self.chunks:
+            return self.chunks[cid].get((tx, ty))
+        return None
+
+    def update_water(self):
+        if not self.active_water:
+            return
+            
+        next_active = set()
+        
+        # Process all currently active water blocks
+        for tx, ty in list(self.active_water):
+            b_type = self.get_block(tx, ty)
+            if b_type != WATER:
+                continue # Block was removed/changed
+                
+            level = self.block_meta.get((tx, ty), {}).get("level", 7)
+            spread_occurred = False
+            
+            # Rule 1: Downward Flow
+            below_type = self.get_block(tx, ty + 1)
+            
+            if below_type is None or below_type == AIR:
+                # Flow down as a full source block (level 7)
+                self.set_block(tx, ty + 1, WATER)
+                self.block_meta[(tx, ty + 1)] = {"level": 7}
+                next_active.add((tx, ty + 1))
+                spread_occurred = True
+                
+            # Rule 2: Horizontal Spread (if sitting on a solid block or full water block)
+            elif below_type != WATER or self.block_meta.get((tx, ty + 1), {}).get("level", 7) == 7:
+                if level > 0:
+                    for dx in [-1, 1]:
+                        nx, ny = tx + dx, ty
+                        neighbor_type = self.get_block(nx, ny)
+                        
+                        can_spread = False
+                        if neighbor_type is None or neighbor_type == AIR:
+                            can_spread = True
+                        elif neighbor_type == WATER:
+                            n_level = self.block_meta.get((nx, ny), {}).get("level", 7)
+                            # Only overwrite if we can provide a higher level
+                            if n_level < level - 1:
+                                can_spread = True
+                                
+                        if can_spread:
+                            self.set_block(nx, ny, WATER)
+                            self.block_meta[(nx, ny)] = {"level": level - 1}
+                            next_active.add((nx, ny))
+                            spread_occurred = True
+                            
+            # If a block successfully spread, we keep it active in case neighbors are broken.
+            # Actually, to prevent infinite loops, we only add new blocks to next_active.
+            # The set_block method handles waking up adjacent blocks when broken.
+            
+        self.active_water = next_active
+
+    @property
+    def data(self):
+        # This proxy allows existing code to use world.data[(x,y)] while storing in chunks internally
+        class DataProxy:
+            def __init__(self, w): self.w = w
+            def __getitem__(self, key): return self.w.get_block(key[0], key[1])
+            def __setitem__(self, key, val): self.w.set_block(key[0], key[1], val)
+            def __contains__(self, key): return self.w.get_block(key[0], key[1]) is not None
+            def __delitem__(self, key): self.w.set_block(key[0], key[1], None)
+            def items(self):
+                for chunk in self.w.chunks.values():
+                    for k, v in chunk.items(): yield k, v
+            def values(self):
+                for chunk in self.w.chunks.values():
+                    for v in chunk.values(): yield v
+            def keys(self):
+                for chunk in self.w.chunks.values():
+                    for k in chunk.keys(): yield k
+            def pop(self, key, default=None):
+                val = self.w.get_block(key[0], key[1])
+                if val is not None:
+                    self.w.set_block(key[0], key[1], None)
+                    return val
+                return default
+            def get(self, key, default=None):
+                val = self.w.get_block(key[0], key[1])
+                return val if val is not None else default
+            def __bool__(self):
+                return bool(self.w.chunks)
+        return DataProxy(self)
+
+    @data.setter
+    def data(self, new_dict):
+        # Allow clearing/setting world data directly (used by network sync)
+        self.chunks = {}
+        if isinstance(new_dict, dict):
+            for k, v in new_dict.items():
+                self.set_block(k[0], k[1], v)
+        elif hasattr(new_dict, "items"): # Handle proxy objects
+            for k, v in new_dict.items():
+                self.set_block(k[0], k[1], v)
 
     def generate_world(self):
         # Surface & Lakes
@@ -766,199 +915,212 @@ class World:
         pygame.draw.circle(surface, (255, 255, 0), (int(sun_x), int(sun_y)), 30) # Sun
         pygame.draw.circle(surface, (220, 220, 255), (int(moon_x), int(moon_y)), 25) # Moon
         
-        # Draw the world 3 times to cover the infinite wrap smoothly
+        # Draw chunks that are visible on screen
+        start_cx = int(scroll_x // (CHUNK_SIZE * TILE_SIZE)) - 1
+        end_cx = int((scroll_x + SCREEN_WIDTH) // (CHUNK_SIZE * TILE_SIZE)) + 1
+        
         torch_glows = []
-        for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
-            for (x, y), b_type in self.data.items():
-                draw_x = x * TILE_SIZE - scroll_x + offset
-                draw_y = y * TILE_SIZE - scroll_y
-                # Only draw blocks that are visible on screen
-                if -TILE_SIZE < draw_x < SCREEN_WIDTH and -TILE_SIZE < draw_y < SCREEN_HEIGHT:
-                    if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
-                        pygame.draw.rect(surface, COLOR_STONE, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        ore_color = COLOR_COAL if b_type == COAL_BLOCK else (COLOR_IRON if b_type == IRON_BLOCK else COLOR_DIAMOND)
-                        # Chunky ore shapes
-                        pygame.draw.rect(surface, ore_color, (draw_x + 4, draw_y + 6, 10, 8))
-                        pygame.draw.rect(surface, ore_color, (draw_x + 16, draw_y + 18, 12, 10))
-                        pygame.draw.rect(surface, ore_color, (draw_x + 22, draw_y + 4, 8, 8))
-                    elif b_type == OAK_LOG:
-                        pygame.draw.rect(surface, COLOR_OAK_BROWN, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                    elif b_type == BIRCH_LOG:
-                        pygame.draw.rect(surface, COLOR_BIRCH_WHITE, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, COLOR_GRAY, (draw_x, draw_y + 8, 8, 3)) # Bark dash
-                        pygame.draw.rect(surface, COLOR_GRAY, (draw_x + 20, draw_y + 18, 8, 3)) # Bark dash
-                    elif b_type == PLANKS:
-                        pygame.draw.rect(surface, COLOR_PLANKS, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, (150, 110, 60), (draw_x, draw_y, TILE_SIZE, TILE_SIZE), 1) # Board outline
-                        pygame.draw.rect(surface, (150, 110, 60), (draw_x, draw_y + 16, TILE_SIZE, 1)) # Middle board line
-                    elif b_type == CRAFTING_TABLE:
-                        pygame.draw.rect(surface, (140, 100, 60), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, (80, 50, 30), (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE - 4), 2) # Top border
-                        pygame.draw.rect(surface, (0, 0, 0), (draw_x + 6, draw_y + 6, 4, 4)) # Tool icon
-                    elif b_type == FURNACE:
-                        pygame.draw.rect(surface, (60, 60, 60), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, (30, 30, 30), (draw_x + 4, draw_y + 8, TILE_SIZE - 8, TILE_SIZE - 16)) # Front opening
-                    elif b_type in (OAK_LEAVES, BIRCH_LEAVES):
-                        color = COLOR_LEAVES_G if b_type == OAK_LEAVES else COLOR_LEAVES_B
-                        pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                    elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
-                        color = COLOR_PLANKS if b_type == W_STAIRS else ((100, 100, 100) if b_type == C_STAIRS else ((180, 180, 190) if b_type == SS_STAIRS else (200, 200, 220)))
-                        pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
-                        # Orientation from meta
-                        facing = world.block_meta.get((x, y), {}).get("facing", -1)
-                        step_x = draw_x if facing == -1 else draw_x + TILE_SIZE//2
-                        pygame.draw.rect(surface, color, (step_x, draw_y, TILE_SIZE//2, TILE_SIZE//2))
-                        # Outlines
-                        pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2), 1)
-                        pygame.draw.rect(surface, (0,0,0), (step_x, draw_y, TILE_SIZE//2, TILE_SIZE//2), 1)
-                    elif b_type in (W_SLAB, C_SLAB, SS_SLAB, I_SLAB):
-                        color = COLOR_PLANKS if b_type == W_SLAB else ((100, 100, 100) if b_type == C_SLAB else ((180, 180, 190) if b_type == SS_SLAB else (200, 200, 220)))
-                        pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
-                        pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2), 1)
-                    elif b_type == TALL_GRASS:
-                        # Draw blades
-                        pygame.draw.line(surface, COLOR_GRASS, (draw_x + 8, draw_y + TILE_SIZE), (draw_x + 6, draw_y + 16), 2)
-                        pygame.draw.line(surface, COLOR_GRASS, (draw_x + 16, draw_y + TILE_SIZE), (draw_x + 16, draw_y + 12), 2)
-                        pygame.draw.line(surface, COLOR_GRASS, (draw_x + 24, draw_y + TILE_SIZE), (draw_x + 26, draw_y + 16), 2)
-                    elif b_type == FARMLAND:
-                        pygame.draw.rect(surface, (80, 50, 30), (draw_x, draw_y + 4, TILE_SIZE, TILE_SIZE - 4))
-                        pygame.draw.rect(surface, (60, 40, 20), (draw_x, draw_y + 4, TILE_SIZE, 4)) # Tilled top
-                    elif WHEAT_STG0 <= b_type <= WHEAT_STG3:
-                        stage = b_type - WHEAT_STG0
-                        color = (50, 200, 50) if stage < 3 else (220, 200, 50)
-                        h = 8 + stage * 6
-                        for x_off in [8, 16, 24]:
-                            pygame.draw.line(surface, color, (draw_x + x_off, draw_y + TILE_SIZE), (draw_x + x_off, draw_y + TILE_SIZE - h), 2)
-                    elif b_type == CHEST:
-                        # Draw chest body
-                        pygame.draw.rect(surface, (120, 80, 40), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 4))
+        for cx in range(start_cx, end_cx + 1):
+            # Wrap chunk index for infinite world
+            lookup_cx = cx % (WORLD_WIDTH // CHUNK_SIZE)
+            for cy in range(0, WORLD_HEIGHT // CHUNK_SIZE + 1):
+                chunk = self.chunks.get((lookup_cx, cy))
+                if chunk:
+                    for (tx, ty), b_type in chunk.items():
+                        # Calculate screen position based on current virtual chunk column
+                        rel_tx = tx % CHUNK_SIZE
+                        draw_x = (cx * CHUNK_SIZE + rel_tx) * TILE_SIZE - scroll_x
+                        draw_y = ty * TILE_SIZE - scroll_y
                         
-                        # Handle connections for visual double chests
-                        left = self.data.get(((x - 1) % WORLD_WIDTH, y)) == CHEST
-                        right = self.data.get(((x + 1) % WORLD_WIDTH, y)) == CHEST
-                        
-                        if left:
-                            pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 4, 4, TILE_SIZE - 4)) # Connect left
-                        if right:
-                            pygame.draw.rect(surface, (120, 80, 40), (draw_x + TILE_SIZE - 4, draw_y + 4, 4, TILE_SIZE - 4)) # Connect right
-                        
-                        # Lock (only on the master/left chest or single chest)
-                        if not left:
-                            lock_x = draw_x + (TILE_SIZE if right else TILE_SIZE // 2) - 2
-                            pygame.draw.rect(surface, (200, 160, 40), (lock_x, draw_y + 10, 4, 6))
-                    elif b_type == HAY_BALE:
-                        pygame.draw.rect(surface, (220, 200, 50), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 8, TILE_SIZE, 3)) # Rope
-                        pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 22, TILE_SIZE, 3)) # Rope
-                    elif b_type == TORCH:
-                        facing = self.block_meta.get((x, y), {}).get("facing", 0)
-                        if facing == 1:
-                            torch_glows.append((draw_x + 5, draw_y + 11))
-                            pygame.draw.line(surface, (90, 55, 20), (draw_x + 6, draw_y + 18), (draw_x + 3, draw_y + 8), 3)
-                            pygame.draw.polygon(surface, (255, 180, 60), [
-                                (draw_x + 1, draw_y + 10),
-                                (draw_x + 5, draw_y + 3),
-                                (draw_x + 9, draw_y + 11)
-                            ])
-                            pygame.draw.circle(surface, (255, 245, 200), (draw_x + 5, draw_y + 6), 2)
-                        elif facing == -1:
-                            torch_glows.append((draw_x + 11, draw_y + 11))
-                            pygame.draw.line(surface, (90, 55, 20), (draw_x + 10, draw_y + 18), (draw_x + 13, draw_y + 8), 3)
-                            pygame.draw.polygon(surface, (255, 180, 60), [
-                                (draw_x + 7, draw_y + 11),
-                                (draw_x + 11, draw_y + 3),
-                                (draw_x + 15, draw_y + 10)
-                            ])
-                            pygame.draw.circle(surface, (255, 245, 200), (draw_x + 11, draw_y + 6), 2)
-                        else:
-                            torch_glows.append((draw_x + 8, draw_y + 14))
-                            pygame.draw.rect(surface, (90, 55, 20), (draw_x + 7, draw_y + 11, 4, 17))
-                            pygame.draw.polygon(surface, (255, 180, 60), [
-                                (draw_x + 5, draw_y + 11),
-                                (draw_x + 9, draw_y + 2),
-                                (draw_x + 13, draw_y + 11)
-                            ])
-                            pygame.draw.circle(surface, (255, 245, 200), (draw_x + 9, draw_y + 6), 2)
-                    elif b_type == BED:
-                        pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, COLOR_WHITE, (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE // 4))
-                        pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
-                    elif b_type == BED_RIGHT:
-                        pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
-                    elif b_type in (FENCE, FENCE_GATE, FENCE_GATE_OPEN):
-                        pygame.draw.rect(surface, (120, 80, 40), (draw_x + 12, draw_y, 8, TILE_SIZE)) # Post
-                        if b_type == FENCE_GATE:
-                            pygame.draw.rect(surface, (140, 100, 50), (draw_x + 4, draw_y + 8, 24, 16))
-                        elif b_type == FENCE_GATE_OPEN:
-                            pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y, 4, TILE_SIZE))
-                            pygame.draw.rect(surface, (120, 80, 40), (draw_x + 28, draw_y, 4, TILE_SIZE))
-                        if b_type == FENCE:
-                            left = self.data.get(((x-1)%WORLD_WIDTH, y))
-                            if left and (left in (FENCE, FENCE_GATE, FENCE_GATE_OPEN) or left not in (TALL_GRASS, WHEAT_STG0, WHEAT_STG1, WHEAT_STG2, WHEAT_STG3)):
-                                pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 8, 12, 4))
-                                pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 20, 12, 4))
-                            right = self.data.get(((x+1)%WORLD_WIDTH, y))
-                            if right and (right in (FENCE, FENCE_GATE, FENCE_GATE_OPEN) or right not in (TALL_GRASS, WHEAT_STG0, WHEAT_STG1, WHEAT_STG2, WHEAT_STG3)):
-                                pygame.draw.rect(surface, (120, 80, 40), (draw_x + 20, draw_y + 8, 12, 4))
-                                pygame.draw.rect(surface, (120, 80, 40), (draw_x + 20, draw_y + 20, 12, 4))
-                    elif b_type == DOOR:
-                        pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, (80, 40, 10), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
-                        pygame.draw.circle(surface, (200, 150, 50), (draw_x + 24, draw_y + 16), 3) # Knob
-                    elif b_type == DOOR_TOP:
-                        pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        pygame.draw.rect(surface, (80, 40, 10), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
-                    elif b_type == DOOR_OPEN:
-                        pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, 6, TILE_SIZE))
-                    elif b_type == DOOR_OPEN_TOP:
-                        pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, 6, TILE_SIZE))
-                    elif b_type == TRAPDOOR:
-                        pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 4, TILE_SIZE, 8))
-                    elif b_type == TRAPDOOR_OPEN:
-                        pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y, 8, TILE_SIZE))
-                    elif b_type == LADDER:
-                        # Draw ladder rungs
-                        color = (120, 80, 40)
-                        pygame.draw.rect(surface, color, (draw_x + 4, draw_y, 4, TILE_SIZE)) # Left rail
-                        pygame.draw.rect(surface, color, (draw_x + TILE_SIZE - 8, draw_y, 4, TILE_SIZE)) # Right rail
-                        for i in range(4):
-                            ry = draw_y + 4 + i * 8
-                            pygame.draw.rect(surface, color, (draw_x + 4, ry, TILE_SIZE - 8, 3)) # Rungs
-                        continue
-                    elif b_type == WATER:
-                        # Draw semi-transparent water
-                        water_surf = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
-                        water_surf.fill((0, 100, 255, 150))
-                        surface.blit(water_surf, (draw_x, draw_y))
-                        continue
-                    elif b_type == BOAT:
-                        # Draw boat in world
-                        pygame.draw.polygon(surface, (100, 70, 40), [(draw_x, draw_y + 20), (draw_x + TILE_SIZE, draw_y + 20), (draw_x + TILE_SIZE + 4, draw_y + 10), (draw_x - 4, draw_y + 10)])
-                        pygame.draw.rect(surface, (120, 80, 40), (draw_x + 4, draw_y + 18, TILE_SIZE - 8, 4))
-                        continue
-                    else:
-                        block_colors = {
-                            GRASS_BLOCK: COLOR_GRASS, DIRT_BLOCK: COLOR_DIRT, STONE_BLOCK: COLOR_STONE,
-                            COAL_BLOCK: (30, 30, 30), IRON_BLOCK: (160, 160, 160),
-                            IRON_BLOCK_PROD: (220, 220, 220), COBBLESTONE: (120, 120, 120),
-                            SMOOTH_STONE: (180, 180, 180), OAK_LOG: (100, 70, 40),
-                            BIRCH_LOG: (220, 220, 220), PLANKS: COLOR_PLANKS,
-                            COAL_BLOCK_ITEM: (20, 20, 20),
-                            BOAT: (100, 70, 40)
-                        }
-                        color = block_colors.get(b_type, (255, 0, 255)) # Magenta for unknown
-                        pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                        if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE): # Add speckles for ores
-                            speckle_c = (0,0,0) if b_type == COAL_BLOCK else ((140, 100, 60) if b_type == IRON_BLOCK else (120, 240, 240))
-                            # Deterministic speckles based on block pos
-                            seed = (x * 7 + y * 13) % 100
-                            for i in range(4):
-                                sx = 4 + ((seed + i * 21) % 20)
-                                sy = 4 + ((seed + i * 37) % 20)
-                                pygame.draw.rect(surface, speckle_c, (draw_x + sx, draw_y + sy, 4, 4))
-                        elif b_type == COAL_BLOCK_ITEM:
-                            pygame.draw.rect(surface, (60, 60, 60), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
+                        # Only draw blocks that are visible on screen
+                        if -TILE_SIZE < draw_x < SCREEN_WIDTH and -TILE_SIZE < draw_y < SCREEN_HEIGHT:
+                            if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
+                                pygame.draw.rect(surface, COLOR_STONE, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                ore_color = COLOR_COAL if b_type == COAL_BLOCK else (COLOR_IRON if b_type == IRON_BLOCK else COLOR_DIAMOND)
+                                # Chunky ore shapes
+                                pygame.draw.rect(surface, ore_color, (draw_x + 4, draw_y + 6, 10, 8))
+                                pygame.draw.rect(surface, ore_color, (draw_x + 16, draw_y + 18, 12, 10))
+                                pygame.draw.rect(surface, ore_color, (draw_x + 22, draw_y + 4, 8, 8))
+                            elif b_type == OAK_LOG:
+                                pygame.draw.rect(surface, COLOR_OAK_BROWN, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                            elif b_type == BIRCH_LOG:
+                                pygame.draw.rect(surface, COLOR_BIRCH_WHITE, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, COLOR_GRAY, (draw_x, draw_y + 8, 8, 3)) # Bark dash
+                                pygame.draw.rect(surface, COLOR_GRAY, (draw_x + 20, draw_y + 18, 8, 3)) # Bark dash
+                            elif b_type == PLANKS:
+                                pygame.draw.rect(surface, COLOR_PLANKS, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (150, 110, 60), (draw_x, draw_y, TILE_SIZE, TILE_SIZE), 1) # Board outline
+                                pygame.draw.rect(surface, (150, 110, 60), (draw_x, draw_y + 16, TILE_SIZE, 1)) # Middle board line
+                            elif b_type == CRAFTING_TABLE:
+                                pygame.draw.rect(surface, (140, 100, 60), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (80, 50, 30), (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE - 4), 2) # Top border
+                                pygame.draw.rect(surface, (0, 0, 0), (draw_x + 6, draw_y + 6, 4, 4)) # Tool icon
+                            elif b_type == FURNACE:
+                                pygame.draw.rect(surface, (60, 60, 60), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (30, 30, 30), (draw_x + 4, draw_y + 8, TILE_SIZE - 8, TILE_SIZE - 16)) # Front opening
+                            elif b_type in (OAK_LEAVES, BIRCH_LEAVES):
+                                color = COLOR_LEAVES_G if b_type == OAK_LEAVES else COLOR_LEAVES_B
+                                pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                            elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
+                                color = COLOR_PLANKS if b_type == W_STAIRS else ((100, 100, 100) if b_type == C_STAIRS else ((180, 180, 190) if b_type == SS_STAIRS else (200, 200, 220)))
+                                pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
+                                # Orientation from meta
+                                facing = self.block_meta.get((tx, ty), {}).get("facing", -1)
+                                step_x = draw_x if facing == -1 else draw_x + TILE_SIZE//2
+                                pygame.draw.rect(surface, color, (step_x, draw_y, TILE_SIZE//2, TILE_SIZE//2))
+                                # Outlines
+                                pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2), 1)
+                                pygame.draw.rect(surface, (0,0,0), (step_x, draw_y, TILE_SIZE//2, TILE_SIZE//2), 1)
+                            elif b_type in (W_SLAB, C_SLAB, SS_SLAB, I_SLAB):
+                                color = COLOR_PLANKS if b_type == W_SLAB else ((100, 100, 100) if b_type == C_SLAB else ((180, 180, 190) if b_type == SS_SLAB else (200, 200, 220)))
+                                pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
+                                pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2), 1)
+                            elif b_type == TALL_GRASS:
+                                # Draw blades
+                                pygame.draw.line(surface, COLOR_GRASS, (draw_x + 8, draw_y + TILE_SIZE), (draw_x + 6, draw_y + 16), 2)
+                                pygame.draw.line(surface, COLOR_GRASS, (draw_x + 16, draw_y + TILE_SIZE), (draw_x + 16, draw_y + 12), 2)
+                                pygame.draw.line(surface, COLOR_GRASS, (draw_x + 24, draw_y + TILE_SIZE), (draw_x + 26, draw_y + 16), 2)
+                            elif b_type == FARMLAND:
+                                pygame.draw.rect(surface, (80, 50, 30), (draw_x, draw_y + 4, TILE_SIZE, TILE_SIZE - 4))
+                                pygame.draw.rect(surface, (60, 40, 20), (draw_x, draw_y + 4, TILE_SIZE, 4)) # Tilled top
+                            elif WHEAT_STG0 <= b_type <= WHEAT_STG3:
+                                stage = b_type - WHEAT_STG0
+                                color = (50, 200, 50) if stage < 3 else (220, 200, 50)
+                                h = 8 + stage * 6
+                                for x_off in [8, 16, 24]:
+                                    pygame.draw.line(surface, color, (draw_x + x_off, draw_y + TILE_SIZE), (draw_x + x_off, draw_y + TILE_SIZE - h), 2)
+                            elif b_type == CHEST:
+                                # Draw chest body
+                                pygame.draw.rect(surface, (120, 80, 40), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 4))
+                                
+                                # Handle connections for visual double chests
+                                left = self.data.get(((tx - 1) % WORLD_WIDTH, ty)) == CHEST
+                                right = self.data.get(((tx + 1) % WORLD_WIDTH, ty)) == CHEST
+                                
+                                if left:
+                                    pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 4, 4, TILE_SIZE - 4)) # Connect left
+                                if right:
+                                    pygame.draw.rect(surface, (120, 80, 40), (draw_x + TILE_SIZE - 4, draw_y + 4, 4, TILE_SIZE - 4)) # Connect right
+                                
+                                # Lock (only on the master/left chest or single chest)
+                                if not left:
+                                    lock_x = draw_x + (TILE_SIZE if right else TILE_SIZE // 2) - 2
+                                    pygame.draw.rect(surface, (200, 160, 40), (lock_x, draw_y + 10, 4, 6))
+                            elif b_type == HAY_BALE:
+                                pygame.draw.rect(surface, (220, 200, 50), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 8, TILE_SIZE, 3)) # Rope
+                                pygame.draw.rect(surface, (150, 100, 50), (draw_x, draw_y + 22, TILE_SIZE, 3)) # Rope
+                            elif b_type == TORCH:
+                                facing = self.block_meta.get((tx, ty), {}).get("facing", 0)
+                                if facing == 1:
+                                    torch_glows.append((draw_x + 5, draw_y + 11))
+                                    pygame.draw.line(surface, (90, 55, 20), (draw_x + 6, draw_y + 18), (draw_x + 3, draw_y + 8), 3)
+                                    pygame.draw.polygon(surface, (255, 180, 60), [
+                                        (draw_x + 1, draw_y + 10),
+                                        (draw_x + 5, draw_y + 3),
+                                        (draw_x + 9, draw_y + 11)
+                                    ])
+                                    pygame.draw.circle(surface, (255, 245, 200), (draw_x + 5, draw_y + 6), 2)
+                                elif facing == -1:
+                                    torch_glows.append((draw_x + 11, draw_y + 11))
+                                    pygame.draw.line(surface, (90, 55, 20), (draw_x + 10, draw_y + 18), (draw_x + 13, draw_y + 8), 3)
+                                    pygame.draw.polygon(surface, (255, 180, 60), [
+                                        (draw_x + 7, draw_y + 11),
+                                        (draw_x + 11, draw_y + 3),
+                                        (draw_x + 15, draw_y + 10)
+                                    ])
+                                    pygame.draw.circle(surface, (255, 245, 200), (draw_x + 11, draw_y + 6), 2)
+                                else:
+                                    torch_glows.append((draw_x + 8, draw_y + 14))
+                                    pygame.draw.rect(surface, (90, 55, 20), (draw_x + 7, draw_y + 11, 4, 17))
+                                    pygame.draw.polygon(surface, (255, 180, 60), [
+                                        (draw_x + 5, draw_y + 11),
+                                        (draw_x + 9, draw_y + 2),
+                                        (draw_x + 13, draw_y + 11)
+                                    ])
+                                    pygame.draw.circle(surface, (255, 245, 200), (draw_x + 9, draw_y + 6), 2)
+                            elif b_type == BED:
+                                pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, COLOR_WHITE, (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE // 4))
+                                pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
+                            elif b_type == BED_RIGHT:
+                                pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
+                            elif b_type in (FENCE, FENCE_GATE, FENCE_GATE_OPEN):
+                                pygame.draw.rect(surface, (120, 80, 40), (draw_x + 12, draw_y, 8, TILE_SIZE)) # Post
+                                if b_type == FENCE_GATE:
+                                    pygame.draw.rect(surface, (140, 100, 50), (draw_x + 4, draw_y + 8, 24, 16))
+                                elif b_type == FENCE_GATE_OPEN:
+                                    pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y, 4, TILE_SIZE))
+                                    pygame.draw.rect(surface, (120, 80, 40), (draw_x + 28, draw_y, 4, TILE_SIZE))
+                                if b_type == FENCE:
+                                    left = self.data.get(((tx-1)%WORLD_WIDTH, ty))
+                                    if left and (left in (FENCE, FENCE_GATE, FENCE_GATE_OPEN) or left not in (TALL_GRASS, WHEAT_STG0, WHEAT_STG1, WHEAT_STG2, WHEAT_STG3)):
+                                        pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 8, 12, 4))
+                                        pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 20, 12, 4))
+                                    right = self.data.get(((tx+1)%WORLD_WIDTH, ty))
+                                    if right and (right in (FENCE, FENCE_GATE, FENCE_GATE_OPEN) or right not in (TALL_GRASS, WHEAT_STG0, WHEAT_STG1, WHEAT_STG2, WHEAT_STG3)):
+                                        pygame.draw.rect(surface, (120, 80, 40), (draw_x + 20, draw_y + 8, 12, 4))
+                                        pygame.draw.rect(surface, (120, 80, 40), (draw_x + 20, draw_y + 20, 12, 4))
+                            elif b_type == DOOR:
+                                pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (80, 40, 10), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
+                                pygame.draw.circle(surface, (200, 150, 50), (draw_x + 24, draw_y + 16), 3) # Knob
+                            elif b_type == DOOR_TOP:
+                                pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (80, 40, 10), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
+                            elif b_type == DOOR_OPEN:
+                                pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, 6, TILE_SIZE))
+                            elif b_type == DOOR_OPEN_TOP:
+                                pygame.draw.rect(surface, (100, 60, 20), (draw_x, draw_y, 6, TILE_SIZE))
+                            elif b_type == TRAPDOOR:
+                                pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y + 4, TILE_SIZE, 8))
+                            elif b_type == TRAPDOOR_OPEN:
+                                pygame.draw.rect(surface, (120, 80, 40), (draw_x, draw_y, 8, TILE_SIZE))
+                            elif b_type == LADDER:
+                                # Draw ladder rungs
+                                color = (120, 80, 40)
+                                pygame.draw.rect(surface, color, (draw_x + 4, draw_y, 4, TILE_SIZE)) # Left rail
+                                pygame.draw.rect(surface, color, (draw_x + TILE_SIZE - 8, draw_y, 4, TILE_SIZE)) # Right rail
+                                for i in range(4):
+                                    ry = draw_y + 4 + i * 8
+                                    pygame.draw.rect(surface, color, (draw_x + 4, ry, TILE_SIZE - 8, 3)) # Rungs
+                            elif b_type == WATER:
+                                # Dynamic water height based on level (7 = full, 0 = lowest)
+                                level = self.block_meta.get((tx, ty), {}).get("level", 7)
+                                height_ratio = (level + 1) / 8.0
+                                pixel_h = int(TILE_SIZE * height_ratio)
+                                y_off = TILE_SIZE - pixel_h
+                                
+                                water_surf = pygame.Surface((TILE_SIZE, pixel_h), pygame.SRCALPHA)
+                                water_surf.fill((0, 100, 255, 150))
+                                surface.blit(water_surf, (draw_x, draw_y + y_off))
+                            elif b_type == BOAT:
+                                # Draw boat in world
+                                pygame.draw.polygon(surface, (100, 70, 40), [(draw_x, draw_y + 20), (draw_x + TILE_SIZE, draw_y + 20), (draw_x + TILE_SIZE + 4, draw_y + 10), (draw_x - 4, draw_y + 10)])
+                                pygame.draw.rect(surface, (120, 80, 40), (draw_x + 4, draw_y + 18, TILE_SIZE - 8, 4))
+                            else:
+                                block_colors = {
+                                    GRASS_BLOCK: COLOR_GRASS, DIRT_BLOCK: COLOR_DIRT, STONE_BLOCK: COLOR_STONE,
+                                    COAL_BLOCK: (30, 30, 30), IRON_BLOCK: (160, 160, 160),
+                                    IRON_BLOCK_PROD: (220, 220, 220), COBBLESTONE: (120, 120, 120),
+                                    SMOOTH_STONE: (180, 180, 180), OAK_LOG: (100, 70, 40),
+                                    BIRCH_LOG: (220, 220, 220), PLANKS: COLOR_PLANKS,
+                                    COAL_BLOCK_ITEM: (20, 20, 20),
+                                    BOAT: (100, 70, 40)
+                                }
+                                color = block_colors.get(b_type, (255, 0, 255)) # Magenta for unknown
+                                pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE): # Add speckles for ores
+                                    speckle_c = (0,0,0) if b_type == COAL_BLOCK else ((140, 100, 60) if b_type == IRON_BLOCK else (120, 240, 240))
+                                    # Deterministic speckles based on block pos
+                                    seed = (tx * 7 + ty * 13) % 100
+                                    for i in range(4):
+                                        sx = 4 + ((seed + i * 21) % 20)
+                                        sy = 4 + ((seed + i * 37) % 20)
+                                        pygame.draw.rect(surface, speckle_c, (draw_x + sx, draw_y + sy, 4, 4))
+                                elif b_type == COAL_BLOCK_ITEM:
+                                    pygame.draw.rect(surface, (60, 60, 60), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 8), 2)
 
         if torch_glows:
             glow_layer = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -2338,7 +2500,27 @@ def load_game(world, player, filename):
         with open(filename, "r") as f:
             sd = json.load(f)
             # Restore World
-            world.data = {tuple(map(int, k.split(','))): v for k, v in sd["world_data"].items()}
+            world.chunks = {} # Clear existing
+            raw_world = sd.get("world_data", {})
+            max_x = -1
+            for k_str, v in raw_world.items():
+                tx, ty = map(int, k_str.split(','))
+                if tx > max_x: max_x = tx
+                world.set_block(tx, ty, v)
+                
+            # Patch legacy saves (1000-block width)
+            if 0 < max_x < WORLD_WIDTH - 1:
+                print(f"Legacy save detected. Generating missing terrain from x={max_x+1} to {WORLD_WIDTH-1}...")
+                for x in range(max_x + 1, WORLD_WIDTH):
+                    h = int(12 + math.sin(x * 0.15) * 4 + math.cos(x * 0.05) * 2)
+                    for y in range(WORLD_HEIGHT):
+                        if y > h: 
+                            world.data[(x, y)] = STONE_BLOCK if y > h+4 else DIRT_BLOCK
+                        elif y == h: 
+                            world.data[(x, y)] = GRASS_BLOCK
+                            if random.random() < 0.2:
+                                world.data[(x, y - 1)] = TALL_GRASS
+            
             world.block_meta = {tuple(map(int, k.split(','))): v for k, v in sd.get("block_meta", {}).items()}
             world.chest_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("chest_data", {}).items()}
             world.furnace_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("furnace_data", {}).items()}
@@ -2616,25 +2798,16 @@ def main():
         if not world_name: return
 
     # Resolve filename
-    save_filename = None
-    candidate_files = [
-        WORLDS_DIR / "savegame.json",
-        WORLDS_DIR / f"savegame_{world_name}.json",
-        WORLDS_DIR / f"savegame{world_name}.json",
-    ]
-    for candidate in candidate_files:
-        if candidate.exists():
-            save_filename = candidate
-            break
-    if save_filename is None:
-        save_filename = candidate_files[1] if world_name != "default" else candidate_files[0]
-    if mode == "single" and not save_filename.exists():
-        existing_saves = sorted(
-            p for p in WORLDS_DIR.iterdir()
-            if p.is_file() and p.name.startswith("savegame") and p.name.endswith(".json")
-        )
-        if len(existing_saves) == 1:
-            save_filename = existing_saves[0]
+    if world_name == "default":
+        save_filename = WORLDS_DIR / "savegame.json"
+    else:
+        # Check standard format first
+        save_filename = WORLDS_DIR / f"savegame_{world_name}.json"
+        if not save_filename.exists():
+            # Fallback to no-underscore format if it exists
+            alt_filename = WORLDS_DIR / f"savegame{world_name}.json"
+            if alt_filename.exists():
+                save_filename = alt_filename
     
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
@@ -3513,6 +3686,8 @@ def main():
         if not sleeping_visual:
             player.update(world)
             update_furnaces(world)
+            if world.time % 8 == 0:
+                world.update_water()
             world.time = (world.time + 1) % 24000
             
             # Mob Spawning
@@ -3966,9 +4141,16 @@ def main():
                     pygame.draw.rect(screen, (200, 200, 255), (hx + 4, hy + 2, 8, 12)) # Shield
                     pygame.draw.rect(screen, (100, 100, 150), (hx + 4, hy + 2, 8, 12), 1)
 
+            # --- Draw Bubbles (Air) ---
+            if player.air < 10:
+                for i in range(player.air):
+                    hx, hy = 20 + i * 18, 80
+                    pygame.draw.circle(screen, (0, 190, 255), (hx + 8, hy + 8), 6) # Bubble
+                    pygame.draw.circle(screen, (200, 240, 255), (hx + 6, hy + 6), 2) # Highlight
+
             mode_names = ["FRONT (LEG)", "FRONT (HEAD)", "DOWN (TOWER)", "UP", "MINING (BOTH)"]
             mode_text = font.render(f"MODE: {mode_names[target_mode]} (F to Cycle)", True, COLOR_WHITE)
-            screen.blit(mode_text, (20, 85))
+            screen.blit(mode_text, (20, 105))
 
             # --- Draw Coordinates ---
             cx, cy = player.rect.centerx // TILE_SIZE, player.rect.centery // TILE_SIZE

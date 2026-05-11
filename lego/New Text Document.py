@@ -10,21 +10,27 @@ user_name = input("Enter your username: ")
 if not user_name:
     user_name = "Player"
 
-# LOAD SAVE DATA (Starts with $100 now!)
 save_file = "brainrot_save.json"
+
 def load_game():
     if os.path.exists(save_file):
         try:
             with open(save_file, "r") as f:
                 data = json.load(f)
-                return data.get("cash", 100) # Defaults to 100 if no cash saved
+                # Returns saved cash AND a list of saved Brainrot names
+                return data.get("cash", 100), data.get("base_brainrots", [])
         except:
-            return 100
-    return 100 # Starting cash
+            return 100, []
+    return 100, [] 
 
-def save_game(current_cash):
+def save_game(current_cash, player_base_dict):
+    # Get the names of every Brainrot sitting in the player's base
+    saved_names = [b.b_name for b in player_base_dict['brainrots']]
     with open(save_file, "w") as f:
-        json.dump({"cash": int(current_cash)}, f)
+        json.dump({
+            "cash": int(current_cash), 
+            "base_brainrots": saved_names
+        }, f)
 
 app = Ursina()
 
@@ -52,8 +58,9 @@ path = Entity(
     collider='box'
 )
 
-# GAME UI & CASH
-cash = load_game() 
+# Load the saved cash and the list of saved Brainrots!
+cash, saved_brainrot_names = load_game() 
+
 cash_text = Text(text=f'Cash: ${int(cash)}', position=(-0.85, 0.45), scale=2, color=color.green)
 Text(text="[E] Buy (Conveyor) or Steal (Enemy Base) | [Q] Drop at Base", position=(0, 0.4), origin=(0,0), scale=1.5, color=color.yellow)
 
@@ -131,7 +138,7 @@ for _ in range(60):
     create_lego_tree((tx, 0, tz))
 
 # ---------------------------------------------------------
-# BRAINROT CHARACTERS GENERATION 
+# DETAILED BRAINROT CHARACTERS 
 # ---------------------------------------------------------
 brainrot_types = {
     "La Vacca": 10,
@@ -143,28 +150,54 @@ brainrot_types = {
 brainrots_in_world = []
 carried_brainrot = None
 
+class DetailedBrainrot(Entity):
+    def __init__(self, pos, name):
+        super().__init__(position=pos)
+        self.b_name = name
+        self.value = brainrot_types[name]
+        self.state = 'conveyor'
+        self.base_owner = None
+        
+        # Color them based on their meme identity!
+        if name == "La Vacca":
+            c1, c2, c3 = color.black, color.white, color.black # Cow colors
+        elif name == "Tung Tung":
+            c1, c2, c3 = color.red, color.orange, color.yellow # Loud/Fire colors
+        elif name == "Ballerina Cappuccino":
+            c1, c2, c3 = color.white, color.black, color.brown # Italian Flag
+        else: # Orcalero
+            c1, c2, c3 = color.cyan, color.blue, color.black # Ocean/Orca
+            
+        # Lego Minifigure detail (Legs, Torso, Head)
+        Entity(parent=self, model='cube', color=c1, scale=(0.8, 0.6, 0.4), position=(0, 0.3, 0))
+        Entity(parent=self, model='cube', color=c2, scale=(1, 0.8, 0.5), position=(0, 1, 0)) 
+        Entity(parent=self, model='cube', color=c3, scale=(0.6, 0.6, 0.6), position=(0, 1.7, 0)) 
+        
+        self.name_tag = Text(text=f"{name}\nCost: ${self.value} (+${self.value}/s)", parent=self, y=2.5, scale=15, origin=(0,0))
+
+# SPAWN IN THE SAVED BRAINROTS INTO YOUR BASE!
+player_base_dict = next(b for b in bases if b['is_player'])
+for b_name in saved_brainrot_names:
+    if b_name in brainrot_types:
+        # Spawn them randomly scattered inside your base
+        spawn_pos = player_base_dict['entity'].position + Vec3(random.uniform(-4, 4), 1, random.uniform(-4, 4))
+        b = DetailedBrainrot(pos=spawn_pos, name=b_name)
+        b.state = 'base'
+        b.base_owner = player_base_dict
+        player_base_dict['brainrots'].append(b)
+        brainrots_in_world.append(b)
+
 def spawn_brainrot():
-    b = Entity(model='cube', color=color.random_color(), scale=1.5, position=(0, 1, 240), collider='box')
-    
     b_name = random.choice(list(brainrot_types.keys()))
-    b.value = brainrot_types[b_name]
-    
-    # NEW: Text size increased to 15, positioned slightly higher (y=1.5) to avoid overlapping the cube
-    b.name_tag = Text(text=f"{b_name}\nCost: ${b.value} (+${b.value}/s)", parent=b, y=1.5, scale=15, origin=(0,0))
-    b.state = 'conveyor' 
-    b.base_owner = None
+    b = DetailedBrainrot(pos=(0, 1, 240), name=b_name)
     brainrots_in_world.append(b)
     
     if random.random() > 0.5:
         enemy_bases = [base for base in bases if not base['is_player']]
         target_base = random.choice(enemy_bases)
-        enemy_b = Entity(model='cube', color=color.random_color(), scale=1.5, position=target_base['entity'].position + Vec3(0, 1, 0), collider='box')
         
         eb_name = random.choice(list(brainrot_types.keys()))
-        enemy_b.value = brainrot_types[eb_name]
-        # NEW: Text size 15 for enemy base brainrots as well
-        enemy_b.name_tag = Text(text=f"{eb_name}\nCost: ${enemy_b.value} (+${enemy_b.value}/s)", parent=enemy_b, y=1.5, scale=15, origin=(0,0))
-        
+        enemy_b = DetailedBrainrot(pos=target_base['entity'].position + Vec3(random.uniform(-4, 4), 1, random.uniform(-4, 4)), name=eb_name)
         enemy_b.state = 'base'
         enemy_b.base_owner = target_base
         target_base['brainrots'].append(enemy_b)
@@ -203,8 +236,6 @@ mouse.locked = True
 # 3. GAME LOOP
 # ---------------------------------------------------------
 save_timer = 0 
-
-# Track key presses to prevent holding 'E' from draining money instantly
 e_pressed_last_frame = False 
 
 def update():
@@ -247,21 +278,24 @@ def update():
         player.is_jumping = False
 
     # -----------------------------------------------------
-    # GAME MECHANICS: Cash, Saves, Buying, Stealing
+    # GAME MECHANICS
     # -----------------------------------------------------
     
+    # Generate money!
     for base in bases:
         if base['is_player']:
             for b in base['brainrots']:
                 cash += b.value * time.dt
             cash_text.text = f'Cash: ${int(cash)}'
             
+    # Auto Save Every 3 Seconds (Saves Cash AND Brainrots)
     save_timer += time.dt
     if save_timer > 3.0:
-        save_game(cash)
+        player_base = next((b for b in bases if b['is_player']), None)
+        if player_base:
+            save_game(cash, player_base)
         save_timer = 0
             
-    # Clean Single-Press Logic for 'E'
     e_is_down = held_keys['e']
     just_pressed_e = e_is_down and not e_pressed_last_frame
     e_pressed_last_frame = e_is_down
@@ -274,16 +308,14 @@ def update():
             if b.z < -250:
                 b.z = 240 
                 
-            # NEW: Buying logic - Must have enough money!
             if carried_brainrot is None and distance(player, b) < 4 and just_pressed_e:
                 if cash >= b.value:
-                    cash -= b.value  # Deduct the cost
+                    cash -= b.value 
                     cash_text.text = f'Cash: ${int(cash)}'
                     b.state = 'carried'
                     carried_brainrot = b
                 else:
-                    # Player doesn't have enough money, do nothing!
-                    print("Not enough cash to buy this Brainrot!")
+                    print("Not enough cash!")
                 
         elif b.state == 'carried':
             target_pos = player.world_position + player.back * 3 + Vec3(0, 1.5, 0)
@@ -300,7 +332,6 @@ def update():
                         break
                         
         elif b.state == 'base':
-            # NEW: Stealing from an enemy base remains totally FREE
             if b.base_owner and not b.base_owner['is_player']:
                 if carried_brainrot is None and distance(player, b) < 4 and just_pressed_e:
                     b.base_owner['brainrots'].remove(b)
