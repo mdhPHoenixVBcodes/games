@@ -158,6 +158,9 @@ BLAST_FURNACE = 62
 BUCKET = 63
 MILK_BUCKET = 64
 WATER = 65
+SAND_BLOCK = 87
+CACTUS = 88
+DEAD_BUSH = 89
 BOAT = 66
 LADDER = 67
 DIAMOND_ORE = 68
@@ -202,7 +205,8 @@ BLOCK_HARDNESS = {
     FURNACE: 3.5, SMOKER: 3.5, BLAST_FURNACE: 3.5, COBBLESTONE: 2.0, SMOOTH_STONE: 2.0, IRON_BLOCK_PROD: 5.0,
     CHEST: 2.5, HAY_BALE: 0.5, FARMLAND: 0.6, FENCE: 2.0, FENCE_GATE: 2.0,
     DOOR: 3.0, TRAPDOOR: 3.0, W_STAIRS: 2.0, C_STAIRS: 2.0, SS_STAIRS: 2.0, I_STAIRS: 3.0,
-    W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, I_SLAB: 3.0, LADDER: 0.4, TORCH: 0.1
+    W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, I_SLAB: 3.0, LADDER: 0.4, TORCH: 0.1,
+    SAND_BLOCK: 0.5, CACTUS: 0.4, DEAD_BUSH: 0.1
 }
 
 BLOCK_NAMES = {
@@ -263,7 +267,8 @@ BLOCK_NAMES = {
     RAW_SALMON: "Salmon",
     COOKED_SALMON: "Cooked Salmon",
     FISHING_ROD: "Fishing Rod",
-    TORCH: "Torch"
+    TORCH: "Torch",
+    SAND_BLOCK: "Sand", CACTUS: "Cactus", DEAD_BUSH: "Dead Bush"
 }
 
 MAX_DURABILITY = {
@@ -285,7 +290,7 @@ PLACEABLE_BLOCKS = {
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
     LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS,
     W_SLAB, C_SLAB, SS_SLAB, I_SLAB, FARMLAND, HAY_BALE, CHEST,
-    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH
+    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK, CACTUS
 }
 
 class Player:
@@ -802,13 +807,16 @@ class World:
                 vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
                 vy = max(80, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
 
-        # Generate Trees
+        # Generate Trees (only in non-desert biome zones)
+        DESERT_START = 200
+        DESERT_END = 400
         for x in range(WORLD_WIDTH):
+            is_desert = DESERT_START <= x % WORLD_WIDTH < DESERT_END
             h = 0
             while (x, h) not in self.data or self.data[(x, h)] != GRASS_BLOCK:
                 h += 1
                 if h >= WORLD_HEIGHT: break
-            if h < WORLD_HEIGHT and random.random() < 0.15: # 15% chance for a tree
+            if h < WORLD_HEIGHT and not is_desert and random.random() < 0.15: # 15% chance for a tree
                 tree_type = "oak" if random.random() < 0.7 else "birch"
                 t_h = random.randint(3, 5)
                 log_b = OAK_LOG if tree_type == "oak" else BIRCH_LOG
@@ -822,6 +830,33 @@ class World:
                         tx, ty = (x + lx) % WORLD_WIDTH, (h - t_h + ly)
                         if (tx, ty) not in self.data:
                             self.data[(tx, ty)] = leaf_b
+
+        # --- Desert Biome Generation ---
+        for x in range(DESERT_START, DESERT_END):
+            wx = x % WORLD_WIDTH
+            # Find the surface
+            h = 0
+            while (wx, h) not in self.data:
+                h += 1
+                if h >= WORLD_HEIGHT: break
+            if h >= WORLD_HEIGHT:
+                continue
+            # Replace top 4 layers with sand
+            for depth in range(4):
+                sy = h + depth
+                if (wx, sy) in self.data and self.data[(wx, sy)] in (GRASS_BLOCK, DIRT_BLOCK):
+                    self.data[(wx, sy)] = SAND_BLOCK
+            # Remove any tall grass that was placed on sand
+            if (wx, h - 1) in self.data and self.data[(wx, h - 1)] == TALL_GRASS:
+                del self.data[(wx, h - 1)]
+            # Place cacti (10% chance)
+            if random.random() < 0.10:
+                cactus_h = random.randint(2, 3)
+                for ch in range(1, cactus_h + 1):
+                    self.data[(wx, h - ch)] = CACTUS
+            # Place dead bushes (8% chance)
+            elif random.random() < 0.08:
+                self.data[(wx, h - 1)] = DEAD_BUSH
 
         # Generate Caves (Worms)
         for _ in range(15): # 15 cave systems
@@ -1099,6 +1134,30 @@ class World:
                                 # Draw boat in world
                                 pygame.draw.polygon(surface, (100, 70, 40), [(draw_x, draw_y + 20), (draw_x + TILE_SIZE, draw_y + 20), (draw_x + TILE_SIZE + 4, draw_y + 10), (draw_x - 4, draw_y + 10)])
                                 pygame.draw.rect(surface, (120, 80, 40), (draw_x + 4, draw_y + 18, TILE_SIZE - 8, 4))
+                            elif b_type == SAND_BLOCK:
+                                pygame.draw.rect(surface, (220, 200, 130), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (200, 180, 110), (draw_x + 4, draw_y + 4, 10, 8))  # Shade detail
+                                pygame.draw.rect(surface, (200, 180, 110), (draw_x + 18, draw_y + 16, 8, 6))
+                            elif b_type == CACTUS:
+                                # Cactus body
+                                pygame.draw.rect(surface, (70, 150, 50), (draw_x + 6, draw_y, TILE_SIZE - 12, TILE_SIZE))
+                                # Cactus arms
+                                pygame.draw.rect(surface, (70, 150, 50), (draw_x, draw_y + 8, 6, 8))
+                                pygame.draw.rect(surface, (70, 150, 50), (draw_x + TILE_SIZE - 6, draw_y + 12, 6, 8))
+                                # Spines
+                                pygame.draw.line(surface, (90, 70, 20), (draw_x + 3, draw_y + 8), (draw_x - 3, draw_y + 6), 1)
+                                pygame.draw.line(surface, (90, 70, 20), (draw_x + 3, draw_y + 12), (draw_x - 3, draw_y + 14), 1)
+                                pygame.draw.line(surface, (90, 70, 20), (draw_x + TILE_SIZE - 3, draw_y + 12), (draw_x + TILE_SIZE + 3, draw_y + 10), 1)
+                            elif b_type == DEAD_BUSH:
+                                # Dead bush - small twigs drawn from center
+                                cx, cy = draw_x + TILE_SIZE // 2, draw_y + TILE_SIZE - 4
+                                bush_c = (140, 100, 50)
+                                pygame.draw.line(surface, bush_c, (cx, cy), (cx - 8, cy - 12), 2)
+                                pygame.draw.line(surface, bush_c, (cx, cy), (cx + 8, cy - 12), 2)
+                                pygame.draw.line(surface, bush_c, (cx, cy), (cx - 4, cy - 16), 1)
+                                pygame.draw.line(surface, bush_c, (cx, cy), (cx + 4, cy - 16), 1)
+                                pygame.draw.line(surface, bush_c, (cx - 6, cy - 8), (cx - 12, cy - 6), 1)
+                                pygame.draw.line(surface, bush_c, (cx + 6, cy - 8), (cx + 12, cy - 6), 1)
                             else:
                                 block_colors = {
                                     GRASS_BLOCK: COLOR_GRASS, DIRT_BLOCK: COLOR_DIRT, STONE_BLOCK: COLOR_STONE,
@@ -1493,6 +1552,14 @@ class Mob:
             self.rect = pygame.Rect(x, y, 32, 28)
             self.speed = 0.5
             self.health = 8 if m_type == "sheep" else 10
+        elif m_type == "husk":
+            self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 2 - 2)
+            self.speed = 2.2
+            self.health = 20
+        elif m_type == "camel":
+            self.rect = pygame.Rect(x, y, 48, TILE_SIZE * 2 + 8)
+            self.speed = 0.6
+            self.health = 32
         else:
             self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 2 - 2)
             self.speed = 2
@@ -1574,6 +1641,19 @@ class Mob:
             if self.egg_timer <= 0:
                 world.dropped_items.append(DroppedItem(self.rect.centerx, self.rect.centery, EGG))
                 self.egg_timer = random.randint(1200, 3000)
+        elif self.m_type == "husk":
+            # Chase player at all times (doesn't burn in sunlight)
+            dist_x = player.rect.x - self.rect.x
+            if abs(dist_x) < 400:
+                self.vel_x = self.speed if dist_x > 0 else -self.speed
+            else:
+                self.vel_x = 0
+        elif self.m_type == "camel":
+            # Wander passively
+            self.wander_timer -= 1
+            if self.wander_timer <= 0:
+                self.wander_timer = random.randint(120, 300)
+                self.vel_x = random.choice([-self.speed, 0, 0, self.speed])
         else: # Cow/Sheep Wander / Follow
             slot = player.inventory[player.selected_slot] if not player.show_inventory else player.held_item
             lure_item = WHEAT_ITEM
@@ -1646,6 +1726,16 @@ class Mob:
             self.on_ground = True
             self.vel_y = 0
             self.highest_y = self.rect.y
+
+        # Husk attack
+        if self.m_type == "husk":
+            dist_x = abs(self.rect.centerx - player.rect.centerx)
+            if dist_x > WORLD_PIXELS / 2: dist_x = WORLD_PIXELS - dist_x
+            dist_y = abs(self.rect.centery - player.rect.centery)
+            if dist_x < (self.rect.width + player.rect.width)/2 and dist_y < (self.rect.height + player.rect.height)/2:
+                if pygame.time.get_ticks() - self.last_hit > 1000:
+                    player.take_damage(3) # Slightly stronger than zombie
+                    self.last_hit = pygame.time.get_ticks()
 
         # Zombies specific behaviors
         if self.m_type == "zombie":
@@ -1777,6 +1867,33 @@ class Mob:
                 pygame.draw.rect(surface, wing, (dx + 4, dy + 8, 8, 5))
                 pygame.draw.line(surface, (255, 160, 40), (dx + 13, dy + 12), (dx + 11, dy + 17), 2)
                 pygame.draw.line(surface, (255, 160, 40), (dx + 16, dy + 12), (dx + 18, dy + 17), 2)
+            elif self.m_type == "husk":
+                # Sandy zombie look
+                body_c = (255, 150, 150) if is_hurt else (210, 180, 110)
+                pygame.draw.rect(surface, body_c, (dx, dy, self.rect.width, self.rect.height))
+                eye_c = (255, 80, 80) if is_hurt else (140, 80, 20)
+                pygame.draw.rect(surface, eye_c, (dx + 4, dy + 8, 4, 4))
+                pygame.draw.rect(surface, eye_c, (dx + 16, dy + 8, 4, 4))
+                # Tattered rags - dark strips across body
+                pygame.draw.rect(surface, (160, 120, 60), (dx + 2, dy + 20, 20, 3))
+                pygame.draw.rect(surface, (160, 120, 60), (dx + 4, dy + 32, 16, 3))
+            elif self.m_type == "camel":
+                # Camel body
+                body_c = (255, 150, 150) if is_hurt else (205, 160, 80)
+                pygame.draw.rect(surface, body_c, (dx + 4, dy + 8, self.rect.width - 8, self.rect.height - 16))
+                # Hump
+                pygame.draw.ellipse(surface, body_c, (dx + 10, dy, 26, 20))
+                # Head
+                head_c = (255, 130, 130) if is_hurt else (185, 140, 65)
+                pygame.draw.rect(surface, head_c, (dx + self.rect.width - 12, dy + 8, 14, 12))
+                pygame.draw.rect(surface, (120, 90, 40), (dx + self.rect.width - 10, dy + 18, 10, 5)) # Snout
+                pygame.draw.rect(surface, (30, 20, 10), (dx + self.rect.width - 8, dy + 10, 3, 3)) # Eye
+                # Legs
+                leg_c = (175, 135, 65)
+                pygame.draw.rect(surface, leg_c, (dx + 6,  dy + self.rect.height - 14, 6, 14))
+                pygame.draw.rect(surface, leg_c, (dx + 16, dy + self.rect.height - 14, 6, 14))
+                pygame.draw.rect(surface, leg_c, (dx + 28, dy + self.rect.height - 14, 6, 14))
+                pygame.draw.rect(surface, leg_c, (dx + 38, dy + self.rect.height - 14, 6, 14))
 
 def draw_block_icon(screen, b_type, x, y, size, font):
     if b_type == STICK:
@@ -3714,6 +3831,17 @@ def main():
             if (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "chicken"]) < 5:
                 if random.random() < 0.004:
                     world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "chicken"))
+            # Desert spawning: check if player is in desert biome (tile x 200-400)
+            player_tile_x = (player.rect.centerx // TILE_SIZE) % WORLD_WIDTH
+            in_desert = 200 <= player_tile_x < 400
+            # Husks spawn at any time in the desert (they don't burn)
+            if in_desert and len([m for m in world.mobs if m.m_type == "husk"]) < 5:
+                if random.random() < 0.004:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-400, 400])) % WORLD_PIXELS, 50, "husk"))
+            # Camels spawn during the day in the desert
+            if in_desert and (2000 < t < 12000) and len([m for m in world.mobs if m.m_type == "camel"]) < 3:
+                if random.random() < 0.002:
+                    world.mobs.append(Mob((player.rect.x + random.choice([-500, 500])) % WORLD_PIXELS, 50, "camel"))
                 
             for mob in world.mobs[:]:
                 mob.update(world, player)
