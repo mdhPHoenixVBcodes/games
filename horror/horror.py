@@ -69,8 +69,9 @@ def join_lan_game(host_ip):
         lan_peer_socket.connect((host_ip, LAN_PORT))
         lan_peer_socket.settimeout(None)
         network_connected = True
+        print("Found host -> ", host_ip)
         start_network_receiver(lan_peer_socket)
-        print("Connected to host.")
+        print("Connected to host!")
         return True
     except OSError as exc:
         print(f"Could not connect to {host_ip}:{LAN_PORT} ({exc})")
@@ -528,6 +529,30 @@ jumpscare_duration = 0.85
 jumpscare_timer = 0
 jumpscare_active = False
 jumpscare_armed = True
+monster_search_mode = False
+monster_search_timer = 0
+monster_search_duration = 8.0
+monster_search_repath_timer = 0
+monster_last_seen_pos = Vec3(0, 2, 0)
+monster_search_target = Vec3(0, 2, 0)
+monster_search_radius = 12.0
+monster_search_radius_max = 48.0
+monster_search_radius_growth = 4.5
+
+
+def clamp_world_pos(pos):
+    return Vec3(
+        clamp(pos.x, WORLD_MIN * GRID_SIZE, WORLD_MAX * GRID_SIZE),
+        pos.y,
+        clamp(pos.z, WORLD_MIN * GRID_SIZE, WORLD_MAX * GRID_SIZE),
+    )
+
+
+def pick_search_target(center_world, radius):
+    offset_x = random.uniform(-radius, radius)
+    offset_z = random.uniform(-radius, radius)
+    target = Vec3(center_world.x + offset_x, monster.y, center_world.z + offset_z)
+    return clamp_world_pos(target)
 
 
 def world_to_grid(x, z):
@@ -820,6 +845,7 @@ def hide_respawn_menu():
 def respawn_player():
     global player_health, player_stamina, player_attack_cooldown, stamina_rest_timer, stamina_flash_timer
     global game_over, jumpscare_active, jumpscare_timer, jumpscare_armed, monster_path, path_repath_timer, spawn_protection_timer
+    global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
 
     game_over = False
     jumpscare_active = False
@@ -827,6 +853,12 @@ def respawn_player():
     jumpscare_armed = True
     monster_path = []
     path_repath_timer = 0
+    monster_search_mode = False
+    monster_search_timer = 0
+    monster_search_repath_timer = 0
+    monster_last_seen_pos = Vec3(player.position.x, monster.y, player.position.z)
+    monster_search_target = monster_last_seen_pos
+    monster_search_radius = 12.0
 
     player.position = (12, 12, 12)
     player.rotation = (0, 0, 0)
@@ -872,6 +904,7 @@ respawn_button.on_click = respawn_player
 def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
     global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health
+    global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
 
     if game_over:
         return
@@ -943,6 +976,35 @@ def update():
             update_hud()
             return
 
+        if can_detect_player:
+            monster_search_mode = False
+            monster_search_timer = 0
+            monster_search_repath_timer = 0
+            monster_last_seen_pos = Vec3(target_entity.x, monster.y, target_entity.z)
+            monster_search_radius = 12.0
+        else:
+            if not monster_search_mode:
+                monster_search_mode = True
+                monster_search_timer = monster_search_duration
+                monster_search_repath_timer = 0
+                monster_last_seen_pos = Vec3(target_entity.x, monster.y, target_entity.z)
+                monster_search_radius = 12.0
+                monster_search_target = pick_search_target(monster_last_seen_pos, monster_search_radius)
+
+            monster_search_timer = max(0, monster_search_timer - time.dt)
+            monster_search_radius = min(
+                monster_search_radius_max,
+                12.0 + (monster_search_duration - monster_search_timer) * monster_search_radius_growth
+            )
+
+            if monster_search_timer > monster_search_duration * 0.45:
+                monster_search_target = monster_last_seen_pos
+            else:
+                if monster_search_repath_timer <= 0 or (monster.position - monster_search_target).length() < 1.0:
+                    monster_search_target = pick_search_target(monster_last_seen_pos, monster_search_radius)
+                    monster_search_repath_timer = 1.75
+                monster_search_repath_timer = max(0, monster_search_repath_timer - time.dt)
+
         if not jumpscare_active and monster_distance > jumpscare_reset_distance:
             jumpscare_armed = True
 
@@ -977,11 +1039,16 @@ def update():
             monster_path = []
 
         path_repath_timer -= time.dt
-        if should_chase and (path_repath_timer <= 0 or not monster_path):
-            monster_path = build_path(monster.position, target_entity.position)
+        if should_chase:
+            target_goal = target_entity.position
+        else:
+            target_goal = monster_search_target
+
+        if path_repath_timer <= 0 or not monster_path:
+            monster_path = build_path(monster.position, target_goal)
             path_repath_timer = path_repath_interval
 
-        if should_chase and monster_path:
+        if monster_path:
             while len(monster_path) > 1:
                 next_cell = monster_path[1]
                 target = grid_to_world(next_cell)
@@ -1000,11 +1067,20 @@ def update():
                 face_target(Vec3(target_entity.x, monster.y, target_entity.z))
                 is_moving = True
         else:
-            monster_path = []
-            face_target(Vec3(target_entity.x, monster.y, target_entity.z))
+            search_vector = Vec3(target_goal.x - monster.x, 0, target_goal.z - monster.z)
+            if search_vector.length() > 0.15:
+                search_speed = MONSTER_RUN_SPEED * 0.45
+                monster.position += search_vector.normalized() * search_speed * time.dt
+                face_target(Vec3(target_goal.x, monster.y, target_goal.z))
+                is_moving = True
+            else:
+                face_target(Vec3(target_goal.x, monster.y, target_goal.z))
+                monster_path = []
+                if monster_search_mode and monster_search_timer <= 0:
+                    monster_search_mode = False
 
         player_attack_cooldown = max(0, player_attack_cooldown - time.dt)
-        if spawn_protection_timer <= 0 and monster_distance <= monster_attack_range and player_attack_cooldown <= 0:
+        if should_chase and spawn_protection_timer <= 0 and monster_distance <= monster_attack_range and player_attack_cooldown <= 0:
             if not target_crouching or monster_distance <= monster_crouch_detection_range:
                 if target_is_remote:
                     remote_player_health = max(0, remote_player_health - monster_attack_damage)
