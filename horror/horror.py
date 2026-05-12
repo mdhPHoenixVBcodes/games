@@ -261,7 +261,7 @@ for tx, tz in tree_positions:
 # --- THE MONSTER MODEL ---
 monster = Entity(
     position=(0, 2, 0),
-    scale=2,
+    scale=5.0,
     rotation_y=270
 )
 MONSTER_FACE_OFFSET = 90
@@ -271,43 +271,14 @@ monster_run_phase = 0
 
 monster_body = Entity(
     parent=monster,
-    model='parts/model_download_body.obj',
-    color=color.rgb(150/255, 30/255, 30/255)
+    model='tmp_k7h6836.glb',
+    scale=3.2
 )
-
-monster_left_arm = Entity(
-    parent=monster,
-    model='parts/model_download_left_arm.obj',
-    color=color.rgb(150/255, 30/255, 30/255)
-)
-
-monster_right_arm = Entity(
-    parent=monster,
-    model='parts/model_download_right_arm.obj',
-    color=color.rgb(150/255, 30/255, 30/255)
-)
-
-monster_left_leg = Entity(
-    parent=monster,
-    model='parts/model_download_left_leg.obj',
-    color=color.rgb(150/255, 30/255, 30/255)
-)
-
-monster_right_leg = Entity(
-    parent=monster,
-    model='parts/model_download_right_leg.obj',
-    color=color.rgb(150/255, 30/255, 30/255)
-)
-
-monster_limb_parts = [monster_left_arm, monster_right_arm, monster_left_leg, monster_right_leg]
-monster_left_arm_base = monster_left_arm.position
-monster_right_arm_base = monster_right_arm.position
-monster_left_leg_base = monster_left_leg.position
-monster_right_leg_base = monster_right_leg.position
 
 # --- THE PLAYER ---
 player = FirstPersonController()
-player.cursor.color = color.red
+player.cursor.color = color.white
+player.gravity = 1
 player_legs = Entity(parent=player, model='cube', color=color.blue, scale=(0.8, 0.6, 0.4), position=(0, 0.3, 0))
 player_torso = Entity(parent=player, model='cube', color=color.red, scale=(1, 0.8, 0.5), position=(0, 1, 0))
 player_head = Entity(parent=player, model='cube', color=color.yellow, scale=(0.6, 0.6, 0.6), position=(0, 1.7, 0))
@@ -318,7 +289,8 @@ remote_player_torso = Entity(parent=remote_player, model='cube', color=color.red
 remote_player_head = Entity(parent=remote_player, model='cube', color=color.yellow, scale=(0.6, 0.6, 0.6), position=(0, 1.7, 0))
 remote_player_name_tag = Text(text="Friend", parent=remote_player, position=(0, 3, 0), scale=10, origin=(0, 0), color=color.white, enabled=False)
 # Starting position in the small clearing facing the monster
-player.position = (12, 8, 12)
+PLAYER_SPAWN_POS = Vec3(12, 16, 12)
+player.position = PLAYER_SPAWN_POS
 player_default_height = player.height
 player_default_pivot_y = player.camera_pivot.y
 player_crouch_height = 1.1
@@ -326,6 +298,8 @@ player_crouch_pivot_y = 1.1
 player_normal_fov = camera.fov
 player_crouch_fov = 75
 spawn_protection_timer = 8.0
+fly_mode = False
+fly_speed = 10
 
 player_health = 100
 player_stamina = 100
@@ -860,12 +834,14 @@ def respawn_player():
     monster_search_target = monster_last_seen_pos
     monster_search_radius = 12.0
 
-    player.position = (12, 12, 12)
+    player.position = PLAYER_SPAWN_POS
     player.rotation = (0, 0, 0)
     player.rotation_y = 0
     player.height = player_default_height
     player.camera_pivot.y = player_default_pivot_y
     camera.fov = player_normal_fov
+    if hasattr(player, 'velocity'):
+        player.velocity = Vec3(0, 0, 0)
 
     player_health = 100
     player_stamina = 100
@@ -905,6 +881,7 @@ def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
     global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
+    global fly_mode
 
     if game_over:
         return
@@ -949,6 +926,16 @@ def update():
         stamina_rest_timer = max(0, stamina_rest_timer - time.dt)
         if stamina_rest_timer <= 0 and player_stamina < player_max_stamina:
             player_stamina = min(player_max_stamina, player_stamina + STAMINA_REGEN_RATE * time.dt)
+
+    if fly_mode:
+        player.gravity = 0
+        player.speed = max(player.speed, 7)
+        if held_keys['space']:
+            player.y += fly_speed * time.dt
+        if held_keys['left control'] or held_keys['right control']:
+            player.y -= fly_speed * time.dt
+    else:
+        player.gravity = 1
 
     stamina_flash_timer = max(0, stamina_flash_timer - time.dt)
 
@@ -1080,6 +1067,20 @@ def update():
                 if monster_search_mode and monster_search_timer <= 0:
                     monster_search_mode = False
 
+        if is_moving:
+            monster_run_phase += time.dt * 12
+            swing = math.sin(monster_run_phase) * 28
+            body_bob = math.sin(monster_run_phase * 2) * 0.22
+            body_tilt = math.sin(monster_run_phase) * 6
+            body_roll = math.cos(monster_run_phase * 1.5) * 3
+            monster_body.y = lerp(monster_body.y, body_bob, time.dt * 10)
+            monster_body.rotation_x = lerp(monster_body.rotation_x, body_tilt, time.dt * 10)
+            monster_body.rotation_z = lerp(monster_body.rotation_z, body_roll, time.dt * 10)
+        else:
+            monster_body.y = lerp(monster_body.y, 0, time.dt * 8)
+            monster_body.rotation_x = lerp(monster_body.rotation_x, 0, time.dt * 8)
+            monster_body.rotation_z = lerp(monster_body.rotation_z, 0, time.dt * 8)
+
         player_attack_cooldown = max(0, player_attack_cooldown - time.dt)
         if should_chase and spawn_protection_timer <= 0 and monster_distance <= monster_attack_range and player_attack_cooldown <= 0:
             if not target_crouching or monster_distance <= monster_crouch_detection_range:
@@ -1092,27 +1093,8 @@ def update():
                         return
                 player_attack_cooldown = monster_attack_interval
 
-    # 5. Run cycle for separated limbs
-    if is_moving:
-        monster_run_phase += time.dt * 12
-        swing = math.sin(monster_run_phase) * 32
-        lift = abs(math.sin(monster_run_phase)) * 0.06
-        monster_left_arm.rotation_x = swing * 0.6
-        monster_left_leg.rotation_x = -swing * 0.9
-        monster_right_leg.rotation_x = swing * 0.9
-        monster_left_arm.y = lerp(monster_left_arm.y, monster_left_arm_base.y + lift, time.dt * 10)
-        monster_left_leg.y = lerp(monster_left_leg.y, monster_left_leg_base.y + lift * 0.3, time.dt * 10)
-        monster_right_leg.y = lerp(monster_right_leg.y, monster_right_leg_base.y + lift * 0.3, time.dt * 10)
-    else:
-        for part in monster_limb_parts:
-            part.rotation_x = lerp(part.rotation_x, 0, time.dt * 8)
-        monster_left_arm.y = lerp(monster_left_arm.y, monster_left_arm_base.y, time.dt * 8)
-        monster_right_arm.y = lerp(monster_right_arm.y, monster_right_arm_base.y, time.dt * 8)
-        monster_left_leg.y = lerp(monster_left_leg.y, monster_left_leg_base.y, time.dt * 8)
-        monster_right_leg.y = lerp(monster_right_leg.y, monster_right_leg_base.y, time.dt * 8)
-
-    # 6. Continuous Jumping Logic
-    if held_keys['space'] and player.grounded:
+    # 5. Continuous Jumping Logic
+    if not fly_mode and held_keys['space'] and player.grounded:
         player.jump()
 
     broadcast_network_state(is_moving)
@@ -1121,6 +1103,7 @@ def update():
 # --- INPUT HANDLING ---
 def input(key):
     # Unlocks the mouse cursor so you can close the window easily
+    global fly_mode
     if key == 'escape':
         if inventory_open:
             hide_inventory()
@@ -1128,6 +1111,15 @@ def input(key):
         else:
             mouse.locked = not mouse.locked
             mouse.visible = not mouse.locked
+    elif key in ('\\', 'backslash'):
+        fly_mode = not fly_mode
+        if fly_mode:
+            player.gravity = 0
+            player.velocity = Vec3(0, 0, 0) if hasattr(player, 'velocity') else None
+            mouse.locked = True
+            mouse.visible = False
+        else:
+            player.gravity = 1
     elif key == 'e' and not game_over:
         if inventory_open:
             hide_inventory()
