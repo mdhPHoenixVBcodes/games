@@ -989,7 +989,7 @@ def update():
                 monster_search_repath_timer = 0
                 monster_last_seen_pos = Vec3(target_entity.x, monster.y, target_entity.z)
                 monster_search_radius = 12.0
-                monster_search_target = pick_search_target(monster_last_seen_pos, monster_search_radius)
+                monster_search_target = Vec3(monster_last_seen_pos.x, monster.y, monster_last_seen_pos.z)
 
             monster_search_timer = max(0, monster_search_timer - time.dt)
             monster_search_radius = min(
@@ -997,13 +997,14 @@ def update():
                 12.0 + (monster_search_duration - monster_search_timer) * monster_search_radius_growth
             )
 
-            if monster_search_timer > monster_search_duration * 0.45:
-                monster_search_target = monster_last_seen_pos
-            else:
-                if monster_search_repath_timer <= 0 or (monster.position - monster_search_target).length() < 1.0:
-                    monster_search_target = pick_search_target(monster_last_seen_pos, monster_search_radius)
-                    monster_search_repath_timer = 1.75
-                monster_search_repath_timer = max(0, monster_search_repath_timer - time.dt)
+            if (monster.position - monster_search_target).length() < 1.0:
+                monster_search_target = pick_search_target(monster_last_seen_pos, monster_search_radius)
+                monster_search_repath_timer = 1.5
+            elif monster_search_repath_timer <= 0:
+                monster_search_target = pick_search_target(monster_last_seen_pos, monster_search_radius)
+                monster_search_repath_timer = 1.5
+
+            monster_search_repath_timer = max(0, monster_search_repath_timer - time.dt)
 
         if not jumpscare_active and monster_distance > jumpscare_reset_distance:
             jumpscare_armed = True
