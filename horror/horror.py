@@ -44,9 +44,10 @@ def start_lan_host():
     lan_server_socket.listen(1)
 
     def wait_for_friend():
-        global lan_peer_socket
+        global lan_peer_socket, network_connected
         print(f"LAN host ready on {get_local_ip()}:{LAN_PORT}")
         print("No admin rights needed for this port.")
+        print(f"Listening on port {LAN_PORT}...")
         print("Waiting for friend to join...")
         try:
             lan_peer_socket, addr = lan_server_socket.accept()
@@ -62,7 +63,7 @@ def start_lan_host():
 def join_lan_game(host_ip):
     global lan_peer_socket, network_connected
     lan_peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    lan_peer_socket.settimeout(5)
+    lan_peer_socket.settimeout(15)
     print(f"Connecting to {host_ip}:{LAN_PORT}...")
     try:
         lan_peer_socket.connect((host_ip, LAN_PORT))
@@ -72,7 +73,8 @@ def join_lan_game(host_ip):
         print("Connected to host.")
         return True
     except OSError as exc:
-        print(f"Could not connect: {exc}")
+        print(f"Could not connect to {host_ip}:{LAN_PORT} ({exc})")
+        print("If the IP is correct, check Windows Firewall and make sure both laptops are on the same Wi-Fi/LAN.")
         lan_peer_socket.close()
         lan_peer_socket = None
         return False
