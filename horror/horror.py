@@ -124,10 +124,7 @@ def send_network_state(payload):
 
 def startup_menu():
     print("=== HORROR STARTUP ===")
-    try:
-        username = input("Enter username: ").strip() or "Player"
-    except EOFError:
-        username = "Player"
+    username = "Player"
 
     while True:
         print("Choose mode:")
@@ -142,6 +139,11 @@ def startup_menu():
             return username, "single_player", None
 
         if choice in ("2", "lan"):
+            try:
+                username = input("Enter username for LAN: ").strip() or "Player"
+            except EOFError:
+                username = "Player"
+
             while True:
                 print("LAN mode:")
                 print("1) Host")
@@ -235,7 +237,7 @@ for i in range(400):
     )
     tree_positions.append((tx, tz))
     
-    # Dark, shadowy leaves at the top
+# Dark, shadowy leaves at the top
     leaves = Entity(
         parent=tree,
         model='sphere',
@@ -250,6 +252,50 @@ TREE_RADIUS = 2.8
 
 # Cache blocked path cells so pathfinding doesn't rescan every tree each frame.
 blocked_cells = set()
+
+cross_markers = []
+for gx in range(-90, 91, 10):
+    for gz in range(-90, 91, 10):
+        if abs(gx) < 10 and abs(gz) < 15:
+            continue
+        if random.random() < 0.30:
+            continue
+        jitter_x = random.uniform(-4, 4)
+        jitter_z = random.uniform(-4, 4)
+        stretch_y = random.uniform(2.4, 3.3)
+        cross_markers.append(Entity(
+            model='tmpdwfhail6.glb',
+            position=(gx + jitter_x, 0.50, gz + jitter_z),
+            scale=(random.uniform(2.1, 2.8), stretch_y, random.uniform(2.1, 2.8)),
+            rotation_x=-45,
+            collider='box',
+            color=color.white
+        ))
+        rock_grid_x = round(gx / GRID_SIZE)
+        rock_grid_z = round(gz / GRID_SIZE)
+        for dx in range(-1, 2):
+            for dz in range(-1, 2):
+                blocked_cells.add((rock_grid_x + dx, rock_grid_z + dz))
+
+random_rock_x = random.choice([-1, 1]) * random.uniform(72, 86)
+random_rock_z = random.choice([-1, 1]) * random.uniform(72, 86)
+if not (abs(random_rock_x) < 10 and abs(random_rock_z) < 15):
+    axe_world = Entity(
+        model='tmp4ehe8uj8.glb',
+        position=(random_rock_x, 1.15, random_rock_z),
+        scale=(3.2, 3.2, 3.2),
+        rotation=(0, 0, 90),
+        collider='box',
+        color=color.white
+    )
+    random_rock_grid_x = round(random_rock_x / GRID_SIZE)
+    random_rock_grid_z = round(random_rock_z / GRID_SIZE)
+    for dx in range(-1, 2):
+        for dz in range(-1, 2):
+            blocked_cells.add((random_rock_grid_x + dx, random_rock_grid_z + dz))
+else:
+    axe_world = None
+
 GRID_PADDING = int(math.ceil(TREE_RADIUS / GRID_SIZE)) + 1
 for tx, tz in tree_positions:
     gx = round(tx / GRID_SIZE)
@@ -261,10 +307,10 @@ for tx, tz in tree_positions:
 # --- THE MONSTER MODEL ---
 monster = Entity(
     position=(0, 2, 0),
-    scale=5.0,
+    scale=2.4,
     rotation_y=270
 )
-MONSTER_FACE_OFFSET = 90
+MONSTER_FACE_OFFSET = 45
 MONSTER_TURN_SPEED = 8
 MONSTER_RUN_SPEED = 7
 monster_run_phase = 0
@@ -272,7 +318,8 @@ monster_run_phase = 0
 monster_body = Entity(
     parent=monster,
     model='tmp_k7h6836.glb',
-    scale=3.2
+    scale=2.0,
+    position=(0, 0, 0)
 )
 
 # --- THE PLAYER ---
@@ -288,6 +335,14 @@ remote_player_legs = Entity(parent=remote_player, model='cube', color=color.blue
 remote_player_torso = Entity(parent=remote_player, model='cube', color=color.red, scale=(1, 0.8, 0.5), position=(0, 1, 0))
 remote_player_head = Entity(parent=remote_player, model='cube', color=color.yellow, scale=(0.6, 0.6, 0.6), position=(0, 1.7, 0))
 remote_player_name_tag = Text(text="Friend", parent=remote_player, position=(0, 3, 0), scale=10, origin=(0, 0), color=color.white, enabled=False)
+axe_hand = Entity(
+    parent=camera,
+    model='tmp4ehe8uj8.glb',
+    position=(0.78, -0.58, 1.30),
+    rotation=(15, 225, 90),
+    scale=(0.35, 0.35, 0.35),
+    enabled=False
+)
 # Starting position in the small clearing facing the monster
 PLAYER_SPAWN_POS = Vec3(12, 16, 12)
 player.position = PLAYER_SPAWN_POS
@@ -299,6 +354,7 @@ player_normal_fov = camera.fov
 player_crouch_fov = 75
 spawn_protection_timer = 8.0
 fly_mode = False
+fly_exit_protection_timer = 0.0
 fly_speed = 10
 
 player_health = 100
@@ -366,6 +422,7 @@ stamina_value_text = Text(
 )
 
 selected_hotbar_slot = 1
+axe_picked_up = False
 hotbar_slots = []
 hotbar_labels = []
 hotbar_base_colors = [
@@ -397,6 +454,16 @@ for i in range(4):
     )
     hotbar_slots.append(slot)
     hotbar_labels.append(label)
+
+axe_prompt = Text(
+    text='PRESS [E] TO PICKUP AXE',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=1.0,
+    position=(0, -0.28),
+    color=color.white,
+    enabled=False
+)
 
 inventory_open = False
 inventory_panel = Entity(
@@ -881,19 +948,25 @@ def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
     global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
-    global fly_mode
+    global fly_mode, fly_exit_protection_timer
 
     if game_over:
         return
 
     spawn_protection_timer = max(0, spawn_protection_timer - time.dt)
+    fly_exit_protection_timer = max(0, fly_exit_protection_timer - time.dt)
 
     player_name_tag.look_at(camera, Vec3.back)
     if remote_player.enabled:
         remote_player_name_tag.look_at(camera, Vec3.back)
 
+    if axe_world and not axe_picked_up and not game_over and not inventory_open and mouse.hovered_entity == axe_world:
+        axe_prompt.enabled = True
+    else:
+        axe_prompt.enabled = False
+
     # If the player falls out of the map, treat it as death.
-    if spawn_protection_timer <= 0 and player.y < -20:
+    if not fly_mode and fly_exit_protection_timer <= 0 and spawn_protection_timer <= 0 and player.y < -20:
         player_health = 0
         trigger_game_over()
         return
@@ -929,6 +1002,8 @@ def update():
 
     if fly_mode:
         player.gravity = 0
+        if hasattr(player, 'velocity'):
+            player.velocity = Vec3(0, 0, 0)
         player.speed = max(player.speed, 7)
         if held_keys['space']:
             player.y += fly_speed * time.dt
@@ -1069,18 +1144,15 @@ def update():
 
         if is_moving:
             monster_run_phase += time.dt * 12
-            swing = math.sin(monster_run_phase) * 28
-            body_bob = math.sin(monster_run_phase * 2) * 0.22
-            body_tilt = math.sin(monster_run_phase) * 6
-            body_roll = math.cos(monster_run_phase * 1.5) * 3
-            monster_body.y = lerp(monster_body.y, body_bob, time.dt * 10)
-            monster_body.rotation_x = lerp(monster_body.rotation_x, body_tilt, time.dt * 10)
-            monster_body.rotation_z = lerp(monster_body.rotation_z, body_roll, time.dt * 10)
+            body_bob = math.sin(monster_run_phase * 0.5) * 0.05
+            body_sway = math.sin(monster_run_phase) * 4
+            monster_body.y = lerp(monster_body.y, body_bob, time.dt * 8)
+            monster_body.rotation_x = lerp(monster_body.rotation_x, -4, time.dt * 8)
+            monster_body.rotation_z = lerp(monster_body.rotation_z, body_sway, time.dt * 6)
         else:
             monster_body.y = lerp(monster_body.y, 0, time.dt * 8)
             monster_body.rotation_x = lerp(monster_body.rotation_x, 0, time.dt * 8)
             monster_body.rotation_z = lerp(monster_body.rotation_z, 0, time.dt * 8)
-
         player_attack_cooldown = max(0, player_attack_cooldown - time.dt)
         if should_chase and spawn_protection_timer <= 0 and monster_distance <= monster_attack_range and player_attack_cooldown <= 0:
             if not target_crouching or monster_distance <= monster_crouch_detection_range:
@@ -1103,7 +1175,7 @@ def update():
 # --- INPUT HANDLING ---
 def input(key):
     # Unlocks the mouse cursor so you can close the window easily
-    global fly_mode
+    global fly_mode, axe_picked_up, selected_hotbar_slot
     if key == 'escape':
         if inventory_open:
             hide_inventory()
@@ -1115,11 +1187,27 @@ def input(key):
         fly_mode = not fly_mode
         if fly_mode:
             player.gravity = 0
-            player.velocity = Vec3(0, 0, 0) if hasattr(player, 'velocity') else None
+            if hasattr(player, 'velocity'):
+                player.velocity = Vec3(0, 0, 0)
+            if player.y < 5:
+                player.y = 5
             mouse.locked = True
             mouse.visible = False
         else:
             player.gravity = 1
+            fly_exit_protection_timer = 2.5
+            if hasattr(player, 'velocity'):
+                player.velocity = Vec3(0, 0, 0)
+            if player.y < 5:
+                player.y = 5
+    elif key == 'e' and axe_world and not axe_picked_up and mouse.hovered_entity == axe_world:
+        axe_picked_up = True
+        selected_hotbar_slot = 1
+        hotbar_labels[0].text = 'AXE'
+        axe_world.enabled = False
+        axe_world.collider = None
+        axe_hand.enabled = True
+        axe_prompt.enabled = False
     elif key == 'e' and not game_over:
         if inventory_open:
             hide_inventory()
@@ -1128,7 +1216,6 @@ def input(key):
         else:
             show_inventory()
     elif key in ('1', '2', '3', '4'):
-        global selected_hotbar_slot
         selected_hotbar_slot = int(key)
 
 # Run the game!
