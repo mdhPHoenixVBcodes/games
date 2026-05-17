@@ -13,102 +13,104 @@ To run these games, you will need **Python 3.x** installed on your system. You w
 ```bash
 pip install pygame ursina
 ```
-Pls delete savegame.json cuz that's technically my data
+> Pls delete savegame.json cuz that's technically my data
 
-🎮 Included Projects
-1. 3D Adventure Dungeon (3dadventure.py)
-This game is still in production so bugs may occur.
+# 🎮 Included Projects
+## 1. 3D Adventure Dungeon (3dadventure.py)
+### This game is still in production so bugs may occur.
 A multi-phase 3D action-survival game built with the ursina engine. Progress through different dimensions, talk to NPCs, and defeat bosses.
 
 Features: Multiple levels (Plains, Safe Zone, Final Arena etc.), interactive NPCs, unlockable companions, team up abilities, melee and ranged combat, powers, health UI, and a functioning Save/Load system.
 
-Controls: * W, A, S, D - Move
+**Controls:**
 
-Space - Jump
+`W, A, S, D` - Move
 
-Left Click - Sword Attack
+`Space` - Jump
 
-Right Click - Shoot Arrow (requires Bow)
+`Left Click` - Sword Attack
 
-E - Throw Shockwave Grenade
+`Right Click` - Shoot Arrow (requires Bow)
 
-F - Interact with NPCs
+`E` - Throw Shockwave Grenade
 
-8 - Save Game
+`F` - Interact with NPCs
 
-9 - Load Game
+`8` - Save Game
 
-0 - Pause/Main Menu
+`9` - Load Game
 
-Esc - Main Menu
+`0` - Pause/Main Menu
 
-2. LAN Survival Horror (horror.py)
+`Esc` - Main Menu
+
+## 2. LAN Survival Horror (horror.py)
 A terrifying 3D survival horror game built with the ursina engine. Play alone or brave the woods with a friend.
 
 Features: Single-player and LAN multiplayer modes via a terminal startup menu, dense fog and procedural forest generation, stamina/health UI, a terrifying monster with dynamic pathfinding and jumpscares, and an interactable inventory system.
 
-Controls:
+**Controls:**
 
-W, A, S, D - Move
+`W, A, S, D` - Move
 
-E - Interact / Pick up items (like the Axe)
+`E` - Interact / Pick up items (like the Axe)
 
-Esc - Pause / Mouse Unlock / Close Inventory
+`Esc` - Pause / Mouse Unlock / Close Inventory
 
-3. 2D PyCraft (mc.py)
+## 3. 2D PyCraft (mc.py)
 A sandbox game built using pygame.
 
 Features: Procedural terrain generation (dirt, grass, stone, ores, trees), block mining and placing, hotbar and inventory system, basic crafting mechanics (planks, sticks, tools), tool durability, gravity physics, and a day/night cycle.
 
-Controls:
+**Controls:**
 
-A, D - Move left/right
+`A, D` - Move left/right
 
-Space - Jump
+`Space` - Jump
 
-Left Click - Mine block
+`Left Click` - Mine block
 
-Right Click - Place selected block
+`Right Click` - Place selected block
 
-1-9 - Select hotbar slot
+`1-9` - Select hotbar slot
 
-E - Open inventory
+`E` - Open inventory
 
-F - Change Mining Mode
+`F` - Change Mining Mode
 
-4. Lego Base Defense (lego.py)
+## 4. Lego Base Defense (lego.py)
 A humorous 3D base-building and collecting game created using the ursina engine.
 
 Features: Economy and saving/loading system, custom AI bases, procedural environment generation with pyramids and lego-style trees, and interactive meme-based characters (Brainrots) that you can buy or steal.
 
-Controls:
+**Controls:**
 
-W, A, S, D - Move
+`W, A, S, D` - Move
 
-E - Buy from Conveyor or Steal from Enemy Base
+`E` - Buy from Conveyor or Steal from Enemy Base
 
-Q - Drop carried item at your base
+`Q` - Drop carried item at your base
 
-5. Time Survivor (timesurvivor.py)
+## 5. Time Survivor (timesurvivor.py)
 A fast-paced 2D top-down arena survival game using Python's turtle module.
 
 Features: Endless waves of enemies, directional shooting mechanics, AoE shockwave attacks, spawnable powerups (speed boost, damage boost), and a survival timer.
 
-Controls:
+**Controls:**
 
-W, A, S, D - Move
+`W, A, S, D` - Move
 
-K - Shoot
+`K` - Shoot
 
-E - Shockwave attack
+`E` - Shockwave attack
 
-Space - Pause
+`Space` - Pause
 
-R - Restart
+`R` - Restart
 
-6. Interactive Turtle Drawer (tmnt.py)
+## 6. Interactive Turtle Drawer (tmnt.py)
 A console-driven interactive drawing program using the turtle graphics module.
 
 Features: Terminal-based inputs translate directly to visual drawing commands on the canvas.
 
-Controls: Follow the on-screen terminal prompts to enter movement distances and turning angles (r for right, l for left). Type restart to clear...
+**Controls:** Follow the on-screen terminal prompts to enter movement distances and turning angles (r for right, l for left). Type restart to clear...
