@@ -6,6 +6,9 @@ import random
 import heapq
 import socket
 import threading
+import os
+from direct.interval.IntervalGlobal import Parallel, LerpHprInterval, LerpPosInterval, LerpQuatInterval
+from panda3d.core import Quat
 
 # High, unprivileged port so Windows does not require admin rights.
 LAN_PORT = 55600
@@ -22,6 +25,86 @@ remote_monster_state = None
 remote_player_health = 100
 remote_player_crouching = False
 remote_player_name = "Friend"
+
+current_save_slot = 1
+loaded_save_data = None
+
+
+def safe_entity(model_path, **kwargs):
+    try:
+        return Entity(model=model_path, **kwargs)
+    except Exception as exc:
+        print(f"Failed to load model '{model_path}': {exc}")
+        return Entity(model='cube', **kwargs)
+
+
+def animate_node_break(node, pos_delta, hpr_delta, duration=0.18):
+    start_pos = node.getPos()
+    start_hpr = node.getHpr()
+    Parallel(
+        LerpPosInterval(node, duration, start_pos + pos_delta, startPos=start_pos),
+        LerpHprInterval(node, duration, start_hpr + hpr_delta, startHpr=start_hpr),
+    ).start()
+
+
+def animate_node_quat(node, axis, angle, duration=0.28):
+    start_quat = node.getQuat()
+    delta = Quat()
+    delta.setFromAxisAngle(angle, axis)
+    end_quat = start_quat * delta
+    LerpQuatInterval(node, duration, end_quat, startQuat=start_quat).start()
+
+
+def hide_node_later(node, delay):
+    invoke(node.hide, delay=delay)
+
+
+def save_game():
+    global current_save_slot
+    # We need to access player, player_health, etc. which are initialized later.
+    # Ursina globals are accessible once the script reaches that point.
+    data = {
+        'x': player.x,
+        'y': player.y,
+        'z': player.z,
+        'ry': player.rotation_y,
+        'health': player_health,
+        'axe_picked_up': axe_picked_up
+    }
+    filename = f"save_slot{current_save_slot}.json"
+    try:
+        with open(filename, 'w') as f:
+            json.dump(data, f)
+        print(f"Game saved to {filename}")
+        save_notification.enabled = True
+        save_notification.text = f"SAVED TO SLOT {current_save_slot}"
+        invoke(setattr, save_notification, 'enabled', False, delay=2)
+    except Exception as e:
+        print(f"Failed to save game: {e}")
+
+
+def load_game_state():
+    global player_health, axe_picked_up, loaded_save_data, selected_hotbar_slot
+    if not loaded_save_data:
+        return
+
+    data = loaded_save_data
+    player.position = (data.get('x', player.x), data.get('y', player.y), data.get('z', player.z))
+    player.rotation_y = data.get('ry', player.rotation_y)
+    player_health = data.get('health', 100)
+    axe_picked_up = data.get('axe_picked_up', False)
+
+    if axe_picked_up:
+        selected_hotbar_slot = 1
+        if axe_world:
+            axe_world.enabled = False
+            axe_world.collider = None
+        axe_hand.enabled = True
+        hotbar_labels[0].text = ''
+        if hotbar_icons[0]:
+            hotbar_icons[0].enabled = True
+    update_hud()
+
 
 
 # --- TERMINAL STARTUP MENU ---
@@ -123,6 +206,7 @@ def send_network_state(payload):
 
 
 def startup_menu():
+    global current_save_slot, loaded_save_data
     print("=== HORROR STARTUP ===")
     username = "Player"
 
@@ -136,7 +220,28 @@ def startup_menu():
             choice = "1"
 
         if choice in ("1", "single", "single player", "singleplayer"):
-            return username, "single_player", None
+            while True:
+                print("\n--- SINGLE PLAYER SLOTS ---")
+                for i in range(1, 4):
+                    filename = f"save_slot{i}.json"
+                    status = "(Existing Save)" if os.path.exists(filename) else "(Empty)"
+                    print(f"{i}) Slot {i} {status}")
+                print("b) Back")
+
+                slot_choice = input("Select slot (1-3) or 'b': ").strip().lower()
+                if slot_choice == 'b':
+                    break
+                if slot_choice in ("1", "2", "3"):
+                    current_save_slot = int(slot_choice)
+                    filename = f"save_slot{current_save_slot}.json"
+                    if os.path.exists(filename):
+                        try:
+                            with open(filename, 'r') as f:
+                                loaded_save_data = json.load(f)
+                        except:
+                            print("Error reading save file.")
+                    return username, "single_player", None
+            continue
 
         if choice in ("2", "lan"):
             try:
@@ -180,6 +285,8 @@ user_name, game_mode, lan_role = startup_menu()
 app = Ursina()
 window.icon = 'image.ico'
 background_music = Audio('horror.mp3', loop=True, autoplay=True, volume=0.6)
+low_health_sound = Audio('lwhealth.mp3', loop=True, autoplay=False, volume=0.8)
+
 
 # --- RENDER DISTANCE (OPTIMIZATION) ---
 camera.clip_plane_far = 30 # <--- Reduced to 20 for maximum performance!
@@ -206,10 +313,126 @@ wall_thickness = 2
 wall_height = 10
 wall_color = color.rgb(25/255, 35/255, 25/255)
 
-Entity(model='cube', scale=(200, wall_height, wall_thickness), position=(0, wall_height / 2, map_bounds), color=wall_color, collider='box')
-Entity(model='cube', scale=(200, wall_height, wall_thickness), position=(0, wall_height / 2, -map_bounds), color=wall_color, collider='box')
-Entity(model='cube', scale=(wall_thickness, wall_height, 200), position=(map_bounds, wall_height / 2, 0), color=wall_color, collider='box')
-Entity(model='cube', scale=(wall_thickness, wall_height, 200), position=(-map_bounds, wall_height / 2, 0), color=wall_color, collider='box')
+wall_north = Entity(model='cube', scale=(200, wall_height, wall_thickness), position=(0, wall_height / 2, map_bounds), color=wall_color, collider='box')
+wall_south = Entity(model='cube', scale=(200, wall_height, wall_thickness), position=(0, wall_height / 2, -map_bounds), color=wall_color, collider='box')
+wall_east = Entity(model='cube', scale=(wall_thickness, wall_height, 200), position=(map_bounds, wall_height / 2, 0), color=wall_color, collider='box')
+wall_west = Entity(model='cube', scale=(wall_thickness, wall_height, 200), position=(-map_bounds, wall_height / 2, 0), color=wall_color, collider='box')
+world_walls = [wall_north, wall_south, wall_east, wall_west]
+
+# Leave an opening in the north wall for the gate.
+GATE_OPENING_WIDTH = 120
+wall_north.enabled = False
+north_wall_side_width = (200 - GATE_OPENING_WIDTH) / 2
+wall_north_left = Entity(
+    model='cube',
+    scale=(north_wall_side_width, wall_height, wall_thickness),
+    position=(-((200 + GATE_OPENING_WIDTH) / 4), wall_height / 2, map_bounds),
+    color=wall_color,
+    collider='box'
+)
+wall_north_right = Entity(
+    model='cube',
+    scale=(north_wall_side_width, wall_height, wall_thickness),
+    position=((200 + GATE_OPENING_WIDTH) / 4, wall_height / 2, map_bounds),
+    color=wall_color,
+    collider='box'
+)
+world_walls = [wall_north_left, wall_north_right, wall_south, wall_east, wall_west]
+
+gate_model = safe_entity(
+    'mdels/gate1.gltf',
+    position=(0, wall_height / 2, map_bounds),
+    scale=5,
+    collider='box',
+    texture='mdels/gate1_tex1.png',
+    color=color.white
+)
+
+# --- LAND MODEL PLACEMENT ---
+# Place the stripped land_static.glb structure in a dedicated clearing at (50, 0, 50)
+LAND_POS = (50, 0, 50)
+LAND_CLEAR_RADIUS = 22  # No trees spawn within this radius
+
+land_model = safe_entity(
+    'mdels/land_static.glb',
+    position=LAND_POS,
+    scale=4,
+    color=color.white
+)
+
+# Invisible Ursina Entity used only for raycast hit detection
+land_collider = Entity(
+    position=LAND_POS,
+    collider='box',
+    scale=(18, 15, 18),
+    visible=False
+)
+
+door_hit_count = 0
+land_animation_enabled = True
+land_door_node = None
+land_door_base = None
+land_door_open = False
+land_break_nodes = {}
+land_break_base = {}
+
+door_matches = land_model.model.findAllMatches('**/group')
+if door_matches.getNumPaths() > 0:
+    door_node = door_matches.getPath(0)
+    if door_node is not None and not door_node.isEmpty():
+        land_door_node = door_node
+        land_door_base = (door_node.getPos(), door_node.getHpr())
+
+for anim_name, node_name in (
+    ('brke1', 'group9'),
+    ('brke2', 'group10'),
+    ('brke3', 'group11'),
+):
+    matches = land_model.model.findAllMatches(f'**/{node_name}')
+    if matches.getNumPaths() > 0:
+        node = matches.getPath(0)
+    else:
+        node = None
+
+    if node is not None and not node.isEmpty():
+        land_break_nodes[anim_name] = node
+        land_break_base[anim_name] = (node.getPos(), node.getHpr())
+
+
+def play_land_anim(name):
+    global land_animation_enabled, land_door_open
+    if not land_animation_enabled:
+        return
+    try:
+        if name == 'door' and land_door_node and land_door_base:
+            land_door_node.setPos(land_door_base[0])
+            land_door_node.setHpr(land_door_base[1])
+            animate_node_quat(land_door_node, Vec3(0, 1, 0), -72, duration=0.28)
+            land_door_open = True
+            invoke(setattr, land_collider, 'collider', None, delay=0.30)
+            invoke(setattr, land_collider, 'visible', False, delay=0.30)
+            return
+
+        node = land_break_nodes.get(name)
+        base = land_break_base.get(name)
+        if not node or not base:
+            return
+
+        node.setPos(base[0])
+        node.setHpr(base[1])
+        if name == 'brke1':
+            animate_node_break(node, Vec3(-0.08, -0.22, 0.10), Vec3(-8, 16, -18))
+            hide_node_later(node, 0.32)
+        elif name == 'brke2':
+            animate_node_break(node, Vec3(0.00, -0.32, 0.00), Vec3(0, 24, 0))
+            hide_node_later(node, 0.32)
+        elif name == 'brke3':
+            animate_node_break(node, Vec3(0.08, -0.40, -0.10), Vec3(8, 34, 18))
+            hide_node_later(node, 0.32)
+    except Exception as e:
+        print(f'Animation [{name}] error: {e}')
+        land_animation_enabled = False
+
 
 # --- DENSE FOREST GENERATION ---
 # We will generate hundreds of trees to make it a dense forest
@@ -217,9 +440,13 @@ tree_positions = []
 for i in range(400):
     tx = random.uniform(-90, 90)
     tz = random.uniform(-90, 90)
-    
+
     # Leave a small clearing in the middle for the player and monster
     if abs(tx) < 10 and abs(tz) < 15:
+        continue
+
+    # Leave a clearing around the land model
+    if math.hypot(tx - LAND_POS[0], tz - LAND_POS[2]) < LAND_CLEAR_RADIUS:
         continue
 
     # Randomize tree sizes to make it look natural
@@ -254,17 +481,20 @@ TREE_RADIUS = 2.8
 blocked_cells = set()
 
 cross_markers = []
+LAND_PROP_CLEAR_RADIUS = 34
 for gx in range(-90, 91, 10):
     for gz in range(-90, 91, 10):
         if abs(gx) < 10 and abs(gz) < 15:
+            continue
+        if math.hypot(gx - LAND_POS[0], gz - LAND_POS[2]) < LAND_PROP_CLEAR_RADIUS:
             continue
         if random.random() < 0.30:
             continue
         jitter_x = random.uniform(-4, 4)
         jitter_z = random.uniform(-4, 4)
         stretch_y = random.uniform(2.4, 3.3)
-        cross_markers.append(Entity(
-            model='tmpdwfhail6.glb',
+        cross_markers.append(safe_entity(
+            'mdels/tmpdwfhail6.glb',
             position=(gx + jitter_x, 0.50, gz + jitter_z),
             scale=(random.uniform(2.1, 2.8), stretch_y, random.uniform(2.1, 2.8)),
             rotation_x=-45,
@@ -279,9 +509,9 @@ for gx in range(-90, 91, 10):
 
 random_rock_x = random.choice([-1, 1]) * random.uniform(72, 86)
 random_rock_z = random.choice([-1, 1]) * random.uniform(72, 86)
-if not (abs(random_rock_x) < 10 and abs(random_rock_z) < 15):
-    axe_world = Entity(
-        model='tmp4ehe8uj8.glb',
+if not (abs(random_rock_x) < 10 and abs(random_rock_z) < 15) and math.hypot(random_rock_x - LAND_POS[0], random_rock_z - LAND_POS[2]) >= LAND_PROP_CLEAR_RADIUS:
+    axe_world = safe_entity(
+        'mdels/tmp4ehe8uj8.glb',
         position=(random_rock_x, 1.15, random_rock_z),
         scale=(3.2, 3.2, 3.2),
         rotation=(0, 0, 90),
@@ -312,12 +542,12 @@ monster = Entity(
 )
 MONSTER_FACE_OFFSET = 45
 MONSTER_TURN_SPEED = 8
-MONSTER_RUN_SPEED = 7
+MONSTER_RUN_SPEED = 6
 monster_run_phase = 0
 
-monster_body = Entity(
+monster_body = safe_entity(
+    'mdels/tmp_k7h6836.glb',
     parent=monster,
-    model='tmp_k7h6836.glb',
     scale=2.0,
     position=(0, 0, 0)
 )
@@ -335,16 +565,16 @@ remote_player_legs = Entity(parent=remote_player, model='cube', color=color.blue
 remote_player_torso = Entity(parent=remote_player, model='cube', color=color.red, scale=(1, 0.8, 0.5), position=(0, 1, 0))
 remote_player_head = Entity(parent=remote_player, model='cube', color=color.yellow, scale=(0.6, 0.6, 0.6), position=(0, 1.7, 0))
 remote_player_name_tag = Text(text="Friend", parent=remote_player, position=(0, 3, 0), scale=10, origin=(0, 0), color=color.white, enabled=False)
-axe_hand = Entity(
+axe_hand = safe_entity(
+    'mdels/tmp4ehe8uj8.glb',
     parent=camera,
-    model='tmp4ehe8uj8.glb',
-    position=(0.78, -0.58, 1.30),
-    rotation=(15, 225, 90),
+    position=(0.78, -0.65, 1.10),
+    rotation=(0, 90, 0),
     scale=(0.35, 0.35, 0.35),
     enabled=False
 )
 # Starting position in the small clearing facing the monster
-PLAYER_SPAWN_POS = Vec3(12, 16, 12)
+PLAYER_SPAWN_POS = Vec3(-12, 12, -12)
 player.position = PLAYER_SPAWN_POS
 player_default_height = player.height
 player_default_pivot_y = player.camera_pivot.y
@@ -365,10 +595,10 @@ stamina_rest_timer = 0
 stamina_flash_timer = 0
 game_over = False
 spawn_protection_timer = 8.0
-STAMINA_DRAIN_RATE = 10
-WALK_STAMINA_DRAIN_RATE = 2
-STAMINA_REGEN_RATE = 15
-STAMINA_REST_DELAY = 3
+STAMINA_DRAIN_RATE = 3
+WALK_STAMINA_DRAIN_RATE = 1
+STAMINA_REGEN_RATE = 20
+STAMINA_REST_DELAY = 2
 STAMINA_FLASH_TIME = 0.22
 
 HUD_BAR_WIDTH = 0.34
@@ -425,6 +655,7 @@ selected_hotbar_slot = 1
 axe_picked_up = False
 hotbar_slots = []
 hotbar_labels = []
+hotbar_icons = []
 hotbar_base_colors = [
     color.rgb(36, 36, 36),
     color.rgb(36, 36, 36),
@@ -454,9 +685,30 @@ for i in range(4):
     )
     hotbar_slots.append(slot)
     hotbar_labels.append(label)
+    icon = None
+    if i == 0:
+        icon = safe_entity(
+            'mdels/tmp4ehe8uj8.glb',
+            parent=slot,
+            position=(0, 0, -0.01),
+            rotation=(0, 90, 0),
+            scale=(0.22, 0.22, 0.22),
+            enabled=False
+        )
+    hotbar_icons.append(icon)
+
+door_prompt = Text(
+    text='PRESS [F] TO OPEN DOOR',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=1.0,
+    position=(0, -0.28),
+    color=color.white,
+    enabled=False
+)
 
 axe_prompt = Text(
-    text='PRESS [E] TO PICKUP AXE',
+    text='PRESS [F] TO PICKUP AXE',
     parent=camera.ui,
     origin=(0, 0),
     scale=1.0,
@@ -528,6 +780,27 @@ jumpscare_text = Text(
     position=(0, 0.02),
     color=color.rgba(255, 255, 255, 0)
 )
+
+save_notification = Text(
+    text='GAME SAVED',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=1.5,
+    position=(0, 0.35),
+    color=color.green,
+    enabled=False
+)
+
+save_button = Button(
+    text='SAVE GAME',
+    parent=camera.ui,
+    scale=(0.25, 0.08),
+    position=(0, -0.42),
+    color=color.azure,
+    enabled=False
+)
+save_button.on_click = save_game
+
 respawn_overlay = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(2.6, 1.6), z=5, enabled=False)
 respawn_title = Text(
     text='YOU DIED',
@@ -578,7 +851,7 @@ monster_last_seen_pos = Vec3(0, 2, 0)
 monster_search_target = Vec3(0, 2, 0)
 monster_search_radius = 12.0
 monster_search_radius_max = 48.0
-monster_search_radius_growth = 4.5
+monster_search_radius_growth = 7
 
 
 def clamp_world_pos(pos):
@@ -829,6 +1102,8 @@ def update_hud():
             slot.scale = (0.085, 0.085)
             slot.alpha = 0.35
 
+    axe_hand.enabled = axe_picked_up and selected_hotbar_slot == 1
+
 
 def set_gameplay_ui_enabled(enabled):
     health_label.enabled = enabled
@@ -943,6 +1218,32 @@ def trigger_game_over():
 
 respawn_button.on_click = respawn_player
 
+# --- AXE SWING & DOOR BREAK ---
+axe_swinging = False
+
+def swing_axe():
+    global axe_swinging
+    if axe_swinging:
+        return
+    axe_swinging = True
+    # Animate the hand axe forward (swing)
+    axe_hand.animate('rotation_x', -55, duration=0.12, curve=curve.linear)
+    invoke(reset_axe_swing, delay=0.22)
+
+
+def reset_axe_swing():
+    global axe_swinging
+    axe_hand.animate('rotation_x', 0, duration=0.12, curve=curve.linear)
+    axe_swinging = False
+
+
+def check_door_hit():
+    global door_hit_count
+    hit = raycast(camera.world_position, camera.forward, distance=5, ignore=[player])
+    if hit.hit and hit.entity == land_collider:
+        return True
+    return False
+
 # --- THE MASTER GAME LOOP ---
 def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
@@ -960,10 +1261,10 @@ def update():
     if remote_player.enabled:
         remote_player_name_tag.look_at(camera, Vec3.back)
 
-    if axe_world and not axe_picked_up and not game_over and not inventory_open and mouse.hovered_entity == axe_world:
-        axe_prompt.enabled = True
-    else:
-        axe_prompt.enabled = False
+    near_door = land_collider and distance(player.position, land_collider.position) < 10
+    door_prompt.enabled = bool(near_door and not game_over and not inventory_open)
+    near_axe = axe_world and not axe_picked_up and distance(player.position, axe_world.position) < 6
+    axe_prompt.enabled = bool(near_axe and not game_over and not inventory_open)
 
     # If the player falls out of the map, treat it as death.
     if not fly_mode and fly_exit_protection_timer <= 0 and spawn_protection_timer <= 0 and player.y < -20:
@@ -1169,6 +1470,11 @@ def update():
     if not fly_mode and held_keys['space'] and player.grounded:
         player.jump()
 
+    if player_health <= 30 and not low_health_sound.playing:
+        low_health_sound.play()
+    elif player_health > 30 and low_health_sound.playing:
+        low_health_sound.stop()
+
     broadcast_network_state(is_moving)
     update_hud()
 
@@ -1183,6 +1489,8 @@ def input(key):
         else:
             mouse.locked = not mouse.locked
             mouse.visible = not mouse.locked
+            if game_mode == 'single_player':
+                save_button.enabled = mouse.visible
     elif key in ('\\', 'backslash'):
         fly_mode = not fly_mode
         if fly_mode:
@@ -1200,14 +1508,19 @@ def input(key):
                 player.velocity = Vec3(0, 0, 0)
             if player.y < 5:
                 player.y = 5
-    elif key == 'e' and axe_world and not axe_picked_up and mouse.hovered_entity == axe_world:
-        axe_picked_up = True
-        selected_hotbar_slot = 1
-        hotbar_labels[0].text = 'AXE'
-        axe_world.enabled = False
-        axe_world.collider = None
-        axe_hand.enabled = True
-        axe_prompt.enabled = False
+    elif key == 'f':
+        if axe_world and not axe_picked_up and distance(player.position, axe_world.position) < 6:
+            axe_picked_up = True
+            selected_hotbar_slot = 1
+            hotbar_labels[0].text = ''
+            if hotbar_icons[0]:
+                hotbar_icons[0].enabled = True
+            axe_world.enabled = False
+            axe_world.collider = None
+            axe_hand.enabled = True
+            axe_prompt.enabled = False
+        elif land_collider and distance(player.position, land_collider.position) < 10:
+            play_land_anim('door')
     elif key == 'e' and not game_over:
         if inventory_open:
             hide_inventory()
@@ -1217,6 +1530,9 @@ def input(key):
             show_inventory()
     elif key in ('1', '2', '3', '4'):
         selected_hotbar_slot = int(key)
+    elif key == 'left mouse down' and axe_picked_up and not game_over and not inventory_open:
+        swing_axe()
 
 # Run the game!
+invoke(load_game_state, delay=0.1)
 app.run()
