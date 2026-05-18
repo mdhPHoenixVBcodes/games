@@ -285,8 +285,9 @@ user_name, game_mode, lan_role = startup_menu()
 app = Ursina(title='120 BPM')
 window.icon = 'image.ico'
 window.title = '120 BPM'
-background_music = Audio('horror.mp3', loop=True, autoplay=True, volume=0.6)
-low_health_sound = Audio('lwhealth.mp3', loop=True, autoplay=False, volume=0.8)
+background_music = Audio('sfx/horror.mp3', loop=True, autoplay=True, volume=0.6)
+low_health_sound = Audio('sfx/lwhealth.mp3', loop=True, autoplay=False, volume=0.8)
+scream_sound = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=1.0)
 
 
 # --- RENDER DISTANCE (OPTIMIZATION) ---
@@ -342,11 +343,10 @@ wall_north_right = Entity(
 world_walls = [wall_north_left, wall_north_right, wall_south, wall_east, wall_west]
 
 gate_model = safe_entity(
-    'mdels/gate1.gltf',
+    'mdels/gate1.glb',
     position=(0, wall_height / 2, map_bounds),
-    scale=25,
+    scale=10,
     collider='box',
-    texture='mdels/gate1_tex1.png',
     color=color.white
 )
 
@@ -584,7 +584,7 @@ axe_hand = safe_entity(
     enabled=False
 )
 # Starting position in the small clearing facing the monster
-PLAYER_SPAWN_POS = Vec3(-12, 16, -12)
+PLAYER_SPAWN_POS = Vec3(-12, 30, -12)
 player.position = PLAYER_SPAWN_POS
 player_default_height = player.height
 player_default_pivot_y = player.camera_pivot.y
@@ -1523,6 +1523,7 @@ def update():
             jumpscare_armed = False
             jumpscare_phase = 'turning'
             jumpscare_timer = 0.4
+            scream_sound.play()
             player.mouse_sensitivity = (0, 0)
             monster_path = []
             if spawn_protection_timer <= 0 and target_is_remote:
