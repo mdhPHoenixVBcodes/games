@@ -301,7 +301,8 @@ scene.fog_color = color.black
 # --- THE ENVIRONMENT ---
 ground = Entity(
     model='cube',  
-    scale=(200, 1, 200), 
+    scale=(200, 10, 200), 
+    position=(0, -5, 0),
     color=color.rgb(10/255, 30/255, 10/255), 
     texture='white_cube', 
     texture_scale=(200, 200), 
@@ -343,7 +344,7 @@ world_walls = [wall_north_left, wall_north_right, wall_south, wall_east, wall_we
 gate_model = safe_entity(
     'mdels/gate1.gltf',
     position=(0, wall_height / 2, map_bounds),
-    scale=5,
+    scale=25,
     collider='box',
     texture='mdels/gate1_tex1.png',
     color=color.white
@@ -365,16 +366,16 @@ land_model = safe_entity(
 land_collider = Entity(
     position=(50, 7.5, 59),
     collider='box',
-    scale=(3.5, 15, 1),
+    scale=(3.5, 15, 0.2),
     visible=False
 )
 
 # Invisible wall colliders to prevent players from going through the house walls
-house_wall_west = Entity(position=(50 - 9, 7.5, 50), scale=(1, 15, 18), collider='box', visible=False)
-house_wall_east = Entity(position=(50 + 9, 7.5, 50), scale=(1, 15, 18), collider='box', visible=False)
-house_wall_south = Entity(position=(50, 7.5, 50 - 9), scale=(18, 15, 1), collider='box', visible=False)
-house_wall_north_left = Entity(position=(44.625, 7.5, 59), scale=(7.25, 15, 1), collider='box', visible=False)
-house_wall_north_right = Entity(position=(55.375, 7.5, 59), scale=(7.25, 15, 1), collider='box', visible=False)
+house_wall_west = Entity(position=(50 - 9, 7.5, 50), scale=(0.2, 15, 18), collider='box', visible=False)
+house_wall_east = Entity(position=(50 + 9, 7.5, 50), scale=(0.2, 15, 18), collider='box', visible=False)
+house_wall_south = Entity(position=(50, 7.5, 50 - 9), scale=(18, 15, 0.2), collider='box', visible=False)
+house_wall_north_left = Entity(position=(44.625, 7.5, 59), scale=(7.25, 15, 0.2), collider='box', visible=False)
+house_wall_north_right = Entity(position=(55.375, 7.5, 59), scale=(7.25, 15, 0.2), collider='box', visible=False)
 
 door_hit_count = 0
 land_animation_enabled = True
@@ -583,7 +584,7 @@ axe_hand = safe_entity(
     enabled=False
 )
 # Starting position in the small clearing facing the monster
-PLAYER_SPAWN_POS = Vec3(-12, 12, -12)
+PLAYER_SPAWN_POS = Vec3(-12, 16, -12)
 player.position = PLAYER_SPAWN_POS
 player_default_height = player.height
 player_default_pivot_y = player.camera_pivot.y
@@ -715,6 +716,77 @@ door_prompt = Text(
     color=color.white,
     enabled=False
 )
+
+# --- CARDINAL COMPASS HUD ---
+compass_bg = Entity(
+    parent=camera.ui,
+    model='quad',
+    color=color.rgba(0, 0, 0, 0.4),
+    scale=(0.14, 0.14),
+    position=(0, 0.41)
+)
+# Glassmorphic outline circle border
+compass_border = Entity(
+    parent=compass_bg,
+    model='circle',
+    color=color.rgba(255/255, 255/255, 255/255, 0.6),
+    scale=1.02,
+    z=-0.01
+)
+# Semi-transparent dark disc
+compass_disc = Entity(
+    parent=compass_bg,
+    model='circle',
+    color=color.rgba(15/255, 25/255, 15/255, 0.85),
+    scale=1.0,
+    z=-0.02
+)
+# Rotating dial holding the direction indicators
+compass_dial = Entity(
+    parent=compass_bg,
+    model='quad',
+    color=color.clear,
+    scale=1.0,
+    z=-0.03
+)
+
+# Cardinals aligned and parented to the rotating dial card
+Text(text='N', parent=compass_dial, position=(0, 0.38), scale=7.5, color=color.red, origin=(0, 0))
+Text(text='S', parent=compass_dial, position=(0, -0.38), scale=7.5, color=color.white, origin=(0, 0))
+Text(text='E', parent=compass_dial, position=(0.38, 0), scale=7.5, color=color.white, origin=(0, 0))
+Text(text='W', parent=compass_dial, position=(-0.38, 0), scale=7.5, color=color.white, origin=(0, 0))
+
+# Static heading triangle indicator at the top of the compass dial
+compass_pointer = Entity(
+    parent=compass_bg,
+    model='triangle',
+    color=color.red,
+    scale=(0.08, 0.08),
+    position=(0, 0.54, -0.05),
+    rotation=(0, 0, 180) # Point downwards
+)
+
+# Friend location red triangle tracker
+friend_indicator = Entity(
+    parent=compass_bg,
+    model='triangle',
+    color=color.red,
+    scale=(0.12, 0.12),
+    z=-0.04,
+    enabled=False
+)
+
+# Gate location green triangle tracker
+gate_indicator = Entity(
+    parent=compass_bg,
+    model='triangle',
+    color=color.green,
+    scale=(0.12, 0.12),
+    z=-0.04,
+    enabled=True
+)
+
+compass_update_timer = 0.0
 
 axe_prompt = Text(
     text='PRESS [F] TO PICKUP AXE',
@@ -1276,10 +1348,48 @@ def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
     global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health, jumpscare_phase
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
-    global fly_mode, fly_exit_protection_timer
+    global fly_mode, fly_exit_protection_timer, compass_update_timer
 
     if game_over:
         return
+
+    # Update compass dial and friend location tracker every 0.5 seconds
+    compass_update_timer += time.dt
+    if compass_update_timer >= 0.5:
+        compass_update_timer = 0.0
+        # Dial rotates opposite of player yaw to align North to screen-space top
+        compass_dial.rotation_z = -player.rotation_y
+        
+        # Update North Gate (0, 100) location tracker on the compass
+        dx_gate = 0 - player.x
+        dz_gate = 100 - player.z
+        dist_gate = math.hypot(dx_gate, dz_gate)
+        if dist_gate > 0.01:
+            angle_to_gate = math.degrees(math.atan2(dx_gate, dz_gate))
+            rad_gate = math.radians(angle_to_gate - player.rotation_y)
+            # Position the gate indicator on the outer edge of the compass circle
+            gate_indicator.x = math.sin(rad_gate) * 0.38
+            gate_indicator.y = math.cos(rad_gate) * 0.38
+            # Rotate it to point towards the gate
+            gate_indicator.rotation_z = -(angle_to_gate - player.rotation_y)
+        
+        if remote_player.enabled:
+            friend_indicator.enabled = True
+            dx = remote_player.x - player.x
+            dz = remote_player.z - player.z
+            dist = math.hypot(dx, dz)
+            if dist > 0.01:
+                # Calculate angle from player to friend
+                angle_to_friend = math.degrees(math.atan2(dx, dz))
+                # Screen-relative heading
+                rad = math.radians(angle_to_friend - player.rotation_y)
+                # Position the indicator on the edge of the circular compass card (scale radius = 0.38)
+                friend_indicator.x = math.sin(rad) * 0.38
+                friend_indicator.y = math.cos(rad) * 0.38
+                # Rotate the indicator to point in the direction of the friend
+                friend_indicator.rotation_z = -(angle_to_friend - player.rotation_y)
+        else:
+            friend_indicator.enabled = False
 
     spawn_protection_timer = max(0, spawn_protection_timer - time.dt)
     fly_exit_protection_timer = max(0, fly_exit_protection_timer - time.dt)
@@ -1557,7 +1667,7 @@ def input(key):
             mouse.visible = not mouse.locked
             if game_mode == 'single_player':
                 save_button.enabled = mouse.visible
-    elif key in ('\\', 'backslash'):
+    elif key in ('='):
         fly_mode = not fly_mode
         if fly_mode:
             player.gravity = 0
