@@ -554,6 +554,7 @@ monster_body = safe_entity(
 
 # --- THE PLAYER ---
 player = FirstPersonController()
+player_default_mouse_sensitivity = getattr(player, 'mouse_sensitivity', 40)
 player.cursor.color = color.white
 player.gravity = 1
 player_legs = Entity(parent=player, model='cube', color=color.blue, scale=(0.8, 0.6, 0.4), position=(0, 0.3, 0))
@@ -771,7 +772,7 @@ vignette_top = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 
 vignette_bottom = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(2.2, 0.18), position=(0, -0.52), z=1)
 vignette_left = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(0.18, 1.2), position=(-1.02, 0), z=1)
 vignette_right = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(0.18, 1.2), position=(1.02, 0), z=1)
-jumpscare_overlay = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(2.6, 1.6), z=-10)
+jumpscare_overlay = Entity(parent=camera.ui, model='quad', texture='jmpscare.png', color=color.rgba(255, 255, 255, 0), scale=(2.6, 1.6), z=-10, unlit=True)
 jumpscare_text = Text(
     text='GET OUT',
     parent=camera.ui,
@@ -839,7 +840,7 @@ monster_attack_damage = 25
 monster_attack_interval = 0.8
 jumpscare_trigger_distance = 4.5
 jumpscare_reset_distance = 7.0
-jumpscare_duration = 0.85
+jumpscare_phase = 'turning'
 jumpscare_timer = 0
 jumpscare_active = False
 jumpscare_armed = True
@@ -1161,12 +1162,15 @@ def hide_respawn_menu():
 def respawn_player():
     global player_health, player_stamina, player_attack_cooldown, stamina_rest_timer, stamina_flash_timer
     global game_over, jumpscare_active, jumpscare_timer, jumpscare_armed, monster_path, path_repath_timer, spawn_protection_timer
+    global jumpscare_phase
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
 
     game_over = False
     jumpscare_active = False
     jumpscare_timer = 0
     jumpscare_armed = True
+    jumpscare_phase = 'turning'
+    player.mouse_sensitivity = player_default_mouse_sensitivity
     monster_path = []
     path_repath_timer = 0
     monster_search_mode = False
@@ -1192,7 +1196,7 @@ def respawn_player():
     stamina_flash_timer = 0
     spawn_protection_timer = 8.0
 
-    jumpscare_overlay.color = color.rgba(0, 0, 0, 0)
+    jumpscare_overlay.color = color.rgba(255, 255, 255, 0)
     jumpscare_text.color = color.rgba(255, 255, 255, 0)
     hide_inventory()
     hide_respawn_menu()
@@ -1203,13 +1207,15 @@ def respawn_player():
 
 
 def trigger_game_over():
-    global game_over, jumpscare_active, jumpscare_timer
+    global game_over, jumpscare_active, jumpscare_timer, jumpscare_phase
     if game_over:
         return
     game_over = True
     jumpscare_active = False
     jumpscare_timer = 0
-    jumpscare_overlay.color = color.rgba(0, 0, 0, 0)
+    jumpscare_phase = 'turning'
+    player.mouse_sensitivity = player_default_mouse_sensitivity
+    jumpscare_overlay.color = color.rgba(255, 255, 255, 0)
     jumpscare_text.color = color.rgba(255, 255, 255, 0)
     hide_inventory()
     hide_respawn_menu()
@@ -1247,7 +1253,7 @@ def check_door_hit():
 # --- THE MASTER GAME LOOP ---
 def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
-    global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health
+    global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health, jumpscare_phase
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
     global fly_mode, fly_exit_protection_timer
 
@@ -1375,26 +1381,56 @@ def update():
         if jumpscare_armed and not jumpscare_active and monster_distance <= jumpscare_trigger_distance:
             jumpscare_active = True
             jumpscare_armed = False
-            jumpscare_timer = jumpscare_duration
+            jumpscare_phase = 'turning'
+            jumpscare_timer = 0.4
+            player.mouse_sensitivity = (0, 0)
             monster_path = []
             if spawn_protection_timer <= 0 and target_is_remote:
                 remote_player_health = max(0, remote_player_health - monster_attack_damage * 2)
             elif spawn_protection_timer <= 0:
                 player_health = max(0, player_health - monster_attack_damage * 2)
-            if not target_is_remote and player_health <= 0:
+            if False: # Delayed game over check to end of jumpscare
                 trigger_game_over()
                 return
 
         if jumpscare_active:
+            # jumpscare_phase is declared global at the start of update()
             jumpscare_timer -= time.dt
-            scare_strength = clamp(jumpscare_timer / jumpscare_duration, 0, 1)
-            jumpscare_overlay.color = color.rgba(160, 0, 0, int(220 * scare_strength))
-            jumpscare_text.color = color.rgba(255, 255, 255, int(255 * scare_strength))
-            camera.fov = lerp(camera.fov, player_normal_fov + 8, time.dt * 12)
-            if jumpscare_timer <= 0:
-                jumpscare_active = False
-                jumpscare_overlay.color = color.rgba(0, 0, 0, 0)
+            if jumpscare_phase == 'turning':
+                cam_pos = camera.world_position
+                mon_pos = monster.world_position + Vec3(0, 1.2, 0)
+                to_monster = mon_pos - cam_pos
+                target_yaw = math.degrees(math.atan2(to_monster.x, to_monster.z))
+                flat_dist = math.hypot(to_monster.x, to_monster.z)
+                target_pitch = -math.degrees(math.atan2(to_monster.y, flat_dist))
+                player.rotation_y = lerp_angle(player.rotation_y, target_yaw, time.dt * 6.5)
+                camera.rotation_x = lerp(camera.rotation_x, target_pitch, time.dt * 6.5)
+                jumpscare_overlay.color = color.rgba(255, 255, 255, 0)
                 jumpscare_text.color = color.rgba(255, 255, 255, 0)
+                if jumpscare_timer <= 0:
+                    jumpscare_phase = 'cover'
+                    jumpscare_timer = 0.6
+                    jumpscare_overlay.color = color.rgba(255, 255, 255, 255)
+                    jumpscare_text.color = color.rgba(255, 255, 255, 255)
+            elif jumpscare_phase == 'cover':
+                jumpscare_overlay.color = color.rgba(255, 255, 255, 255)
+                jumpscare_text.color = color.rgba(255, 255, 255, 255)
+                camera.fov = lerp(camera.fov, player_normal_fov + 8, time.dt * 12)
+                if jumpscare_timer <= 0:
+                    jumpscare_phase = 'fading'
+                    jumpscare_timer = 1.5
+            elif jumpscare_phase == 'fading':
+                fade_alpha = clamp(jumpscare_timer / 1.5, 0, 1)
+                jumpscare_overlay.color = color.rgba(255, 255, 255, int(255 * fade_alpha))
+                jumpscare_text.color = color.rgba(255, 255, 255, int(255 * fade_alpha))
+                if jumpscare_timer <= 0:
+                    jumpscare_active = False
+                    jumpscare_overlay.color = color.rgba(255, 255, 255, 0)
+                    jumpscare_text.color = color.rgba(255, 255, 255, 0)
+                    player.mouse_sensitivity = player_default_mouse_sensitivity
+                    if not target_is_remote and player_health <= 0:
+                        trigger_game_over()
+                        return
             update_hud()
             broadcast_network_state(False)
             return
