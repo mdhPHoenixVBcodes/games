@@ -30,8 +30,8 @@ class DiscoveryBroadcaster:
                 # Send to common broadcast addresses
                 sock.sendto(message, ('<broadcast>', DISCOVERY_PORT))
                 sock.sendto(message, ('255.255.255.255', DISCOVERY_PORT))
-            except:
-                pass
+            except Exception as e:
+                print(f"[DISCOVERY] Broadcast error: {e}")
             time.sleep(2)
         sock.close()
 
@@ -44,7 +44,16 @@ class DiscoveryListener:
             return target_name.strip()
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(('', DISCOVERY_PORT))
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        except Exception:
+            pass
+        try:
+            sock.bind(('', DISCOVERY_PORT))
+        except Exception as e:
+            print(f"[DISCOVERY] Failed to bind UDP discovery port {DISCOVERY_PORT}: {e}")
+            sock.close()
+            return None
         sock.settimeout(0.5)
         
         print(f"[DISCOVERY] Searching for world: {target_name}...")

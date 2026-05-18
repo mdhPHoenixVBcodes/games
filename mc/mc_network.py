@@ -19,7 +19,8 @@ class NetworkManager:
         try:
             msg = json.dumps(data).encode('utf-8')
             conn.sendall(msg + b'|END|') # Delimiter for message parsing
-        except:
+        except Exception as e:
+            print(f"[NET] Send failed: {e}")
             return False
         return True
 
@@ -66,7 +67,12 @@ class GameServer(NetworkManager):
                 # Just wait for the client to send a JOIN packet with their persistent ID
                 print(f"[SERVER] New connection from {addr}, waiting for JOIN packet...")
                 threading.Thread(target=self.handle_client, args=(conn,), daemon=True).start()
-            except:
+            except OSError as e:
+                if self.running:
+                    print(f"[SERVER] Accept loop stopped: {e}")
+                break
+            except Exception as e:
+                print(f"[SERVER] Accept error: {e}")
                 break
 
     def handle_client(self, conn):
@@ -88,20 +94,26 @@ class GameServer(NetworkManager):
                     except Exception as e:
                         print(f"[SERVER] Packet error: {e}")
                         continue
-            except:
+            except Exception as e:
+                print(f"[SERVER] Client loop error: {e}")
                 break
         
         print(f"[SERVER] Client {client_id} disconnected")
-        del self.clients[conn]
+        if conn in self.clients:
+            del self.clients[conn]
         if client_id in self.player_data:
             del self.player_data[client_id]
         if self.world_ref is not None and client_id in self.world_ref.remote_players_data:
             del self.world_ref.remote_players_data[client_id]
         self.broadcast({"type": "QUIT", "id": client_id})
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     def process_message(self, client_id, msg, sender_conn):
-        if msg["type"] == "JOIN":
+        msg_type = msg.get("type")
+        if msg_type == "JOIN":
             p_id = msg["p_id"]
             print(f"[SERVER] Player {p_id} joined from {sender_conn.getpeername()}")
             self.clients[sender_conn] = p_id
@@ -128,7 +140,7 @@ class GameServer(NetworkManager):
             return p_id
 
         msg["id"] = client_id 
-        if msg["type"] in ("POS", "SYNC"):
+        if msg_type in ("POS", "SYNC"):
             if client_id not in self.player_data:
                 self.player_data[client_id] = {}
             self.player_data[client_id].update(msg)
@@ -138,10 +150,10 @@ class GameServer(NetworkManager):
                 snapshot = self._extract_player_snapshot(msg)
                 if snapshot:
                     self.world_ref.remote_players_data[client_id] = snapshot
-        elif msg["type"] == "BLOCK":
+        elif msg_type == "BLOCK":
             with self.pending_world_updates_lock:
                 self.pending_world_updates.append(msg.copy())
-        elif msg["type"] == "CHAT":
+        elif msg_type == "CHAT":
             print(f"[CHAT] {msg.get('name', client_id)}: {msg.get('text', '')}")
         
         # Relay to all OTHER clients
@@ -151,7 +163,13 @@ class GameServer(NetworkManager):
     def broadcast(self, data, exclude_conn=None):
         for conn in list(self.clients.keys()):
             if conn != exclude_conn:
-                self.send_json(conn, data)
+                if not self.send_json(conn, data):
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    if conn in self.clients:
+                        del self.clients[conn]
 
     def drain_world_updates(self):
         if not self.pending_world_updates or self.world_ref is None:
@@ -189,6 +207,11 @@ class GameClient(NetworkManager):
             return True
         except Exception as e:
             print(f"[CLIENT] Connection failed to {ip}:{PORT} - Error: {e}")
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            self.conn = None
             return False
 
     def receive_loop(self):
@@ -206,11 +229,19 @@ class GameClient(NetworkManager):
                         if msg["type"] == "INIT":
                             self.client_id = msg["id"]
                         self.messages.append(msg)
-                    except:
+                    except Exception as e:
+                        print(f"[CLIENT] Packet error: {e}")
                         continue
-            except:
+            except Exception as e:
+                print(f"[CLIENT] Receive loop error: {e}")
                 break
         self.running = False
+        try:
+            if self.conn:
+                self.conn.close()
+        except Exception:
+            pass
+        self.conn = None
 
     def send(self, data):
         if self.running:
