@@ -282,8 +282,9 @@ def startup_menu():
 user_name, game_mode, lan_role = startup_menu()
 
 # Initialize the engine
-app = Ursina()
+app = Ursina(title='120 BPM')
 window.icon = 'image.ico'
+window.title = '120 BPM'
 background_music = Audio('horror.mp3', loop=True, autoplay=True, volume=0.6)
 low_health_sound = Audio('lwhealth.mp3', loop=True, autoplay=False, volume=0.8)
 
