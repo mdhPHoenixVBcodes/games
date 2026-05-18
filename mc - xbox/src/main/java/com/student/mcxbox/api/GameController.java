@@ -98,6 +98,20 @@ public class GameController {
         int x = req.x;
         int y = req.y;
         if ("break".equalsIgnoreCase(req.type)) {
+            PlayerState player = worldState.getPlayer(req.playerId);
+            if (player != null) {
+                int[][] expectedTargets = placementTargets(player, req.miningMode);
+                boolean match = false;
+                for (int[] expected : expectedTargets) {
+                    if (x == expected[0] && y == expected[1]) {
+                        match = true;
+                        break;
+                    }
+                }
+                if (!match) {
+                    throw new IllegalArgumentException("Can only break blocks at the active mining target");
+                }
+            }
             worldState.setBlock(x, y, null);
         } else if ("place".equalsIgnoreCase(req.type)) {
             PlayerState player = worldState.getPlayer(req.playerId);
