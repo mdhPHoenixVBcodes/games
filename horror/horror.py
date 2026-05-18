@@ -361,13 +361,20 @@ land_model = safe_entity(
     color=color.white
 )
 
-# Invisible Ursina Entity used only for raycast hit detection
+# Invisible Ursina Entity used only for raycast hit detection and door blocking
 land_collider = Entity(
-    position=LAND_POS,
+    position=(50, 7.5, 59),
     collider='box',
-    scale=(18, 15, 18),
+    scale=(3.5, 15, 1),
     visible=False
 )
+
+# Invisible wall colliders to prevent players from going through the house walls
+house_wall_west = Entity(position=(50 - 9, 7.5, 50), scale=(1, 15, 18), collider='box', visible=False)
+house_wall_east = Entity(position=(50 + 9, 7.5, 50), scale=(1, 15, 18), collider='box', visible=False)
+house_wall_south = Entity(position=(50, 7.5, 50 - 9), scale=(18, 15, 1), collider='box', visible=False)
+house_wall_north_left = Entity(position=(44.625, 7.5, 59), scale=(7.25, 15, 1), collider='box', visible=False)
+house_wall_north_right = Entity(position=(55.375, 7.5, 59), scale=(7.25, 15, 1), collider='box', visible=False)
 
 door_hit_count = 0
 land_animation_enabled = True
@@ -1229,12 +1236,25 @@ respawn_button.on_click = respawn_player
 axe_swinging = False
 
 def swing_axe():
-    global axe_swinging
+    global axe_swinging, door_hit_count
     if axe_swinging:
         return
     axe_swinging = True
     # Animate the hand axe forward (swing)
     axe_hand.animate('rotation_x', -55, duration=0.12, curve=curve.linear)
+    
+    # Check if we hit the door
+    if check_door_hit():
+        door_hit_count += 1
+        if door_hit_count == 1:
+            play_land_anim('brke1')
+        elif door_hit_count == 2:
+            play_land_anim('brke2')
+        elif door_hit_count == 3:
+            play_land_anim('brke3')
+            # Trigger the door opening animation and collider disable after a small delay
+            invoke(play_land_anim, 'door', delay=0.2)
+            
     invoke(reset_axe_swing, delay=0.22)
 
 
@@ -1269,7 +1289,16 @@ def update():
         remote_player_name_tag.look_at(camera, Vec3.back)
 
     near_door = land_collider and distance(player.position, land_collider.position) < 10
-    door_prompt.enabled = bool(near_door and not game_over and not inventory_open)
+    if near_door and not game_over and not inventory_open:
+        door_prompt.enabled = True
+        if not axe_picked_up:
+            door_prompt.text = 'YOU NEED AN AXE TO BREAK THIS DOOR'
+        elif door_hit_count < 3:
+            door_prompt.text = 'SWING AXE TO BREAK DOOR'
+        else:
+            door_prompt.enabled = False
+    else:
+        door_prompt.enabled = False
     near_axe = axe_world and not axe_picked_up and distance(player.position, axe_world.position) < 6
     axe_prompt.enabled = bool(near_axe and not game_over and not inventory_open)
 
@@ -1556,8 +1585,8 @@ def input(key):
             axe_world.collider = None
             axe_hand.enabled = True
             axe_prompt.enabled = False
-        elif land_collider and distance(player.position, land_collider.position) < 10:
-            play_land_anim('door')
+        # F key no longer opens the door directly; the axe must be used to break it
+        pass
     elif key == 'e' and not game_over:
         if inventory_open:
             hide_inventory()
