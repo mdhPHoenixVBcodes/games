@@ -2,6 +2,7 @@ package com.student.mcxbox.api;
 
 import com.student.mcxbox.world.PlayerState;
 import com.student.mcxbox.world.WorldState;
+import jakarta.annotation.PreDestroy;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -12,7 +13,8 @@ import java.util.UUID;
 @RequestMapping("/api")
 @CrossOrigin(origins = "*")
 public class GameController {
-    private static final double GRAVITY = 0.45;
+    private static final int ACTIVE_CHUNK_RADIUS = 4;
+    private static final double GRAVITY = 0.68;
     private static final double MOVE_SPEED = 2.6;
     private static final double SPRINT_SPEED = 4.0;
     private static final double CROUCH_SPEED = 1.4;
@@ -24,14 +26,14 @@ public class GameController {
     private final WorldState worldState = new WorldState();
 
     @GetMapping("/world")
-    public Map<String, Object> world() {
-        Map<String, Object> out = new HashMap<>();
-        out.put("width", worldState.getWidth());
-        out.put("height", worldState.getHeight());
-        out.put("tileSize", worldState.getTileSize());
-        out.put("blocks", worldState.blocks());
-        out.put("players", worldState.players());
-        return out;
+    public Map<String, Object> world(
+            @RequestParam(required = false) Integer centerX,
+            @RequestParam(required = false) Integer centerY,
+            @RequestParam(required = false) Integer radius) {
+        int px = centerX == null ? 4 * TILE : centerX;
+        int py = centerY == null ? 47 * TILE : centerY;
+        int r = radius == null ? ACTIVE_CHUNK_RADIUS : radius;
+        return snapshotWorld(px, py, r);
     }
 
     @PostMapping("/join")
@@ -39,11 +41,12 @@ public class GameController {
         String name = body == null ? null : body.get("name");
         String id = UUID.randomUUID().toString();
         PlayerState player = worldState.getOrCreatePlayer(id, name == null ? "Player" : name);
+        player.color = colorFromName(player.name);
         spawnAtGround(player);
         Map<String, Object> out = new HashMap<>();
         out.put("id", id);
         out.put("player", player);
-        out.put("world", world());
+        out.put("world", snapshotWorld((int) player.x, (int) player.y, ACTIVE_CHUNK_RADIUS));
         return out;
     }
 
@@ -138,7 +141,10 @@ public class GameController {
 
         Map<String, Object> out = new HashMap<>();
         out.put("ok", true);
-        out.put("blocks", worldState.blocks());
+        PlayerState player = req.playerId == null ? null : worldState.getPlayer(req.playerId);
+        if (player != null) {
+            out.put("world", snapshotWorld((int) (player.x + PLAYER_W / 2.0), (int) (player.y + PLAYER_H / 2.0), ACTIVE_CHUNK_RADIUS));
+        }
         return out;
     }
 
@@ -152,7 +158,7 @@ public class GameController {
 
     private void spawnAtGround(PlayerState player) {
         player.x = 4 * TILE;
-        player.y = 47 * TILE - PLAYER_H;
+        player.y = 48 * TILE - PLAYER_H;
         player.vx = 0;
         player.vy = 0;
         player.onGround = false;
@@ -241,6 +247,72 @@ public class GameController {
             case 4 -> new int[][] { { frontX, footY }, { frontX, headY } };
             default -> new int[][] { { frontX, frontY } };
         };
+    }
+
+    private String colorFromName(String name) {
+        if (name == null || name.isBlank()) {
+            return "#ffcf5a";
+        }
+        char ch = Character.toLowerCase(name.trim().charAt(0));
+        return switch (ch) {
+            case 'a' -> "#ff5b5b";
+            case 'b' -> "#ff9a3c";
+            case 'c' -> "#ffe45c";
+            case 'd' -> "#6bd96b";
+            case 'e' -> "#ffffff";
+            case 'f' -> "#4ea6ff";
+            case 'g' -> "#c56bff";
+            case 'h' -> "#ff6bb5";
+            case 'i' -> "#9bf6ff";
+            case 'j' -> "#c2b280";
+            case 'k' -> "#8a5a36";
+            case 'l' -> "#7d7d7d";
+            case 'm' -> "#ffd166";
+            case 'n' -> "#06d6a0";
+            case 'o' -> "#f4a261";
+            case 'p' -> "#e76f51";
+            case 'q' -> "#90be6d";
+            case 'r' -> "#577590";
+            case 's' -> "#f94144";
+            case 't' -> "#f3722c";
+            case 'u' -> "#f9c74f";
+            case 'v' -> "#43aa8b";
+            case 'w' -> "#4895ef";
+            case 'x' -> "#b5179e";
+            case 'y' -> "#adb5bd";
+            case 'z' -> "#f8961e";
+            default -> "#ffcf5a";
+        };
+    }
+
+    private Map<String, Object> snapshotWorld(int centerX, int centerY, int radiusChunks) {
+        Map<String, Object> out = new HashMap<>();
+        out.put("width", worldState.getWidth());
+        out.put("height", worldState.getHeight());
+        out.put("tileSize", worldState.getTileSize());
+        out.put("chunkSize", worldState.getChunkSize());
+        Map<String, Map<String, Integer>> chunks = worldState.snapshotChunksAround(
+                Math.max(0, centerX / TILE),
+                Math.max(0, centerY / TILE),
+                radiusChunks
+        );
+        out.put("chunks", chunks);
+        out.put("blocks", flattenChunks(chunks));
+        out.put("players", worldState.players());
+        return out;
+    }
+
+    private Map<String, Integer> flattenChunks(Map<String, Map<String, Integer>> chunks) {
+        Map<String, Integer> out = new HashMap<>();
+        for (Map<String, Integer> chunk : chunks.values()) {
+            out.putAll(chunk);
+        }
+        return out;
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        worldState.saveAllLoadedChunks();
     }
 
     private double clamp(double value, double min, double max) {

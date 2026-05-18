@@ -26,7 +26,7 @@ const state = {
   players: [],
   keys: new Set(),
   joined: false,
-  world: { width: 120, height: 60, tileSize: TILE, blocks: {} },
+  world: { width: 2048, height: 128, tileSize: TILE, chunkSize: 16, chunks: {}, blocks: {} },
   lastSend: 0,
   lastWorldSync: 0,
   cameraX: 0,
@@ -71,7 +71,65 @@ async function api(path, method = "GET", body) {
 }
 
 function blockAt(tx, ty) {
+  const chunkSize = state.world.chunkSize || 16;
+  const cx = Math.floor(tx / chunkSize);
+  const cy = Math.floor(ty / chunkSize);
+  const chunk = state.world.chunks?.[`${cx},${cy}`];
+  if (chunk && Object.prototype.hasOwnProperty.call(chunk, `${tx},${ty}`)) {
+    return chunk[`${tx},${ty}`];
+  }
   return state.world.blocks[`${tx},${ty}`] ?? null;
+}
+
+function mergeChunkSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return;
+  }
+  if (snapshot.chunkSize) {
+    state.world.chunkSize = snapshot.chunkSize;
+  }
+  if (snapshot.width) {
+    state.world.width = snapshot.width;
+  }
+  if (snapshot.height) {
+    state.world.height = snapshot.height;
+  }
+  if (!state.world.chunks) {
+    state.world.chunks = {};
+  }
+  if (snapshot.chunks && typeof snapshot.chunks === "object") {
+    for (const [chunkKey, chunkBlocks] of Object.entries(snapshot.chunks)) {
+      state.world.chunks[chunkKey] = { ...(state.world.chunks[chunkKey] || {}), ...chunkBlocks };
+    }
+  }
+  if (snapshot.blocks && typeof snapshot.blocks === "object") {
+    state.world.blocks = { ...state.world.blocks, ...snapshot.blocks };
+  }
+}
+
+function pruneChunksAroundPlayer(radiusChunks = 4) {
+  if (!state.world.chunks) return;
+  const chunkSize = state.world.chunkSize || 16;
+  const centerTx = Math.floor((state.me.x + PLAYER_W / 2) / TILE);
+  const centerTy = Math.floor((state.me.y + PLAYER_H / 2) / TILE);
+  const centerCx = Math.floor(centerTx / chunkSize);
+  const centerCy = Math.floor(centerTy / chunkSize);
+
+  for (const key of Object.keys(state.world.chunks)) {
+    const [cx, cy] = key.split(",").map(Number);
+    if (Math.abs(cx - centerCx) > radiusChunks || Math.abs(cy - centerCy) > radiusChunks) {
+      delete state.world.chunks[key];
+    }
+  }
+
+  for (const key of Object.keys(state.world.blocks)) {
+    const [tx, ty] = key.split(",").map(Number);
+    const cx = Math.floor(tx / chunkSize);
+    const cy = Math.floor(ty / chunkSize);
+    if (Math.abs(cx - centerCx) > radiusChunks || Math.abs(cy - centerCy) > radiusChunks) {
+      delete state.world.blocks[key];
+    }
+  }
 }
 
 function frontTileForPlayer() {
@@ -200,8 +258,6 @@ function drawBlock(tx, ty, type) {
   const block = BLOCKS[type] || BLOCKS[2];
   ctx.fillStyle = block.color;
   ctx.fillRect(x, y, TILE, TILE);
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.strokeRect(x + 0.5, y + 0.5, TILE - 1, TILE - 1);
 }
 
 function drawWorld() {
@@ -223,7 +279,7 @@ function drawWorld() {
 function drawPlayer(p, isLocal) {
   const x = Math.round(p.x - state.cameraX);
   const y = Math.round(p.y - state.cameraY);
-  ctx.fillStyle = isLocal ? "#ffcf5a" : "#2b6cff";
+  ctx.fillStyle = getPlayerColor(p, isLocal);
   ctx.fillRect(x, y, PLAYER_W, PLAYER_H);
   ctx.fillStyle = "#102030";
   ctx.fillRect(x + (p.facingRight ? 16 : 4), y + 10, 4, 4);
@@ -232,6 +288,10 @@ function drawPlayer(p, isLocal) {
   ctx.font = "14px Arial";
   ctx.textAlign = "center";
   ctx.fillText(p.name || "Player", x + PLAYER_W / 2, y - 6);
+}
+
+function getPlayerColor(p, isLocal) {
+  return p.color || colorFromName(p.name) || (isLocal ? "#ffcf5a" : "#2b6cff");
 }
 
 function drawHud() {
@@ -355,6 +415,7 @@ async function syncMove() {
       state.me = result.player;
     }
     state.players = Array.isArray(result.players) ? result.players : state.players;
+    mergeChunkSnapshot(result.world);
   } catch (err) {
     setStatus(`Network error: ${err.message}`);
   }
@@ -383,12 +444,17 @@ async function syncWorld() {
   if (now - state.lastWorldSync < 1000) return;
   state.lastWorldSync = now;
   try {
-    const world = await api("/api/world");
-    state.world.width = world.width || state.world.width;
-    state.world.height = world.height || state.world.height;
-    state.world.tileSize = world.tileSize || state.world.tileSize;
-    state.world.blocks = world.blocks || state.world.blocks;
-    state.players = Array.isArray(world.players) ? world.players : state.players;
+    const centerX = Math.floor(state.me.x + PLAYER_W / 2);
+    const centerY = Math.floor(state.me.y + PLAYER_H / 2);
+    const world = await api(`/api/world?centerX=${centerX}&centerY=${centerY}&radius=4`);
+    mergeChunkSnapshot(world);
+    state.players = Array.isArray(world.players)
+      ? world.players.map((player) => ({
+          ...player,
+          color: player.color || colorFromName(player.name)
+        }))
+      : state.players;
+    pruneChunksAroundPlayer(4);
   } catch (err) {
     setStatus(`World sync error: ${err.message}`);
   }
@@ -405,9 +471,7 @@ async function updateBlock(type, tx, ty) {
       miningMode: state.miningMode
     };
     const result = await api("/api/block", "POST", payload);
-    if (result.blocks) {
-      state.world.blocks = result.blocks;
-    }
+    mergeChunkSnapshot(result.world || result);
   } catch (err) {
     setStatus(`Block error: ${err.message}`);
   }
@@ -484,19 +548,55 @@ joinBtn.addEventListener("click", async () => {
     const result = await api("/api/join", "POST", { name });
     state.clientId = result.id;
     state.me = result.player;
+    state.me.color = state.me.color || colorFromName(name);
     state.joined = true;
-    state.players = [result.player];
+    state.players = [result.player].map((player) => ({
+      ...player,
+      color: player.color || colorFromName(player.name)
+    }));
     if (result.world) {
-      state.world.width = result.world.width || state.world.width;
-      state.world.height = result.world.height || state.world.height;
-      state.world.tileSize = result.world.tileSize || state.world.tileSize;
-      state.world.blocks = result.world.blocks || state.world.blocks;
+      mergeChunkSnapshot(result.world);
     }
     setStatus(`Joined as ${name}`);
   } catch (err) {
     setStatus(`Join failed: ${err.message}`);
   }
 });
+
+function colorFromName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return "#ffcf5a";
+  const ch = raw[0].toLowerCase();
+  const palette = {
+    a: "#ff5b5b",
+    b: "#ff9a3c",
+    c: "#ffe45c",
+    d: "#6bd96b",
+    e: "#ffffff",
+    f: "#4ea6ff",
+    g: "#c56bff",
+    h: "#ff6bb5",
+    i: "#9bf6ff",
+    j: "#c2b280",
+    k: "#8a5a36",
+    l: "#7d7d7d",
+    m: "#ffd166",
+    n: "#06d6a0",
+    o: "#f4a261",
+    p: "#e76f51",
+    q: "#90be6d",
+    r: "#577590",
+    s: "#f94144",
+    t: "#f3722c",
+    u: "#f9c74f",
+    v: "#43aa8b",
+    w: "#4895ef",
+    x: "#b5179e",
+    y: "#adb5bd",
+    z: "#f8961e"
+  };
+  return palette[ch] || "#ffcf5a";
+}
 
 document.addEventListener("keydown", (e) => {
   if (state.joined) {

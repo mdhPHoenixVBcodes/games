@@ -3,6 +3,7 @@ package com.student.mcxbox.world;
 public class PlayerState {
     public String id;
     public String name;
+    public String color;
     public double x;
     public double y;
     public double vx;
