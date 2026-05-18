@@ -3,6 +3,7 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 import json
 import math
 import random
+import time
 import heapq
 import socket
 import threading
@@ -65,7 +66,7 @@ def save_game():
     # Ursina globals are accessible once the script reaches that point.
     data = {
         'x': player.x,
-        'y': player.y,
+        'y': 16,
         'z': player.z,
         'ry': player.rotation_y,
         'health': player_health,
@@ -287,16 +288,24 @@ window.icon = 'image.ico'
 window.title = '120 BPM'
 background_music = Audio('sfx/horror.mp3', loop=True, autoplay=True, volume=0.6)
 low_health_sound = Audio('sfx/lwhealth.mp3', loop=True, autoplay=False, volume=0.8)
-scream_sound = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=1.0)
-
+scream_sound = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound1 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound2 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound3 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound4 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound5 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound6 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound7 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound8 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
+scream_sound9 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
 
 # --- RENDER DISTANCE (OPTIMIZATION) ---
-camera.clip_plane_far = 30 # <--- Reduced to 20 for maximum performance!
+camera.clip_plane_far = 25 # <--- Reduced to 20 for maximum performance!
 
 # --- ATMOSPHERE ---
 window.color = color.black
 # Increased fog density so the 20-unit cutoff is hidden by thick mist
-scene.fog_density = 0.10
+scene.fog_density = 0.15
 scene.fog_color = color.black
 
 # --- THE ENVIRONMENT ---
@@ -1524,6 +1533,23 @@ def update():
             jumpscare_phase = 'turning'
             jumpscare_timer = 0.4
             scream_sound.play()
+            scream_sound1.play()
+            time.sleep(0.08)
+            scream_sound2.play()
+            time.sleep(0.08)
+            scream_sound3.play()
+            time.sleep(0.08)
+            scream_sound4.play()
+            time.sleep(0.08)
+            scream_sound5.play()
+            time.sleep(0.1)
+            scream_sound6.play()
+            time.sleep(0.1)
+            scream_sound7.play()
+            time.sleep(0.1)
+            scream_sound8.play()
+            time.sleep(0.1)
+            scream_sound9.play()
             player.mouse_sensitivity = (0, 0)
             monster_path = []
             if spawn_protection_timer <= 0 and target_is_remote:
