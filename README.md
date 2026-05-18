@@ -24,25 +24,25 @@ Features: Multiple levels (Plains, Safe Zone, Final Arena etc.), interactive NPC
 
 **Controls:**
 
-`W, A, S, D` - Move
+* `W, A, S, D` - Move
 
-`Space` - Jump
+* `Space` - Jump
 
-`Left Click` - Sword Attack
+* `Left Click` - Sword Attack
 
-`Right Click` - Shoot Arrow (requires Bow)
+* `Right Click` - Shoot Arrow (requires Bow)
 
-`E` - Throw Shockwave Grenade
+* `E` - Throw Shockwave Grenade
 
-`F` - Interact with NPCs
+* `F` - Interact with NPCs
 
-`8` - Save Game
+* `8` - Save Game
 
-`9` - Load Game
+* `9` - Load Game
 
-`0` - Pause/Main Menu
+* `0` - Pause/Main Menu
 
-`Esc` - Main Menu
+* `Esc` - Main Menu
 
 ## 2. LAN Survival Horror (horror.py)
 A terrifying 3D survival horror game built with the ursina engine. Play alone or brave the woods with a friend.
@@ -51,11 +51,11 @@ Features: Single-player and LAN multiplayer modes via a terminal startup menu, d
 
 **Controls:**
 
-`W, A, S, D` - Move
+* `W, A, S, D` - Move
 
-`E` - Interact / Pick up items (like the Axe)
+* `E` - Interact / Pick up items (like the Axe)
 
-`Esc` - Pause / Mouse Unlock / Close Inventory
+* `Esc` - Pause / Mouse Unlock / Close Inventory
 
 ## 3. 2D PyCraft (mc.py)
 A sandbox game built using pygame.
@@ -64,19 +64,19 @@ Features: Procedural terrain generation (dirt, grass, stone, ores, trees), block
 
 **Controls:**
 
-`A, D` - Move left/right
+* `A, D` - Move left/right
 
-`Space` - Jump
+* `Space` - Jump
 
-`Left Click` - Mine block
+* `Left Click` - Mine block
 
-`Right Click` - Place selected block
+* `Right Click` - Place selected block
 
-`1-9` - Select hotbar slot
+* `1-9` - Select hotbar slot
 
-`E` - Open inventory
+* `E` - Open inventory
 
-`F` - Change Mining Mode
+* `F` - Change Mining Mode
 
 ## 4. Lego Base Defense (lego.py)
 A humorous 3D base-building and collecting game created using the ursina engine.
@@ -85,11 +85,11 @@ Features: Economy and saving/loading system, custom AI bases, procedural environ
 
 **Controls:**
 
-`W, A, S, D` - Move
+* `W, A, S, D` - Move
 
-`E` - Buy from Conveyor or Steal from Enemy Base
+* `E` - Buy from Conveyor or Steal from Enemy Base
 
-`Q` - Drop carried item at your base
+* `Q` - Drop carried item at your base
 
 ## 5. Time Survivor (timesurvivor.py)
 A fast-paced 2D top-down arena survival game using Python's turtle module.
@@ -98,19 +98,19 @@ Features: Endless waves of enemies, directional shooting mechanics, AoE shockwav
 
 **Controls:**
 
-`W, A, S, D` - Move
+* `W, A, S, D` - Move
 
-`K` - Shoot
+* `K` - Shoot
 
-`E` - Shockwave attack
+* `E` - Shockwave attack
 
-`Space` - Pause
+* `Space` - Pause
 
-`R` - Restart
+* `R` - Restart
 
 ## 6. Interactive Turtle Drawer (tmnt.py)
 A console-driven interactive drawing program using the turtle graphics module.
 
-Features: Terminal-based inputs translate directly to visual drawing commands on the canvas.
+**Features:** * Terminal-based inputs translate directly to visual drawing commands on the canvas.
 
 **Controls:** Follow the on-screen terminal prompts to enter movement distances and turning angles (r for right, l for left). Type restart to clear...
