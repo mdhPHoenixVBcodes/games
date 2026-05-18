@@ -83,17 +83,22 @@ function frontTileForPlayer() {
   return { x: tx, y: ty };
 }
 
+function playerColumnTileX() {
+  return Math.floor((state.me.x + PLAYER_W / 2) / TILE);
+}
+
 function getMiningTargets() {
   const front = frontTileForPlayer();
+  const centerX = playerColumnTileX();
   const headY = Math.floor((state.me.y + 8) / TILE);
   const footY = Math.floor((state.me.y + PLAYER_H - 1) / TILE);
   switch (state.miningMode) {
     case 1:
       return [{ x: front.x, y: headY }];
     case 2:
-      return [{ x: front.x, y: footY + 1 }];
+      return [{ x: centerX, y: footY + 1 }];
     case 3:
-      return [{ x: front.x, y: headY - 1 }];
+      return [{ x: centerX, y: headY - 1 }];
     case 4:
       return [
         { x: front.x, y: footY },

@@ -231,12 +231,13 @@ public class GameController {
         int mode = miningMode == null ? 0 : miningMode;
         int frontX = frontTileX(player);
         int frontY = frontTileY(player);
+        int centerX = (int) Math.floor((player.x + PLAYER_W / 2.0) / TILE);
         int headY = (int) Math.floor((player.y + 8) / TILE);
         int footY = (int) Math.floor((player.y + PLAYER_H - 1) / TILE);
         return switch (mode) {
             case 1 -> new int[][] { { frontX, headY } };
-            case 2 -> new int[][] { { frontX, footY + 1 } };
-            case 3 -> new int[][] { { frontX, headY - 1 } };
+            case 2 -> new int[][] { { centerX, footY + 1 } };
+            case 3 -> new int[][] { { centerX, headY - 1 } };
             case 4 -> new int[][] { { frontX, footY }, { frontX, headY } };
             default -> new int[][] { { frontX, frontY } };
         };
