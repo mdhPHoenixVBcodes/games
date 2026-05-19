@@ -126,9 +126,6 @@ C_STAIRS = 30
 W_SLAB = 31
 C_SLAB = 32
 SS_STAIRS = 33
-SS_SLAB = 34
-I_STAIRS = 35
-I_SLAB = 36
 TALL_GRASS = 37
 SEEDS = 38
 FARMLAND = 39
@@ -204,8 +201,8 @@ BLOCK_HARDNESS = {
     OAK_LEAVES: 0.2, BIRCH_LEAVES: 0.2, PLANKS: 2.0, CRAFTING_TABLE: 2.5,
     FURNACE: 3.5, SMOKER: 3.5, BLAST_FURNACE: 3.5, COBBLESTONE: 2.0, SMOOTH_STONE: 2.0, IRON_BLOCK_PROD: 5.0,
     CHEST: 2.5, HAY_BALE: 0.5, FARMLAND: 0.6, FENCE: 2.0, FENCE_GATE: 2.0,
-    DOOR: 3.0, TRAPDOOR: 3.0, W_STAIRS: 2.0, C_STAIRS: 2.0, SS_STAIRS: 2.0, I_STAIRS: 3.0,
-    W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, I_SLAB: 3.0, LADDER: 0.4, TORCH: 0.1,
+    DOOR: 3.0, TRAPDOOR: 3.0, W_STAIRS: 2.0, C_STAIRS: 2.0, SS_STAIRS: 2.0,
+    W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, LADDER: 0.4, TORCH: 0.1,
     SAND_BLOCK: 0.5, CACTUS: 0.4, DEAD_BUSH: 0.1
 }
 
@@ -229,7 +226,6 @@ BLOCK_NAMES = {
     W_STAIRS: "Wooden Stairs", C_STAIRS: "Cobblestone Stairs",
     W_SLAB: "Wooden Slab", C_SLAB: "Cobblestone Slab",
     SS_STAIRS: "Smooth Stone Stairs", SS_SLAB: "Smooth Stone Slab",
-    I_STAIRS: "Iron Stairs", I_SLAB: "Iron Slab",
     TALL_GRASS: "Tall Grass", SEEDS: "Seeds",
     FARMLAND: "Farmland", WHEAT_ITEM: "Wheat",
     BREAD: "Bread", HAY_BALE: "Hay Bale",
@@ -288,8 +284,8 @@ PLACEABLE_BLOCKS = {
     OAK_LOG, BIRCH_LOG, OAK_LEAVES, BIRCH_LEAVES, PLANKS,
     CRAFTING_TABLE, FURNACE, COBBLESTONE, SMOOTH_STONE,
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
-    LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS,
-    W_SLAB, C_SLAB, SS_SLAB, I_SLAB, FARMLAND, HAY_BALE, CHEST,
+    LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS,
+    W_SLAB, C_SLAB, SS_SLAB, FARMLAND, HAY_BALE, CHEST,
     FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK, CACTUS
 }
 
@@ -1054,12 +1050,12 @@ class World:
                     bx, by = (p_x + x_off) * TILE_SIZE, ty * TILE_SIZE
                     if b_type == FARMLAND:
                         blocks.append(pygame.Rect(bx, by + 4, TILE_SIZE, TILE_SIZE - 4))
-                    elif b_type in (W_SLAB, C_SLAB, SS_SLAB, I_SLAB):
+                    elif b_type in (W_SLAB, C_SLAB, SS_SLAB):
                         blocks.append(pygame.Rect(bx, by + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
-                    elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
+                    elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS):
                         # Simple 2-part hitbox for stairs
                         blocks.append(pygame.Rect(bx, by + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2)) # Base
-                        facing = world.block_meta.get((tx, ty), {}).get("facing", -1)
+                        facing = self.block_meta.get((tx, ty), {}).get("facing", -1)
                         step_x = bx if facing == -1 else bx + TILE_SIZE//2
                         blocks.append(pygame.Rect(step_x, by, TILE_SIZE//2, TILE_SIZE//2)) # Top Step
                     else:
@@ -1155,8 +1151,8 @@ class World:
                             elif b_type in (OAK_LEAVES, BIRCH_LEAVES):
                                 color = COLOR_LEAVES_G if b_type == OAK_LEAVES else COLOR_LEAVES_B
                                 pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                            elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
-                                color = COLOR_PLANKS if b_type == W_STAIRS else ((100, 100, 100) if b_type == C_STAIRS else ((180, 180, 190) if b_type == SS_STAIRS else (200, 200, 220)))
+                            elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS):
+                                color = COLOR_PLANKS if b_type == W_STAIRS else ((100, 100, 100) if b_type == C_STAIRS else (180, 180, 190))
                                 pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
                                 # Orientation from meta
                                 facing = self.block_meta.get((tx, ty), {}).get("facing", -1)
@@ -1165,8 +1161,8 @@ class World:
                                 # Outlines
                                 pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2), 1)
                                 pygame.draw.rect(surface, (0,0,0), (step_x, draw_y, TILE_SIZE//2, TILE_SIZE//2), 1)
-                            elif b_type in (W_SLAB, C_SLAB, SS_SLAB, I_SLAB):
-                                color = COLOR_PLANKS if b_type == W_SLAB else ((100, 100, 100) if b_type == C_SLAB else ((180, 180, 190) if b_type == SS_SLAB else (200, 200, 220)))
+                            elif b_type in (W_SLAB, C_SLAB, SS_SLAB):
+                                color = COLOR_PLANKS if b_type == W_SLAB else ((100, 100, 100) if b_type == C_SLAB else (180, 180, 190))
                                 pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
                                 pygame.draw.rect(surface, (0,0,0), (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2), 1)
                             elif b_type == TALL_GRASS:
@@ -2313,9 +2309,9 @@ def draw_block_icon(screen, b_type, x, y, size, font):
         pygame.draw.rect(screen, (100, 100, 110), (x + size//2 - 2, y, 4, size))
         pygame.draw.rect(screen, (100, 100, 110), (x + size//2 - 6, y + size//4, 12, 4))
         pygame.draw.rect(screen, (100, 100, 110), (x + size//2 - 6, y + size*3//4, 12, 4))
-    elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS, W_SLAB, C_SLAB, SS_SLAB, I_SLAB):
-        color = COLOR_PLANKS if b_type in (W_STAIRS, W_SLAB) else ((100, 100, 100) if b_type in (C_STAIRS, C_SLAB) else ((180, 180, 190) if b_type in (SS_STAIRS, SS_SLAB) else (200, 200, 220)))
-        if b_type in (W_SLAB, C_SLAB, SS_SLAB, I_SLAB):
+    elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS, W_SLAB, C_SLAB, SS_SLAB):
+        color = COLOR_PLANKS if b_type in (W_STAIRS, W_SLAB) else ((100, 100, 100) if b_type in (C_STAIRS, C_SLAB) else (180, 180, 190))
+        if b_type in (W_SLAB, C_SLAB, SS_SLAB):
             pygame.draw.rect(screen, color, (x, y + size//2, size, size//2))
         else: # Stairs
             pygame.draw.rect(screen, color, (x, y + size//2, size, size//2))
@@ -2389,6 +2385,27 @@ def draw_block_icon(screen, b_type, x, y, size, font):
         for i in range(4):
             ry = y + 4 + i * (size // 4)
             pygame.draw.rect(screen, color, (x + 4, ry, size - 8, 2))
+    elif b_type == SAND_BLOCK:
+        pygame.draw.rect(screen, (220, 200, 130), (x, y, size, size))
+        pygame.draw.rect(screen, (200, 180, 110), (x + size//8, y + size//8, size*5//16, size//4)) # shade
+        pygame.draw.rect(screen, (200, 180, 110), (x + size*9//16, y + size*9//16, size//4, size*3//16))
+    elif b_type == CACTUS:
+        # Cactus body
+        pygame.draw.rect(screen, (70, 150, 50), (x + size*3//16, y, size - size*3//8, size))
+        # Cactus arms
+        pygame.draw.rect(screen, (70, 150, 50), (x, y + size//4, size*3//16, size//4))
+        pygame.draw.rect(screen, (70, 150, 50), (x + size - size*3//16, y + size*3//8, size*3//16, size//4))
+        # Spines
+        pygame.draw.line(screen, (90, 70, 20), (x + size//8, y + size//4), (x - 2, y + size*3//16), 1)
+        pygame.draw.line(screen, (90, 70, 20), (x + size//8, y + size*3//8), (x - 2, y + size*7//16), 1)
+        pygame.draw.line(screen, (90, 70, 20), (x + size - size//8, y + size*3//8), (x + size + 2, y + size*5//16), 1)
+    elif b_type == DEAD_BUSH:
+        cx, cy = x + size // 2, y + size - 4
+        bush_c = (140, 100, 50)
+        pygame.draw.line(screen, bush_c, (cx, cy), (cx - size//4, cy - size*3//8), 2)
+        pygame.draw.line(screen, bush_c, (cx, cy), (cx + size//4, cy - size*3//8), 2)
+        pygame.draw.line(screen, bush_c, (cx, cy), (cx - size//8, cy - size//2), 1)
+        pygame.draw.line(screen, bush_c, (cx, cy), (cx + size//8, cy - size//2), 1)
     else:
         color = {GRASS_BLOCK: COLOR_GRASS, DIRT_BLOCK: COLOR_DIRT, STONE_BLOCK: COLOR_STONE}.get(b_type, COLOR_WHITE)
         pygame.draw.rect(screen, color, (x, y, size, size))
@@ -2530,13 +2547,10 @@ def update_crafting(player):
     match([N,N,S, N,S,S, S,S,S], {"type": C_STAIRS, "count": 4})
     match([SS,N,N, SS,SS,N, SS,SS,SS], {"type": SS_STAIRS, "count": 4})
     match([N,N,SS, N,SS,SS, SS,SS,SS], {"type": SS_STAIRS, "count": 4})
-    match([IB,N,N, IB,IB,N, IB,IB,IB], {"type": I_STAIRS, "count": 4})
-    match([N,N,IB, N,IB,IB, IB,IB,IB], {"type": I_STAIRS, "count": 4})
     # Slabs
     match([N,N,N, N,N,N, W,W,W], {"type": W_SLAB, "count": 6})
     match([N,N,N, N,N,N, S,S,S], {"type": C_SLAB, "count": 6})
     match([N,N,N, N,N,N, SS,SS,SS], {"type": SS_SLAB, "count": 6})
-    match([N,N,N, N,N,N, IB,IB,IB], {"type": I_SLAB, "count": 6})
     # Farming
     WH = WHEAT_ITEM
     match([N,N,N, WH,WH,WH, N,N,N], {"type": BREAD, "count": 1})
@@ -3921,7 +3935,7 @@ def main():
                         p_placement_rect.x %= WORLD_PIXELS
                         if not p_placement_rect.colliderect(tr): 
                             world.data[(tx, ty)] = slot["type"]
-                            if slot["type"] in (W_STAIRS, C_STAIRS, SS_STAIRS, I_STAIRS):
+                            if slot["type"] in (W_STAIRS, C_STAIRS, SS_STAIRS):
                                 world.block_meta[(tx, ty)] = {"facing": player.direction}
                             elif slot["type"] == TORCH:
                                 wall_facing = None
