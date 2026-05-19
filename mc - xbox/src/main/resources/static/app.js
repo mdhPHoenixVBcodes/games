@@ -17,12 +17,13 @@ const BLOCKS = {
   6: { name: "Planks", color: "#c49a6c" },
   7: { name: "Wood", color: "#8f6a43" },
   8: { name: "Brick", color: "#b66a5a" },
-  9: { name: "Sand", color: "#d8cb9f" }
+  9: { name: "Sand", color: "#d8cb9f" },
+  10: { name: "Leaves", color: "#4f9d4a" }
 };
 
 const state = {
   clientId: null,
-  me: { x: 140, y: 220, vx: 0, vy: 0, name: "Player", onGround: false },
+  me: { x: 140, y: 220, vx: 0, vy: 0, name: "Player", onGround: false, dirt: 10, inventory: { 2: 10 } },
   players: [],
   keys: new Set(),
   joined: false,
@@ -307,16 +308,17 @@ function drawHud() {
   ctx.fillRect(10, 10, 360, 110);
   ctx.fillStyle = "#ffffff";
   ctx.fillText(`Block: ${BLOCKS[state.selectedBlock]?.name || "Dirt"}`, 20, 30);
-  ctx.fillText(`Mode: ${MINING_MODES[state.miningMode]}`, 20, 44);
-  ctx.fillText("Move: A/D or arrows", 20, 58);
-  ctx.fillText("Jump: W / Space / Up / A", 20, 72);
-  ctx.fillText("Crouch: Shift / B", 20, 86);
-  ctx.fillText("Sprint: Ctrl / L-stick click", 20, 100);
-  ctx.fillText("Break: left click / RT", 20, 114);
-  ctx.fillText("Place: right click / LT", 20, 128);
-  ctx.fillText("Mine mode: F / Xbox X", 20, 142);
-  ctx.fillText("Change: 1-9, wheel, LB/RB", 20, 156);
-  ctx.fillText("Click world: lock mouse, Esc: unlock", 20, 170);
+  ctx.fillText(`Dirt: ${state.me.dirt ?? 0}`, 20, 44);
+  ctx.fillText(`Mode: ${MINING_MODES[state.miningMode]}`, 20, 58);
+  ctx.fillText("Move: A/D or arrows", 20, 72);
+  ctx.fillText("Jump: W / Space / Up / A", 20, 86);
+  ctx.fillText("Crouch: Shift / B", 20, 100);
+  ctx.fillText("Sprint: Ctrl / L-stick click", 20, 114);
+  ctx.fillText("Break: left click / RT", 20, 128);
+  ctx.fillText("Place: right click / LT", 20, 142);
+  ctx.fillText("Mine mode: F / Xbox X", 20, 156);
+  ctx.fillText("Change: 1-9, wheel, LB/RB", 20, 170);
+  ctx.fillText("Click world: lock mouse, Esc: unlock", 20, 184);
 
   if (!state.me.onGround) {
     ctx.fillText("Airborne", canvas.width - 100, 35);
@@ -341,18 +343,43 @@ function drawHotbar() {
   const startX = (canvas.width - totalWidth) / 2;
   const y = canvas.height - 46;
 
+  const getCount = (blockType) => {
+    if (state.me.inventory && state.me.inventory[blockType] != null) {
+      return state.me.inventory[blockType];
+    }
+    if (blockType === 2) {
+      return state.me.dirt ?? 0;
+    }
+    return 0;
+  };
+
   ctx.textAlign = "left";
   for (let i = 1; i <= 9; i++) {
     const x = startX + (i - 1) * (slotSize + gap);
     const selected = i === state.selectedBlock;
+    const block = BLOCKS[i];
     ctx.fillStyle = selected ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.45)";
     ctx.fillRect(x, y, slotSize, slotSize);
+    if (block) {
+      ctx.fillStyle = block.color;
+      ctx.fillRect(x + 4, y + 4, slotSize - 8, slotSize - 8);
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(x + 4, y + 4, slotSize - 8, (slotSize - 8) / 2);
+    }
     ctx.strokeStyle = selected ? "#ffe08a" : "rgba(255,255,255,0.25)";
     ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeRect(x + 1, y + 1, slotSize - 2, slotSize - 2);
     ctx.fillStyle = "rgba(255,255,255,0.8)";
     ctx.font = "12px Arial";
     ctx.fillText(String(i), x + 4, y + 14);
+    const count = getCount(i);
+    ctx.fillStyle = count > 0 ? "rgba(0, 0, 0, 0.45)" : "rgba(120, 120, 120, 0.4)";
+    ctx.fillRect(x + slotSize - 16, y + slotSize - 16, 14, 14);
+    ctx.fillStyle = count > 0 ? "#ffffff" : "rgba(255,255,255,0.75)";
+    ctx.font = "10px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(String(count), x + slotSize - 9, y + slotSize - 5);
+    ctx.textAlign = "left";
   }
 }
 
@@ -479,6 +506,9 @@ async function updateBlock(type, tx, ty) {
       miningMode: state.miningMode
     };
     const result = await api("/api/block", "POST", payload);
+    if (result.player) {
+      state.me = result.player;
+    }
     mergeChunkSnapshot(result.world || result);
   } catch (err) {
     setStatus(`Block error: ${err.message}`);

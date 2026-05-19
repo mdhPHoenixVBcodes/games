@@ -42,6 +42,7 @@ public class GameController {
         String id = UUID.randomUUID().toString();
         PlayerState player = worldState.getOrCreatePlayer(id, name == null ? "Player" : name);
         player.color = colorFromName(player.name);
+        player.resetInventory();
         spawnAtGround(player);
         Map<String, Object> out = new HashMap<>();
         out.put("id", id);
@@ -102,6 +103,7 @@ public class GameController {
         int y = req.y;
         if ("break".equalsIgnoreCase(req.type)) {
             PlayerState player = worldState.getPlayer(req.playerId);
+            Integer brokenType = worldState.getBlock(x, y);
             if (player != null) {
                 int[][] expectedTargets = placementTargets(player, req.miningMode);
                 boolean match = false;
@@ -115,14 +117,22 @@ public class GameController {
                     throw new IllegalArgumentException("Can only break blocks at the active mining target");
                 }
             }
+            if (player != null && brokenType != null) {
+                player.addBlock(brokenType);
+            }
             worldState.setBlock(x, y, null);
         } else if ("place".equalsIgnoreCase(req.type)) {
             PlayerState player = worldState.getPlayer(req.playerId);
             if (player == null) {
                 throw new IllegalArgumentException("Unknown player id");
             }
+            int blockType = req.blockType == null ? 2 : req.blockType;
+            if (player.getBlockCount(blockType) <= 0) {
+                throw new IllegalArgumentException("No blocks left");
+            }
             if (worldState.getBlock(x, y) == null) {
-                worldState.setBlock(x, y, req.blockType == null ? 2 : req.blockType);
+                worldState.setBlock(x, y, blockType);
+                player.consumeBlock(blockType);
             }
         } else {
             throw new IllegalArgumentException("Unknown block action");
@@ -131,6 +141,9 @@ public class GameController {
         Map<String, Object> out = new HashMap<>();
         out.put("ok", true);
         PlayerState player = req.playerId == null ? null : worldState.getPlayer(req.playerId);
+        if (player != null) {
+            out.put("player", player);
+        }
         if (player != null) {
             out.put("world", snapshotWorld((int) (player.x + PLAYER_W / 2.0), (int) (player.y + PLAYER_H / 2.0), ACTIVE_CHUNK_RADIUS));
         }

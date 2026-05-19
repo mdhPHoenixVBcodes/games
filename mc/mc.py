@@ -361,6 +361,28 @@ class Player:
     def update(self, world):
         if self.jump_attack_timer > 0:
             self.jump_attack_timer -= 1
+
+        # Cactus contact damage (1 HP every 0.5s)
+        if not hasattr(self, 'cactus_dmg_timer'): self.cactus_dmg_timer = 0
+        if self.cactus_dmg_timer > 0:
+            self.cactus_dmg_timer -= 1
+        else:
+            # Check all 4 sides of the player's bounding box for cactus
+            cx = self.rect.centerx // TILE_SIZE
+            top_ty = self.rect.top // TILE_SIZE
+            bot_ty = (self.rect.bottom - 1) // TILE_SIZE
+            left_tx = (self.rect.left - 1) // TILE_SIZE
+            right_tx = self.rect.right // TILE_SIZE
+            touching_cactus = False
+            for check in [(cx, top_ty), (cx, bot_ty), (left_tx, top_ty),
+                          (left_tx, bot_ty), (right_tx, top_ty), (right_tx, bot_ty)]:
+                if world.get_block(check[0] % WORLD_WIDTH, check[1]) == CACTUS:
+                    touching_cactus = True
+                    break
+            if touching_cactus:
+                self.take_damage(1)
+                self.cactus_dmg_timer = 30  # 0.5s cooldown at 60fps
+
         # Hunger Logic
         self.hunger_timer += 1
         if self.hunger_timer >= 600: # Every 10 seconds lose some hunger
@@ -603,6 +625,7 @@ class World:
         self.weather_timer = 0
         self.weather_intensity = 0.0
         self.active_water = set() # Track coordinates of flowing water
+        self.falling_sand = set() # Track coordinates of sand/cactus blocks that should fall
         self.generate_world()
         self.choose_weather()
 
@@ -637,6 +660,16 @@ class World:
             if (cx, y) in self.data:
                 return False
         return True
+    def _break_cactus_column_upward(self, tx, ty):
+        """Remove all CACTUS blocks from (tx, ty) upward. Drops each as an item."""
+        cy = ty
+        while self.get_block(tx, cy) == CACTUS:
+            cid = self.get_chunk_id(tx, cy)
+            if cid in self.chunks and (tx, cy) in self.chunks[cid]:
+                del self.chunks[cid][(tx, cy)]
+                if not self.chunks[cid]: del self.chunks[cid]
+            self.dropped_items.append(DroppedItem(tx * TILE_SIZE + 8, cy * TILE_SIZE + 8, CACTUS))
+            cy -= 1  # go up
 
     def set_block(self, tx, ty, b_type):
         cid = self.get_chunk_id(tx, ty)
@@ -646,17 +679,53 @@ class World:
             for nx, ny in [(tx-1, ty), (tx+1, ty), (tx, ty-1), (tx, ty+1)]:
                 if self.get_block(nx, ny) == WATER:
                     self.active_water.add((nx, ny))
+            # Wake up sand above this position when a block is broken
+            above = self.get_block(tx, ty - 1)
+            if above == SAND_BLOCK:
+                self.falling_sand.add((tx, ty - 1))
+            # If we're removing a CACTUS, cascade-break all cactus above it
+            if self.get_block(tx, ty) == CACTUS:
+                # First remove this block normally
+                if cid in self.chunks and (tx, ty) in self.chunks[cid]:
+                    del self.chunks[cid][(tx, ty)]
+                    if not self.chunks[cid]: del self.chunks[cid]
+                # Then cascade upward
+                self._break_cactus_column_upward(tx, ty - 1)
+                return
                     
             if cid in self.chunks and (tx, ty) in self.chunks[cid]:
                 del self.chunks[cid][(tx, ty)]
                 if not self.chunks[cid]: del self.chunks[cid]
             return
             
+        # --- Placing a block: check if adjacent to cactus ---
+        if b_type != AIR:
+            for nx, ny in [(tx - 1, ty), (tx + 1, ty)]:
+                if self.get_block(nx, ny) == CACTUS:
+                    # Find the base of this cactus column
+                    base_y = ny  # ny is the same row as ty
+                    while self.get_block(nx, base_y + 1) == CACTUS:
+                        base_y += 1
+                    # Break the entire column from bottom up
+                    col_y = base_y
+                    while self.get_block(nx, col_y) == CACTUS:
+                        cid2 = self.get_chunk_id(nx, col_y)
+                        if cid2 in self.chunks and (nx, col_y) in self.chunks[cid2]:
+                            del self.chunks[cid2][(nx, col_y)]
+                            if not self.chunks[cid2]: del self.chunks[cid2]
+                        self.dropped_items.append(DroppedItem(nx * TILE_SIZE + 8, col_y * TILE_SIZE + 8, CACTUS))
+                        col_y -= 1  # go up
+
         if cid not in self.chunks: self.chunks[cid] = {}
         self.chunks[cid][(tx, ty)] = b_type
         
         if b_type == WATER:
             self.active_water.add((tx, ty))
+        elif b_type == SAND_BLOCK:
+            # A new sand block was placed — check if it should fall
+            if self.get_block(tx, ty + 1) is None:
+                self.falling_sand.add((tx, ty))
+
 
     def get_block(self, tx, ty):
         cid = self.get_chunk_id(tx, ty)
@@ -716,6 +785,38 @@ class World:
             # The set_block method handles waking up adjacent blocks when broken.
             
         self.active_water = next_active
+
+    def update_falling_sand(self):
+        if not self.falling_sand:
+            return
+
+        next_falling = set()
+        GRAVITY_BLOCKS = (SAND_BLOCK,)
+
+        for tx, ty in list(self.falling_sand):
+            b_type = self.get_block(tx, ty)
+            if b_type not in GRAVITY_BLOCKS:
+                continue  # Block was removed/changed
+
+            below = ty + 1
+            # Don't fall through the bottom of the world
+            if below >= WORLD_HEIGHT:
+                continue
+
+            below_block = self.get_block(tx, below)
+
+            if below_block is None:  # Air below — fall one step
+                # Move the block down by one tile
+                self.set_block(tx, below, b_type)
+                self.set_block(tx, ty, None)
+                next_falling.add((tx, below))
+                # Also propagate: if there's more sand above us, wake it up
+                above_block = self.get_block(tx, ty - 1)
+                if above_block in GRAVITY_BLOCKS:
+                    next_falling.add((tx, ty - 1))
+            # If blocked by something solid, this block is settled — don't re-add
+
+        self.falling_sand = next_falling
 
     @property
     def data(self):
@@ -1647,6 +1748,71 @@ class Mob:
             else:
                 self.vel_x = 0
         elif self.m_type == "enderman":
+            # Check if touching water
+            touching_water = False
+            ex = self.rect.centerx // TILE_SIZE
+            for ey in [self.rect.top // TILE_SIZE, self.rect.centery // TILE_SIZE, (self.rect.bottom - 1) // TILE_SIZE]:
+                if world.get_block(ex % WORLD_WIDTH, ey) == WATER:
+                    touching_water = True
+                    break
+            
+            # Check if in rain
+            in_rain = False
+            if world.weather_type == "rain" and world.weather_intensity > 0:
+                is_under_roof = False
+                for dx in [-1, 0, 1]:
+                    check_x = (ex + dx) % WORLD_WIDTH
+                    for check_y in range(int(self.rect.top // TILE_SIZE)):
+                        if world.get_block(check_x, check_y) is not None:
+                            is_under_roof = True
+                            break
+                    if is_under_roof:
+                        break
+                if not is_under_roof:
+                    in_rain = True
+            
+            if (touching_water or in_rain) and self.teleport_timer <= 0:
+                # Teleport away to a safe dry spot
+                teleported = False
+                for _ in range(20):
+                    offset_x = random.randint(-300, 300)
+                    offset_y = random.randint(-40, 40)
+                    target_x = (self.rect.x + offset_x) % WORLD_PIXELS
+                    target_y = max(0, min((WORLD_HEIGHT - 4) * TILE_SIZE, self.rect.y + offset_y))
+                    
+                    tx = target_x // TILE_SIZE
+                    ty = target_y // TILE_SIZE
+                    under_b = world.get_block(tx % WORLD_WIDTH, ty + 3)
+                    space_ok = True
+                    for h_off in range(3):
+                        b = world.get_block(tx % WORLD_WIDTH, ty + h_off)
+                        if b is not None and b != WATER:
+                            space_ok = False
+                            break
+                    
+                    target_under_roof = False
+                    if world.weather_type == "rain" and world.weather_intensity > 0:
+                        for dx in [-1, 0, 1]:
+                            cx = (tx + dx) % WORLD_WIDTH
+                            for cy in range(ty):
+                                if world.get_block(cx, cy) is not None:
+                                    target_under_roof = True
+                                    break
+                            if target_under_roof:
+                                break
+                    
+                    if space_ok and under_b is not None and under_b != WATER and (world.weather_type != "rain" or world.weather_intensity <= 0 or target_under_roof):
+                        self.rect.x = target_x
+                        self.rect.y = target_y
+                        self.teleport_timer = 20
+                        teleported = True
+                        break
+                if not teleported:
+                    # Fallback simple teleport
+                    self.rect.x = (self.rect.x + random.choice([-200, 200])) % WORLD_PIXELS
+                    self.rect.y = max(0, min((WORLD_HEIGHT - 3) * TILE_SIZE, player.rect.y + random.randint(-20, 10)))
+                    self.teleport_timer = 20
+
             dist_x = player.rect.x - self.rect.x
             if self.teleport_timer > 0:
                 self.teleport_timer -= 1
@@ -3389,7 +3555,7 @@ def main():
                 player.breaking_block = None
                 player.breaking_progress = 0.0
                 for tx, ty in valid_targets:
-                    if (tx, ty) in world.data:
+                    if (tx, ty) in world.data and world.data[(tx, ty)] != WATER:
                         player.breaking_block = (tx, ty)
                         break
             
@@ -3427,7 +3593,7 @@ def main():
                     player.last_action_time = now
                     # Break ALL valid targets that exist
                     for bx, by in valid_targets:
-                        if (bx, by) in world.data:
+                        if (bx, by) in world.data and world.data[(bx, by)] != WATER:
                             drop_type = world.data[(bx, by)]
                             to_remove = [(bx, by)]
                             if drop_type in (DOOR_TOP, DOOR_OPEN_TOP):
@@ -3869,6 +4035,8 @@ def main():
             update_furnaces(world)
             if world.time % 8 == 0:
                 world.update_water()
+            if world.time % 3 == 0:
+                world.update_falling_sand()
             world.time = (world.time + 1) % 24000
             world.update_weather()
             
