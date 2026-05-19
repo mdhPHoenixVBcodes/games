@@ -10,6 +10,7 @@ import java.nio.file.Paths;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WorldState {
@@ -219,6 +220,7 @@ public class WorldState {
                 continue;
             }
             int surface = surfaceHeight(x);
+            maybeGenerateTree(chunk, x, surface);
             for (int ly = 0; ly < CHUNK_SIZE; ly++) {
                 int y = startY + ly;
                 if (y < 0 || y >= HEIGHT) {
@@ -234,6 +236,38 @@ public class WorldState {
             }
         }
         return chunk;
+    }
+
+    private void maybeGenerateTree(Map<String, Integer> chunk, int x, int surface) {
+        Random rng = new Random(0x9E3779B97F4A7C15L ^ (long) x * 341873128712L);
+        if (surface < 18 || surface > HEIGHT - 8) {
+            return;
+        }
+        if (rng.nextDouble() > 0.08) {
+            return;
+        }
+
+        int trunkHeight = 3 + rng.nextInt(3);
+        for (int dy = 1; dy <= trunkHeight; dy++) {
+            int ty = surface - dy;
+            if (ty >= 0) {
+                chunk.put(tileKey(x, ty), 7);
+            }
+        }
+
+        int crownY = surface - trunkHeight - 1;
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = -2; dy <= 1; dy++) {
+                int tx = x + dx;
+                int ty = crownY + dy;
+                if (tx < 0 || tx >= WIDTH || ty < 0 || ty >= HEIGHT) {
+                    continue;
+                }
+                if (Math.abs(dx) + Math.abs(dy) <= 3) {
+                    chunk.put(tileKey(tx, ty), 1);
+                }
+            }
+        }
     }
 
     private int surfaceHeight(int x) {

@@ -419,6 +419,13 @@ class Player:
         on_boat = (below_x, below_y) in world.data and world.data[(below_x, below_y)] == BOAT
         if on_boat:
             speed_mult = 2.5 # Fast boat travel
+
+        weather_speed_mult = 1.0
+        weather_jump_mult = 1.0
+        if world.is_precipitating() and world.is_outdoors(self.rect):
+            weather_speed_mult = 0.78 if world.weather_type == "rain" else 0.86
+            weather_jump_mult = 0.92
+
         if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:
             speed_mult *= 2.0 # Sprint
         sprinting = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
@@ -434,10 +441,10 @@ class Player:
             return
 
         if keys[pygame.K_a]:
-            dx -= self.speed * (0.5 if in_water else speed_mult)
+            dx -= self.speed * (0.5 if in_water else speed_mult) * weather_speed_mult
             self.direction = -1
         if keys[pygame.K_d]:
-            dx += self.speed * (0.5 if in_water else speed_mult)
+            dx += self.speed * (0.5 if in_water else speed_mult) * weather_speed_mult
             self.direction = 1
         
         # Blocking
@@ -452,7 +459,7 @@ class Player:
             if in_water:
                 self.vel_y = -4 # Stronger swim up
             elif self.on_ground and keys[pygame.K_SPACE]:
-                self.vel_y = self.jump_strength * (1.2 if sprinting else 1.0)
+                self.vel_y = self.jump_strength * weather_jump_mult * (1.2 if sprinting else 1.0)
                 self.jump_attack_timer = 12
 
         self.vel_y += GRAVITY * (0.3 if in_water else 1.0)
@@ -592,11 +599,44 @@ class World:
         self.arrows = [] # ArrowShot instances
         self.fishing_hooks = [] # FishingHook instances
         self.time = 0 # 0 corresponds to 6:00 AM (Sunrise)
+        self.weather_type = "clear"  # clear, rain, snow
+        self.weather_timer = 0
+        self.weather_intensity = 0.0
         self.active_water = set() # Track coordinates of flowing water
         self.generate_world()
+        self.choose_weather()
 
     def get_chunk_id(self, tx, ty):
         return ((tx % WORLD_WIDTH) // CHUNK_SIZE, ty // CHUNK_SIZE)
+
+    def choose_weather(self):
+        if random.random() < 0.60:
+            self.weather_type = "clear"
+            self.weather_intensity = 0.0
+            self.weather_timer = random.randint(2400, 7200)
+        else:
+            self.weather_type = "rain" if random.random() < 0.66 else "snow"
+            self.weather_intensity = random.uniform(0.45, 1.0)
+            self.weather_timer = random.randint(1800, 4800)
+            if self.weather_type == "snow" and self.weather_intensity < 0.6:
+                self.weather_intensity = 0.6
+
+    def update_weather(self):
+        if self.weather_timer > 0:
+            self.weather_timer -= 1
+        if self.weather_timer <= 0:
+            self.choose_weather()
+
+    def is_precipitating(self):
+        return self.weather_type in ("rain", "snow") and self.weather_intensity > 0.0
+
+    def is_outdoors(self, rect):
+        cx = rect.centerx // TILE_SIZE
+        top_ty = rect.top // TILE_SIZE
+        for y in range(0, top_ty + 1):
+            if (cx, y) in self.data:
+                return False
+        return True
 
     def set_block(self, tx, ty, b_type):
         cid = self.get_chunk_id(tx, ty)
@@ -937,6 +977,9 @@ class World:
             bg_color = (80, 60, 100)
         else: # Night
             bg_color = (15, 15, 30)
+        if self.is_precipitating():
+            dim = 0.72 if self.weather_type == "rain" else 0.82
+            bg_color = tuple(max(0, int(c * dim)) for c in bg_color)
         surface.fill(bg_color)
         
         # Celestial Bodies
@@ -949,6 +992,21 @@ class World:
         
         pygame.draw.circle(surface, (255, 255, 0), (int(sun_x), int(sun_y)), 30) # Sun
         pygame.draw.circle(surface, (220, 220, 255), (int(moon_x), int(moon_y)), 25) # Moon
+        if self.is_precipitating():
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            if self.weather_type == "rain":
+                overlay.fill((30, 40, 60, int(90 * self.weather_intensity)))
+                for _ in range(int(100 * self.weather_intensity)):
+                    rx = random.randrange(SCREEN_WIDTH)
+                    ry = random.randrange(SCREEN_HEIGHT)
+                    pygame.draw.line(overlay, (185, 200, 220, 170), (rx, ry), (rx + 1, ry + 10), 1)
+            else:
+                overlay.fill((50, 55, 70, int(80 * self.weather_intensity)))
+                for _ in range(int(70 * self.weather_intensity)):
+                    rx = random.randrange(SCREEN_WIDTH)
+                    ry = random.randrange(SCREEN_HEIGHT)
+                    pygame.draw.circle(overlay, (230, 235, 245, 200), (rx, ry), 1)
+            surface.blit(overlay, (0, 0))
         
         # Draw chunks that are visible on screen
         start_cx = int(scroll_x // (CHUNK_SIZE * TILE_SIZE)) - 1
@@ -2596,6 +2654,9 @@ def save_game(world, player, filename):
         "chest_data": {f"{k[0]},{k[1]}": v for k, v in world.chest_data.items()},
         "furnace_data": {f"{k[0]},{k[1]}": v for k, v in world.furnace_data.items()},
         "time": world.time,
+        "weather_type": world.weather_type,
+        "weather_timer": world.weather_timer,
+        "weather_intensity": world.weather_intensity,
         "player": {
             "x": player.rect.x, "y": player.rect.y,
             "health": player.health, "hunger": player.hunger,
@@ -2642,6 +2703,9 @@ def load_game(world, player, filename):
             world.chest_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("chest_data", {}).items()}
             world.furnace_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("furnace_data", {}).items()}
             world.time = sd.get("time", 0)
+            world.weather_type = sd.get("weather_type", "clear")
+            world.weather_timer = sd.get("weather_timer", 0)
+            world.weather_intensity = sd.get("weather_intensity", 0.0)
             if DIAMOND_ORE not in world.data.values():
                 for _ in range(max(8, WORLD_WIDTH // 24)):
                     vx = random.randint(0, WORLD_WIDTH - 1)
@@ -3806,6 +3870,7 @@ def main():
             if world.time % 8 == 0:
                 world.update_water()
             world.time = (world.time + 1) % 24000
+            world.update_weather()
             
             # Mob Spawning
             t = world.time

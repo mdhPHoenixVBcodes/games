@@ -21,7 +21,7 @@ public class GameController {
     private static final double JUMP_SPEED = -8.2;
     private static final int TILE = 32;
     private static final int PLAYER_W = 24;
-    private static final int PLAYER_H = 48;
+    private static final int PLAYER_H = 64;
 
     private final WorldState worldState = new WorldState();
 
@@ -120,17 +120,6 @@ public class GameController {
             PlayerState player = worldState.getPlayer(req.playerId);
             if (player == null) {
                 throw new IllegalArgumentException("Unknown player id");
-            }
-            int[][] expectedTargets = placementTargets(player, req.miningMode);
-            boolean match = false;
-            for (int[] expected : expectedTargets) {
-                if (x == expected[0] && y == expected[1]) {
-                    match = true;
-                    break;
-                }
-            }
-            if (!match) {
-                throw new IllegalArgumentException("Can only place blocks at the active mining target");
             }
             if (worldState.getBlock(x, y) == null) {
                 worldState.setBlock(x, y, req.blockType == null ? 2 : req.blockType);

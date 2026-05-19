@@ -6,7 +6,7 @@ const nameInput = document.getElementById("name");
 
 const TILE = 32;
 const PLAYER_W = 24;
-const PLAYER_H = 48;
+const PLAYER_H = 64;
 
 const BLOCKS = {
   1: { name: "Grass", color: "#6dbb4f" },
@@ -99,11 +99,17 @@ function mergeChunkSnapshot(snapshot) {
   }
   if (snapshot.chunks && typeof snapshot.chunks === "object") {
     for (const [chunkKey, chunkBlocks] of Object.entries(snapshot.chunks)) {
-      state.world.chunks[chunkKey] = { ...(state.world.chunks[chunkKey] || {}), ...chunkBlocks };
+      state.world.chunks[chunkKey] = { ...chunkBlocks };
     }
   }
   if (snapshot.blocks && typeof snapshot.blocks === "object") {
-    state.world.blocks = { ...state.world.blocks, ...snapshot.blocks };
+    state.world.blocks = { ...snapshot.blocks };
+  } else if (snapshot.chunks && typeof snapshot.chunks === "object") {
+    const flat = {};
+    for (const chunkBlocks of Object.values(state.world.chunks)) {
+      Object.assign(flat, chunkBlocks);
+    }
+    state.world.blocks = flat;
   }
 }
 
@@ -318,6 +324,14 @@ function drawHud() {
   if (state.gamepad.connected) {
     ctx.fillText("Controller connected", canvas.width - 180, 55);
   }
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(canvas.width - 150, 10, 140, 44);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(`X: ${Math.floor(state.me.x / TILE)}`, canvas.width - 20, 30);
+  ctx.fillText(`Y: ${Math.floor(state.me.y / TILE)}`, canvas.width - 20, 44);
+  ctx.textAlign = "left";
 }
 
 function drawHotbar() {
@@ -336,15 +350,9 @@ function drawHotbar() {
     ctx.strokeStyle = selected ? "#ffe08a" : "rgba(255,255,255,0.25)";
     ctx.lineWidth = selected ? 3 : 2;
     ctx.strokeRect(x + 1, y + 1, slotSize - 2, slotSize - 2);
-
-    const block = BLOCKS[i];
-    if (block) {
-      ctx.fillStyle = block.color;
-      ctx.fillRect(x + 5, y + 5, slotSize - 10, slotSize - 10);
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.font = "12px Arial";
-      ctx.fillText(String(i), x + 4, y + 14);
-    }
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.font = "12px Arial";
+    ctx.fillText(String(i), x + 4, y + 14);
   }
 }
 
