@@ -133,6 +133,8 @@ is_driving = False
 current_speed = 0.0
 max_speed = 0.0
 acceleration = 0.0
+mouse_accelerate = False
+mouse_brake = False
 deceleration = 0.0
 vehicle_y_velocity = 0.0  
 lowest_y_offset = 0.0     
@@ -142,14 +144,17 @@ car_parts = []
 car_velocity = Vec3(0, 0, 0) 
 max_fuel = 0.0
 current_fuel = 0.0
+fuel_timer = 0.0
+is_drifting = False
+skid_timer = 0.0
 
 PART_DATA = {
-    1: {'name': 'Base Block', 'color': color.white, 'weight': 5, 'inventory': 99, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
-    2: {'name': 'Wheel', 'color': color.black, 'weight': 4, 'inventory': 99, 'model': 'cube', 'scale': (0.8, 0.8, 0.3), 'rot': (0, 0, 0)}, 
-    3: {'name': 'Suspension', 'color': color.green, 'weight': 3, 'inventory': 99, 'model': 'cube', 'scale': (0.3, 0.3, 1), 'rot': (0, 0, 0)}, 
-    4: {'name': 'Engine', 'color': color.red, 'weight': 15, 'inventory': 99, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
-    5: {'name': 'Driver Seat', 'color': color.azure, 'weight': 4, 'inventory': 99, 'model': 'cube', 'scale': (1, 0.5, 1), 'rot': (0, 0, 0)}, 
-    6: {'name': 'Fuel Tank', 'color': color.orange, 'weight': 10, 'inventory': 99, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
+    1: {'name': 'Base Block', 'color': color.white, 'weight': 5, 'inventory': 10, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
+    2: {'name': 'Wheel', 'color': color.black, 'weight': 4, 'inventory': 4, 'model': 'cube', 'scale': (0.8, 0.8, 0.3), 'rot': (0, 0, 0)}, 
+    3: {'name': 'Suspension', 'color': color.green, 'weight': 3, 'inventory': 4, 'model': 'cube', 'scale': (0.3, 0.3, 1), 'rot': (0, 0, 0)}, 
+    4: {'name': 'Engine', 'color': color.red, 'weight': 15, 'inventory': 1, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
+    5: {'name': 'Driver Seat', 'color': color.azure, 'weight': 4, 'inventory': 1, 'model': 'cube', 'scale': (1, 0.5, 1), 'rot': (0, 0, 0)}, 
+    6: {'name': 'Fuel Tank', 'color': color.orange, 'weight': 10, 'inventory': 2, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
 }
 
 garage_centers = [
@@ -162,6 +167,20 @@ ground = Entity(model='plane', scale=(200, 1, 200), color=color.dark_gray, colli
 track = Entity(model='cube', scale=(20, 0.1, 150), position=(20, 0.01, 0), color=color.black, collider='box')
 for center in garage_centers:
     Entity(model='cube', scale=(30, 0.11, 30), position=(center.x, 0.015, center.z), color=color.blue, collider='box')
+
+# Bridge to new area
+bridge = Entity(model='cube', scale=(20, 0.1, 200), position=(20, 0.01, 160), color=color.gray, collider='box')
+
+# Oval race track (very big) - positioned far away
+oval_track_center = Vec3(20, 0.01, 380)
+oval_scale_x = 150  # Major axis
+oval_scale_z = 80   # Minor axis
+oval_track_outer = Entity(model='cube', scale=(oval_scale_x * 2, 0.1, oval_scale_z * 2), position=oval_track_center, color=color.black, collider='box')
+oval_track_inner = Entity(model='cube', scale=(oval_scale_x * 1.6, 0.08, oval_scale_z * 1.6), position=(oval_track_center.x, 0.05, oval_track_center.z), color=color.dark_gray, collider='box')
+
+# Extended ground plane for race track area
+race_ground = Entity(model='plane', scale=(400, 1, 300), position=(20, -0.5, 380), color=color.dark_gray, collider='box')
+
 sky = Sky(color=color.rgb(135/255, 206/255, 250/255))
 
 player = FirstPersonController(position=(-50, 2, -10))
@@ -182,7 +201,8 @@ def update_hotbar_ui():
     ui_string = f"PLAYER: {display_name}\nHOTBAR:\n"
     for key, data in PART_DATA.items():
         prefix = "> " if key == selected_block_type else "  "
-        ui_string += f"{prefix}[{key}] {data['name']}\n"
+        # Now it will show the inventory count like: [1] Base Block (x99)
+        ui_string += f"{prefix}[{key}] {data['name']} (x{data['inventory']})\n"
     hotbar_text.text = ui_string
 
 def in_build_zone(pos):
@@ -200,7 +220,8 @@ def get_nearest_garage(pos):
     return nearest
 
 vehicle_parent = Entity(position=(0,0,0))
-hologram = Entity(model='cube', color=color.white, alpha=0.5, collider=None, add_to_scene_entities=False)
+
+hologram = Entity(model='cube', color=color.white, alpha=0.5, collider=None, add_to_scene_entities=False, texture='white_cube')
 
 def send_net_msg(msg_type, data):
     if is_multiplayer and client_socket:
@@ -239,19 +260,32 @@ def connect_to_lan():
         is_multiplayer = False
 
 def get_build_pos_rot():
-    if not mouse.hovered_entity: return None, None, False
     snapped_rot_y = round(player.rotation_y / 90) * 90
     custom_rotation = (0, snapped_rot_y, 0)
     local_scale = PART_DATA[selected_block_type]['scale']
-    part_thickness = local_scale[1] if abs(mouse.normal.y) > 0.5 else local_scale[0]
-    
-    if hasattr(mouse.hovered_entity, 'part_id'):
-        h_thickness = mouse.hovered_entity.scale_y if abs(mouse.normal.y) > 0.5 else mouse.hovered_entity.scale_x
-        build_pos = mouse.hovered_entity.position + mouse.normal * ((h_thickness / 2) + (part_thickness / 2))
+    part_height = local_scale[1] / 2
+
+    if mouse.hovered_entity:
+        target = mouse.hovered_entity
+        normal = mouse.normal
+        if normal is None:
+            return None, custom_rotation, False
+
+        if hasattr(target, 'part_id'):
+            h_thickness = target.scale_y if abs(normal.y) > 0.5 else target.scale_x
+            build_pos = target.position + normal * ((h_thickness / 2) + part_height)
+        else:
+            build_pos = mouse.world_point + normal * part_height
     else:
-        build_pos = mouse.world_point + mouse.normal * (part_thickness / 2)
-        build_pos.x = round(build_pos.x); build_pos.z = round(build_pos.z); build_pos.y = local_scale[1] / 2
-        
+        ray = raycast(camera.world_position, camera.forward, distance=500)
+        if not ray.hit:
+            return None, custom_rotation, False
+        build_pos = ray.world_point + ray.normal * part_height
+
+    build_pos.x = round(build_pos.x)
+    build_pos.z = round(build_pos.z)
+    build_pos.y = round(build_pos.y)
+
     is_valid = in_build_zone(build_pos) and distance(build_pos, player.position) > 0.8
     return build_pos, custom_rotation, is_valid
 
@@ -260,30 +294,39 @@ class VehiclePart(Entity):
         super().__init__(
             parent=scene, position=position, model=PART_DATA[part_id]['model'],
             scale=PART_DATA[part_id]['scale'], rotation=custom_rot, origin_y=0,
-            color=PART_DATA[part_id]['color'], collider='box'
+            color=PART_DATA[part_id]['color'], collider='box',
+            texture='white_cube'
         )
         self.part_id = part_id
         self.weight = PART_DATA[part_id]['weight']
         
         if local_build:
             car_parts.append(self)
-        
-        coord_key = (round(position[0],2), round(position[1],2), round(position[2],2))
-        remote_blocks[coord_key] = self
+        else:
+            coord_key = (round(position[0],2), round(position[1],2), round(position[2],2))
+            remote_blocks[coord_key] = self
 
 def input(key):
-    global selected_block_type, is_driving
+    global selected_block_type, is_driving, mouse_accelerate, mouse_brake
 
     if key == 'escape':
         mouse.locked = not mouse.locked
-        player.enabled = mouse.locked 
         return
 
     if key.isdigit() and int(key) in PART_DATA:
         selected_block_type = int(key)
         update_hotbar_ui()
         
-    if not is_driving and mouse.locked: 
+    if is_driving:
+        if key == 'right mouse down':
+            mouse_accelerate = True
+        if key == 'right mouse up':
+            mouse_accelerate = False
+        if key == 'left mouse down':
+            mouse_brake = True
+        if key == 'left mouse up':
+            mouse_brake = False
+    elif not is_driving and mouse.locked: 
         if key == 'right mouse down' and mouse.hovered_entity:
             if hasattr(mouse.hovered_entity, 'part_id') and mouse.hovered_entity.part_id == 5:
                 enter_vehicle(mouse.hovered_entity)
@@ -307,17 +350,49 @@ def input(key):
 
     if key == 'e' and is_driving:
         exit_vehicle()
+    
+    if key == 'shift' and is_driving:
+        global is_drifting
+        is_drifting = True
+    
+    if key == 'shift up' and is_driving:
+        is_drifting = False
 
 def enter_vehicle(seat_entity):
     global is_driving, car_weight, max_speed, acceleration, deceleration, current_speed 
     global lowest_y_offset, vehicle_y_velocity, car_velocity, max_fuel, current_fuel
+    global mouse_accelerate, mouse_brake
     
+    # Check for required parts
+    has_engine = any(part.part_id == 4 for part in car_parts)
+    has_fuel = any(part.part_id == 6 for part in car_parts)
+    has_wheels = sum(1 for part in car_parts if part.part_id == 2) >= 2
+    
+    if not has_engine:
+        warning_text.text = "MISSING ENGINE!"
+        return
+    if not has_fuel:
+        warning_text.text = "MISSING FUEL TANK!"
+        return
+    if not has_wheels:
+        warning_text.text = "MISSING WHEELS!"
+        return
+    
+    warning_text.text = ""
     car_weight = sum(part.weight for part in car_parts)
-    max_speed = base_engine_power / (car_weight * 0.05) 
-    acceleration = base_engine_power / (car_weight * 0.2)
+    num_engines = sum(1 for part in car_parts if part.part_id == 4)
+    total_engine_power = base_engine_power * max(1, num_engines)
+    max_speed = total_engine_power / (car_weight * 0.05)
+    acceleration = total_engine_power / (car_weight * 0.2)
     deceleration = acceleration * 1.5 
     current_speed = 0.0; vehicle_y_velocity = 0.0  
-    current_fuel = 100.0; max_fuel = 100.0
+    mouse_accelerate = False
+    mouse_brake = False
+    
+    # Fuel calculations: 5L per placed Fuel Tank
+    num_tanks = sum(1 for part in car_parts if part.part_id == 6)
+    max_fuel = num_tanks * 5 if num_tanks > 0 else 5
+    current_fuel = max_fuel
     
     vehicle_parent.position = seat_entity.position
     vehicle_parent.rotation = (0, player.rotation_y, 0)
@@ -335,7 +410,7 @@ def enter_vehicle(seat_entity):
     is_driving = True
 
 def exit_vehicle():
-    global is_driving
+    global is_driving, mouse_accelerate, mouse_brake
     if not in_build_zone(vehicle_parent.position):
         nearest = get_nearest_garage(vehicle_parent.position)
         vehicle_parent.position = Vec3(nearest.x, 5, nearest.z) 
@@ -347,10 +422,12 @@ def exit_vehicle():
     camera.position = (0,0,0); camera.rotation = (0,0,0)
     player.position = vehicle_parent.position + Vec3(3, 1, 0) 
     player.enabled = True
+    mouse_accelerate = False
+    mouse_brake = False
     is_driving = False 
 
 def update():
-    global current_speed, vehicle_y_velocity, car_velocity, my_id
+    global current_speed, vehicle_y_velocity, car_velocity, my_id, current_fuel, fuel_timer, is_drifting, skid_timer
     
     if is_multiplayer:
         messages_to_process = []
@@ -415,6 +492,7 @@ def update():
         if build_pos:
             hologram.position = build_pos; hologram.rotation = custom_rotation
             hologram.color = PART_DATA[selected_block_type]['color'] if is_valid else color.red
+            hologram.alpha = 0.5
         else: hologram.enabled = False
     else: hologram.enabled = False
     
@@ -428,19 +506,54 @@ def update():
         else:
             vehicle_y_velocity -= 25 * time.dt; vehicle_parent.y += vehicle_y_velocity * time.dt
 
-        if held_keys['w']: current_speed += acceleration * time.dt
-        elif held_keys['s']: current_speed -= deceleration * time.dt
-        else: current_speed = lerp(current_speed, 0, time.dt * 2)
+        # Input and Fuel Management
+        if current_fuel > 0:
+            if held_keys['w'] or mouse_accelerate:
+                current_speed += acceleration * time.dt
+            elif held_keys['s'] or mouse_brake:
+                current_speed -= deceleration * time.dt
+            else:
+                current_speed = lerp(current_speed, 0, time.dt * 2)
+            
+            # Drifting reduces speed
+            if is_drifting:
+                current_speed *= 0.95
+            
+            # Fuel Consumption Loop - 1 unit every 30 seconds
+            fuel_timer += time.dt
+            if fuel_timer >= 30.0:
+                current_fuel -= 1
+                fuel_timer = 0.0
+                if current_fuel < 0: current_fuel = 0
+        else:
+            current_speed = lerp(current_speed, 0, time.dt * 2)
 
         current_speed = clamp(current_speed, -max_speed * 0.5, max_speed)
         
         if abs(current_speed) > 0.1:
             turn_direction = 1 if current_speed > 0 else -1
-            if held_keys['a']: vehicle_parent.rotation_y -= 60 * turn_direction * time.dt
-            if held_keys['d']: vehicle_parent.rotation_y += 60 * turn_direction * time.dt
+            # Smooth turning - increased during drift for responsive control
+            turn_speed = 120 if is_drifting else 75
+            if held_keys['a']: vehicle_parent.rotation_y -= turn_speed * turn_direction * time.dt
+            if held_keys['d']: vehicle_parent.rotation_y += turn_speed * turn_direction * time.dt
                 
-        vehicle_parent.position += vehicle_parent.forward * current_speed * time.dt
+        # --- DRIFTING MOMENTUM CORE ENGINE ---
+        target_velocity = vehicle_parent.forward * current_speed
+        # When drifting, reduce control for lateral sliding; otherwise normal physics
+        if is_drifting and (held_keys['a'] or held_keys['d']):
+            drift_factor = 0.8  # Very loose handling for drifting
+        elif held_keys['a'] or held_keys['d']:
+            drift_factor = 1.8  # Normal turning grip
+        else:
+            drift_factor = 5.5  # Straightening out
+        car_velocity = lerp(car_velocity, target_velocity, time.dt * drift_factor)
+        vehicle_parent.position += car_velocity * time.dt
                 
+        # Screen Text updates with speedometer, fuel gauge, and drift indicator
+        drift_indicator = " [DRIFTING!]" if is_drifting else ""
+        speedometer.text = f"SPEED: {int(abs(current_speed * 4.2))} km/h{drift_indicator}"
+        fuel_text.text = f"FUEL: {int(current_fuel)}/{int(max_fuel)} L"
+        
         ideal_cam_pos = vehicle_parent.position - (vehicle_parent.forward * 12) + Vec3(0, 4, 0)
         camera.position = lerp(camera.position, ideal_cam_pos, time.dt * 7)
         camera.look_at(vehicle_parent.position + vehicle_parent.forward * 3 + Vec3(0, 1.5, 0))
