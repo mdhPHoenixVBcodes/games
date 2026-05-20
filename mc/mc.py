@@ -126,6 +126,7 @@ C_STAIRS = 30
 W_SLAB = 31
 C_SLAB = 32
 SS_STAIRS = 33
+SS_SLAB = 34
 TALL_GRASS = 37
 SEEDS = 38
 FARMLAND = 39
@@ -158,6 +159,8 @@ WATER = 65
 SAND_BLOCK = 87
 CACTUS = 88
 DEAD_BUSH = 89
+BEDROCK = 90
+SADDLE = 91
 BOAT = 66
 LADDER = 67
 DIAMOND_ORE = 68
@@ -264,7 +267,7 @@ BLOCK_NAMES = {
     COOKED_SALMON: "Cooked Salmon",
     FISHING_ROD: "Fishing Rod",
     TORCH: "Torch",
-    SAND_BLOCK: "Sand", CACTUS: "Cactus", DEAD_BUSH: "Dead Bush"
+    SAND_BLOCK: "Sand", CACTUS: "Cactus", DEAD_BUSH: "Dead Bush", BEDROCK: "Bedrock", SADDLE: "Saddle"
 }
 
 MAX_DURABILITY = {
@@ -286,7 +289,7 @@ PLACEABLE_BLOCKS = {
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
     LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS,
     W_SLAB, C_SLAB, SS_SLAB, FARMLAND, HAY_BALE, CHEST,
-    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK, CACTUS
+    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK, CACTUS, BEDROCK
 }
 
 class Player:
@@ -311,15 +314,18 @@ class Player:
         self.jump_strength = -8.0 # Stronger jump for easier towering
         self.on_ground = False
         self.direction = 1 
+        self.riding_mob = None
         
         self.max_health = 20
         self.health = self.max_health
+        self.last_damage_cause = None
         self.highest_y = self.rect.y 
         self.invincible_until = pygame.time.get_ticks() + 5000 # 5s at startup
         self.last_action_time = 0 # Cooldown for building/breaking
         
         self.inventory = [None] * 36 # 0-8 Hotbar, 9-35 Main Inventory
         self.inventory[0] = {"type": DIRT_BLOCK, "count": 10}
+        self.inventory[1] = {"type": SADDLE, "count": 5}
         self.armor = [None] * 4 # 0: Helmet, 1: Chest, 2: Legs, 3: Boots
         self.selected_slot = 0
         
@@ -376,7 +382,7 @@ class Player:
                     touching_cactus = True
                     break
             if touching_cactus:
-                self.take_damage(1)
+                self.take_damage(1, cause="cactus")
                 self.cactus_dmg_timer = 30  # 0.5s cooldown at 60fps
 
         # Hunger Logic
@@ -391,7 +397,7 @@ class Player:
             if self.hunger >= 18 and self.health < self.max_health:
                 self.health = min(self.max_health, self.health + 1)
             elif self.hunger <= 0:
-                self.take_damage(1)
+                self.take_damage(1, cause="starvation")
             self.regen_timer = 0
 
         if self.show_inventory: return # Freeze movement
@@ -422,7 +428,7 @@ class Player:
                 if self.air > 0:
                     self.air -= 1
                 else:
-                    self.take_damage(4) # 2 Hearts damage
+                    self.take_damage(4, cause="drowning") # 2 Hearts damage
                 self.air_timer = 0
         else:
             if self.air < 10:
@@ -447,6 +453,25 @@ class Player:
         if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:
             speed_mult *= 2.0 # Sprint
         sprinting = keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]
+
+        if self.riding_mob:
+            if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
+                self.riding_mob = None
+                self.vel_y = 0
+                self.on_ground = False
+                self.highest_y = self.rect.y
+                return
+            else:
+                self.rect.centerx = self.riding_mob.rect.centerx
+                self.rect.bottom = self.riding_mob.rect.top
+                self.vel_y = 0
+                self.on_ground = True
+                self.highest_y = self.rect.y
+                if keys[pygame.K_a]:
+                    self.direction = -1
+                elif keys[pygame.K_d]:
+                    self.direction = 1
+                return
 
         if on_boat and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]):
             exit_dx = 1 if self.direction > 0 else -1
@@ -522,12 +547,11 @@ class Player:
         # Bottom Border
         if self.rect.bottom > WORLD_HEIGHT * TILE_SIZE:
             self.rect.bottom = WORLD_HEIGHT * TILE_SIZE
-            if not self.on_ground: self.calculate_fall_damage()
-            self.on_ground = True
+            self.take_damage(20, cause="void")
             self.vel_y = 0
 
         if self.health <= 0:
-            self.respawn()
+            self.die(world)
 
     def handle_collisions(self, world, dx, dy):
         for block_rect in world.get_surrounding_blocks(self.rect):
@@ -557,6 +581,7 @@ class Player:
                     dmg *= 0.75
             self.health -= max(1, math.ceil(dmg))
             self.health = max(0, self.health)
+            self.last_damage_cause = "fall"
         self.highest_y = self.rect.y
 
     def respawn(self):
@@ -571,8 +596,38 @@ class Player:
         self.invincible_until = pygame.time.get_ticks() + 5000
         self.jump_attack_timer = 0
         self.fishing_hook = None
+        self.riding_mob = None
 
-    def take_damage(self, amount):
+    def die(self, world):
+        cause = getattr(self, 'last_damage_cause', None)
+        msg_text = f"{self.display_name} died"
+        if cause == "cactus":
+            msg_text = f"{self.display_name} was pricked to death by a cactus"
+        elif cause == "drowning":
+            msg_text = f"{self.display_name} drowned"
+        elif cause == "starvation":
+            msg_text = f"{self.display_name} starved to death"
+        elif cause == "fall":
+            msg_text = f"{self.display_name} fell from a high place"
+        elif cause == "zombie":
+            msg_text = f"{self.display_name} was slain by Zombie"
+        elif cause == "husk":
+            msg_text = f"{self.display_name} was slain by Husk"
+        elif cause == "spider":
+            msg_text = f"{self.display_name} was slain by Spider"
+        elif cause == "enderman":
+            msg_text = f"{self.display_name} was slain by Enderman"
+        elif cause == "void":
+            msg_text = f"{self.display_name} fell out of the world"
+        
+        if hasattr(world, 'death_messages'):
+            world.death_messages.append({"text": msg_text, "timer": 300}) # 5 seconds
+        
+        print(f"[DEATH] {msg_text}")
+        self.last_damage_cause = None
+        self.respawn()
+
+    def take_damage(self, amount, cause=None):
         if pygame.time.get_ticks() < self.invincible_until: return
         # Armor reduction
         reduction = 0
@@ -602,11 +657,14 @@ class Player:
         self.health -= final_dmg
         self.invincible_until = pygame.time.get_ticks() + 500 # Brief i-frames
         if self.health < 0: self.health = 0
+        if cause is not None:
+            self.last_damage_cause = cause
 
 class World:
     def __init__(self):
         self.chunks = {} 
         self.block_meta = {} # (tx, ty) -> {"facing": 1 or -1}
+        self.death_messages = []
         self.furnace_data = {} # (tx, ty) -> {"input": slot, "fuel": slot, "output": slot, "cook_time": float, "fuel_time": float}
         self.chest_data = {} # (tx, ty) -> [slots]
         self.remote_players_data = {} # persistent_id -> player_stats
@@ -1022,6 +1080,10 @@ class World:
                         if (ctx, cty) in self.data:
                             del self.data[(ctx, cty)]
 
+        # Solid unbreakable Bedrock layer at the bottom of the world
+        for x in range(WORLD_WIDTH):
+            self.data[(x, WORLD_HEIGHT - 1)] = BEDROCK
+
     def find_safe_spawn(self, player):
         """Finds a safe Y level for the player at their current X to prevent getting stuck."""
         start_x = int(player.rect.centerx // TILE_SIZE) % WORLD_WIDTH
@@ -1151,6 +1213,12 @@ class World:
                             elif b_type in (OAK_LEAVES, BIRCH_LEAVES):
                                 color = COLOR_LEAVES_G if b_type == OAK_LEAVES else COLOR_LEAVES_B
                                 pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                            elif b_type == BEDROCK:
+                                pygame.draw.rect(surface, (25, 25, 25), (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                pygame.draw.rect(surface, (10, 10, 10), (draw_x + 2, draw_y + 2, 8, 8))
+                                pygame.draw.rect(surface, (45, 45, 45), (draw_x + 12, draw_y + 4, 10, 6))
+                                pygame.draw.rect(surface, (10, 10, 10), (draw_x + 22, draw_y + 12, 6, 12))
+                                pygame.draw.rect(surface, (45, 45, 45), (draw_x + 4, draw_y + 20, 8, 8))
                             elif b_type in (W_STAIRS, C_STAIRS, SS_STAIRS):
                                 color = COLOR_PLANKS if b_type == W_STAIRS else ((100, 100, 100) if b_type == C_STAIRS else (180, 180, 190))
                                 pygame.draw.rect(surface, color, (draw_x, draw_y + TILE_SIZE//2, TILE_SIZE, TILE_SIZE//2))
@@ -1728,6 +1796,8 @@ class Mob:
         self.hurt_timer = 0
         self.highest_y = self.rect.y
         self.is_burning = False
+        self.tamed = False
+        self.saddled = False
         self.teleport_timer = 0
         self.angry = False
 
@@ -1869,11 +1939,26 @@ class Mob:
             else:
                 self.vel_x = 0
         elif self.m_type == "camel":
-            # Wander passively
-            self.wander_timer -= 1
-            if self.wander_timer <= 0:
-                self.wander_timer = random.randint(120, 300)
-                self.vel_x = random.choice([-self.speed, 0, 0, self.speed])
+            if player.riding_mob == self:
+                if self.saddled:
+                    keys = pygame.key.get_pressed()
+                    self.vel_x = 0
+                    if keys[pygame.K_a]:
+                        self.vel_x = -3.0
+                    elif keys[pygame.K_d]:
+                        self.vel_x = 3.0
+                    if keys[pygame.K_SPACE] and self.on_ground:
+                        self.vel_y = -6.5
+                else:
+                    self.wander_timer -= 1
+                    if self.wander_timer <= 0:
+                        self.wander_timer = random.randint(120, 300)
+                        self.vel_x = random.choice([-self.speed, 0, 0, self.speed])
+            else:
+                self.wander_timer -= 1
+                if self.wander_timer <= 0:
+                    self.wander_timer = random.randint(120, 300)
+                    self.vel_x = random.choice([-self.speed, 0, 0, self.speed])
         else: # Cow/Sheep Wander / Follow
             slot = player.inventory[player.selected_slot] if not player.show_inventory else player.held_item
             lure_item = WHEAT_ITEM
@@ -1954,7 +2039,7 @@ class Mob:
             dist_y = abs(self.rect.centery - player.rect.centery)
             if dist_x < (self.rect.width + player.rect.width)/2 and dist_y < (self.rect.height + player.rect.height)/2:
                 if pygame.time.get_ticks() - self.last_hit > 1000:
-                    player.take_damage(3) # Slightly stronger than zombie
+                    player.take_damage(3, cause="husk") # Slightly stronger than zombie
                     self.last_hit = pygame.time.get_ticks()
 
         # Zombies specific behaviors
@@ -1989,7 +2074,7 @@ class Mob:
             
             if dist_x < (self.rect.width + player.rect.width)/2 and dist_y < (self.rect.height + player.rect.height)/2:
                 if pygame.time.get_ticks() - self.last_hit > 1000:
-                    player.take_damage(2)
+                    player.take_damage(2, cause="zombie")
                     self.last_hit = pygame.time.get_ticks()
         elif self.m_type == "enderman":
             dist_x = abs(self.rect.centerx - player.rect.centerx)
@@ -1998,7 +2083,7 @@ class Mob:
             dist_y = abs(self.rect.centery - player.rect.centery)
             if self.angry and dist_x < 72 and dist_y < self.rect.height:
                 if pygame.time.get_ticks() - self.last_hit > 1200:
-                    player.take_damage(4)
+                    player.take_damage(4, cause="enderman")
                     self.last_hit = pygame.time.get_ticks()
         elif self.m_type == "spider":
             dist_x = abs(self.rect.centerx - player.rect.centerx)
@@ -2007,7 +2092,7 @@ class Mob:
             dist_y = abs(self.rect.centery - player.rect.centery)
             if is_night and dist_x < (self.rect.width + player.rect.width)/2 and dist_y < (self.rect.height + player.rect.height)/2:
                 if pygame.time.get_ticks() - self.last_hit > 900:
-                    player.take_damage(2)
+                    player.take_damage(2, cause="spider")
                     self.last_hit = pygame.time.get_ticks()
 
     def draw(self, surface, scroll_x, scroll_y):
@@ -2114,6 +2199,10 @@ class Mob:
                 pygame.draw.rect(surface, leg_c, (dx + 16, dy + self.rect.height - 14, 6, 14))
                 pygame.draw.rect(surface, leg_c, (dx + 28, dy + self.rect.height - 14, 6, 14))
                 pygame.draw.rect(surface, leg_c, (dx + 38, dy + self.rect.height - 14, 6, 14))
+                if getattr(self, "saddled", False):
+                    pygame.draw.rect(surface, (200, 50, 50), (dx + 12, dy + 12, 22, 10))
+                    pygame.draw.rect(surface, (139, 69, 19), (dx + 16, dy + 10, 14, 4))
+                    pygame.draw.line(surface, (180, 180, 180), (dx + 23, dy + 14), (dx + 23, dy + 22), 2)
 
 def draw_block_icon(screen, b_type, x, y, size, font):
     if b_type == STICK:
@@ -2406,6 +2495,17 @@ def draw_block_icon(screen, b_type, x, y, size, font):
         pygame.draw.line(screen, bush_c, (cx, cy), (cx + size//4, cy - size*3//8), 2)
         pygame.draw.line(screen, bush_c, (cx, cy), (cx - size//8, cy - size//2), 1)
         pygame.draw.line(screen, bush_c, (cx, cy), (cx + size//8, cy - size//2), 1)
+    elif b_type == BEDROCK:
+        pygame.draw.rect(screen, (25, 25, 25), (x, y, size, size))
+        pygame.draw.rect(screen, (10, 10, 10), (x + size//8, y + size//8, size//4, size//4))
+        pygame.draw.rect(screen, (45, 45, 45), (x + size*3//8, y + size//8, size*5//16, size*3//16))
+        pygame.draw.rect(screen, (10, 10, 10), (x + size*11//16, y + size*3//8, size*3//16, size*3//8))
+        pygame.draw.rect(screen, (45, 45, 45), (x + size//8, y + size*5//8, size//4, size//4))
+    elif b_type == SADDLE:
+        pygame.draw.ellipse(screen, (139, 69, 19), (x + 2, y + 6, size - 4, size - 12))
+        pygame.draw.rect(screen, (100, 50, 10), (x + 6, y + 8, size - 12, size - 16))
+        pygame.draw.rect(screen, (180, 180, 180), (x + size//2 - 6, y + size - 10, 12, 4))
+        pygame.draw.rect(screen, (120, 120, 120), (x + size//2 - 4, y + 10, 8, 2))
     else:
         color = {GRASS_BLOCK: COLOR_GRASS, DIRT_BLOCK: COLOR_DIRT, STONE_BLOCK: COLOR_STONE}.get(b_type, COLOR_WHITE)
         pygame.draw.rect(screen, color, (x, y, size, size))
@@ -3138,7 +3238,7 @@ def main():
     elif choice == "4":
         return
     
-    world_name = "default"
+    world_name = "wrld3"
     if mode != "join":
         # List existing worlds
         saves = [f.name for f in WORLDS_DIR.iterdir() if f.is_file() and f.name.startswith("savegame") and f.name.endswith(".json")]
@@ -3151,7 +3251,7 @@ def main():
                 print(f" - {name}")
         
         print("\n(Type a world name to load, or 'create' for a new world)")
-        world_name = input("Enter world name: ").strip() or "default"
+        world_name = input("Enter world name [wrld3]: ").strip() or "wrld3"
         if world_name.lower() == "create":
             world_name = input("Enter name for new world: ").strip() or f"world_{int(time.time())}"
     else:
@@ -3569,7 +3669,7 @@ def main():
                 player.breaking_block = None
                 player.breaking_progress = 0.0
                 for tx, ty in valid_targets:
-                    if (tx, ty) in world.data and world.data[(tx, ty)] != WATER:
+                    if (tx, ty) in world.data and world.data[(tx, ty)] not in (WATER, BEDROCK):
                         player.breaking_block = (tx, ty)
                         break
             
@@ -3607,7 +3707,7 @@ def main():
                     player.last_action_time = now
                     # Break ALL valid targets that exist
                     for bx, by in valid_targets:
-                        if (bx, by) in world.data and world.data[(bx, by)] != WATER:
+                        if (bx, by) in world.data and world.data[(bx, by)] not in (WATER, BEDROCK):
                             drop_type = world.data[(bx, by)]
                             to_remove = [(bx, by)]
                             if drop_type in (DOOR_TOP, DOOR_OPEN_TOP):
@@ -3633,6 +3733,10 @@ def main():
                             if drop_type == TALL_GRASS:
                                 if random.random() < 0.15: drop_type = SEEDS
                                 else: drop_type = None # Usually nothing drops
+                            elif drop_type == DEAD_BUSH:
+                                drop_type = STICK
+                                if random.random() < 0.5:
+                                    world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, STICK))
                             elif WHEAT_STG0 <= drop_type <= WHEAT_STG3:
                                 if drop_type == WHEAT_STG3:
                                     # Drop Wheat and Seeds
@@ -3732,6 +3836,36 @@ def main():
                         player.inventory[player.selected_slot] = None
                     player.last_action_time = now
                     action_taken = True
+
+            if not action_taken:
+                mx, my = pygame.mouse.get_pos()
+                world_click_x = (scroll_x + mx) % WORLD_PIXELS
+                world_click_y = scroll_y + my
+                clicked_camel = None
+                for mob in world.mobs:
+                    if mob.m_type == "camel":
+                        for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
+                            m_rect = mob.rect.copy()
+                            m_rect.x += offset
+                            if m_rect.collidepoint(world_click_x, world_click_y):
+                                clicked_camel = mob
+                                break
+                        if clicked_camel:
+                            break
+                
+                if clicked_camel:
+                    action_taken = True
+                    player.last_action_time = now
+                    if slot and slot["type"] == SADDLE:
+                        if not getattr(clicked_camel, "saddled", False):
+                            clicked_camel.saddled = True
+                            clicked_camel.tamed = True
+                            slot["count"] -= 1
+                            if slot["count"] <= 0:
+                                player.inventory[player.selected_slot] = None
+                    else:
+                        clicked_camel.tamed = True
+                        player.riding_mob = clicked_camel
 
             for tx, ty in ([] if action_taken else valid_targets):
                 if (tx, ty) in world.data and world.data[(tx, ty)] == BOAT:
@@ -4081,8 +4215,8 @@ def main():
             # Desert spawning: check if player is in desert biome (tile x 200-400)
             player_tile_x = (player.rect.centerx // TILE_SIZE) % WORLD_WIDTH
             in_desert = 200 <= player_tile_x < 400
-            # Husks spawn at any time in the desert (they don't burn)
-            if in_desert and len([m for m in world.mobs if m.m_type == "husk"]) < 5:
+            # Husks spawn at night in the desert (they don't burn)
+            if in_desert and (t > 14000 or t < 1000) and len([m for m in world.mobs if m.m_type == "husk"]) < 5:
                 if random.random() < 0.004:
                     world.mobs.append(Mob((player.rect.x + random.choice([-400, 400])) % WORLD_PIXELS, 50, "husk"))
             # Camels spawn during the day in the desert
@@ -4537,6 +4671,19 @@ def main():
                 msg = font.render(save_msg_text, True, (100, 255, 100))
                 screen.blit(msg, (SCREEN_WIDTH - msg.get_width() - 20, 45))
                 save_msg_timer -= 1
+
+            # --- Draw Death Messages ---
+            if hasattr(world, 'death_messages'):
+                world.death_messages = [m for m in world.death_messages if m["timer"] > 0]
+                for idx, m in enumerate(world.death_messages):
+                    m["timer"] -= 1
+                    text_surf = font.render(m["text"], True, (255, 100, 100))
+                    msg_y = 70 + idx * 25
+                    bg_rect = pygame.Rect(SCREEN_WIDTH - text_surf.get_width() - 25, msg_y, text_surf.get_width() + 10, 22)
+                    bg_surf = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+                    bg_surf.fill((0, 0, 0, 160))
+                    screen.blit(bg_surf, (bg_rect.x, bg_rect.y))
+                    screen.blit(text_surf, (SCREEN_WIDTH - text_surf.get_width() - 20, msg_y + 2))
 
             draw_chat_feed(screen, font, chat_log)
             

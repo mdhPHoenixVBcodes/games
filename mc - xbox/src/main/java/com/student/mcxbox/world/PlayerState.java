@@ -16,6 +16,7 @@ public class PlayerState {
     public boolean jumping;
     public int dirt = 10;
     public Map<Integer, Integer> inventory = new LinkedHashMap<>();
+    public Integer[] craftingGrid = new Integer[4];
 
     public PlayerState() {
         resetInventory();
@@ -31,11 +32,9 @@ public class PlayerState {
 
     public void resetInventory() {
         inventory = new LinkedHashMap<>();
-        for (int blockType = 1; blockType <= 9; blockType++) {
-            inventory.put(blockType, 0);
-        }
         inventory.put(2, 10);
         dirt = 10;
+        craftingGrid = new Integer[4];
     }
 
     public int getBlockCount(int blockType) {
@@ -54,6 +53,41 @@ public class PlayerState {
         inventory.put(blockType, next);
         if (blockType == 2) {
             dirt = next;
+        }
+    }
+
+    public void placeCraftingItem(int slot, int blockType) {
+        if (slot < 0 || slot >= craftingGrid.length) {
+            throw new IllegalArgumentException("Invalid crafting slot");
+        }
+        if (craftingGrid[slot] != null) {
+            throw new IllegalArgumentException("Crafting slot already occupied");
+        }
+        if (blockType != 6 && blockType != 7) {
+            throw new IllegalArgumentException("That item cannot be used in the crafting grid");
+        }
+        if (getBlockCount(blockType) <= 0) {
+            throw new IllegalArgumentException("No blocks left");
+        }
+        craftingGrid[slot] = blockType;
+        consumeBlock(blockType);
+    }
+
+    public void removeCraftingItem(int slot) {
+        if (slot < 0 || slot >= craftingGrid.length) {
+            throw new IllegalArgumentException("Invalid crafting slot");
+        }
+        Integer blockType = craftingGrid[slot];
+        if (blockType == null) {
+            return;
+        }
+        craftingGrid[slot] = null;
+        addBlock(blockType);
+    }
+
+    public void clearCraftingGrid() {
+        for (int i = 0; i < craftingGrid.length; i++) {
+            craftingGrid[i] = null;
         }
     }
 }

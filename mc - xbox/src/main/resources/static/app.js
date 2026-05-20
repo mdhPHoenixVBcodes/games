@@ -18,7 +18,8 @@ const BLOCKS = {
   7: { name: "Wood", color: "#8f6a43" },
   8: { name: "Brick", color: "#b66a5a" },
   9: { name: "Sand", color: "#d8cb9f" },
-  10: { name: "Leaves", color: "#4f9d4a" }
+  10: { name: "Leaves", color: "#4f9d4a" },
+  11: { name: "Crafting Table", color: "#ad7a46" }
 };
 
 const state = {
@@ -32,7 +33,8 @@ const state = {
   lastWorldSync: 0,
   cameraX: 0,
   cameraY: 0,
-  selectedBlock: 2,
+  selectedSlotIndex: 0,
+  inventoryOpen: false,
   miningMode: 0,
   mouse: { x: 0, y: 0, downLeft: false, downRight: false },
   gamepad: {
@@ -80,6 +82,59 @@ function blockAt(tx, ty) {
     return chunk[`${tx},${ty}`];
   }
   return state.world.blocks[`${tx},${ty}`] ?? null;
+}
+
+function getInventorySlots() {
+  return Object.entries(state.me.inventory || {})
+    .map(([type, count]) => ({ type: Number(type), count: Number(count) || 0 }))
+    .filter((item) => item.count > 0);
+}
+
+function getSelectedSlot() {
+  const slots = getInventorySlots();
+  if (!slots.length) {
+    return null;
+  }
+  const index = clamp(state.selectedSlotIndex, 0, slots.length - 1);
+  return { slots, slot: slots[index], index };
+}
+
+function getCraftingGrid() {
+  const grid = Array.isArray(state.me.craftingGrid) ? state.me.craftingGrid : [];
+  return [grid[0] ?? null, grid[1] ?? null, grid[2] ?? null, grid[3] ?? null];
+}
+
+function getCraftingOutput() {
+  const grid = getCraftingGrid();
+  const items = grid.filter((item) => item != null);
+  if (items.length === 1 && items[0] === 7) {
+    return { type: 6, count: 4 };
+  }
+  if (items.length === 4 && items.every((item) => item === 6)) {
+    return { type: 11, count: 1 };
+  }
+  return null;
+}
+
+function inventoryLayout() {
+  const slotSize = 36;
+  const panelWidth = 420;
+  const panelHeight = 220;
+  const panelX = (canvas.width - panelWidth) / 2;
+  const panelY = (canvas.height - panelHeight) / 2 - 20;
+  return {
+    slotSize,
+    panelWidth,
+    panelHeight,
+    panelX,
+    panelY,
+    gridX: panelX + 42,
+    gridY: panelY + 60,
+    outputX: panelX + 214,
+    outputY: panelY + 104,
+    hotbarX: panelX + 42,
+    hotbarY: panelY + 160
+  };
 }
 
 function mergeChunkSnapshot(snapshot) {
@@ -183,6 +238,9 @@ function tileFromScreen(px, py) {
 }
 
 function getMoveIntent() {
+  if (state.inventoryOpen) {
+    return { left: false, right: false, jump: false, crouch: false, sprint: false };
+  }
   const intent = { left: false, right: false, jump: false, crouch: false, sprint: false };
   if (state.keys.has("ArrowLeft") || state.keys.has("a")) intent.left = true;
   if (state.keys.has("ArrowRight") || state.keys.has("d")) intent.right = true;
@@ -305,9 +363,10 @@ function drawHud() {
   ctx.textAlign = "left";
   ctx.font = "14px Arial";
   ctx.fillStyle = "rgba(0,0,0,0.35)";
-  ctx.fillRect(10, 10, 360, 110);
+  ctx.fillRect(10, 10, 360, 200);
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(`Block: ${BLOCKS[state.selectedBlock]?.name || "Dirt"}`, 20, 30);
+  const selected = getSelectedSlot();
+  ctx.fillText(`Block: ${selected ? (BLOCKS[selected.slot.type]?.name || "Block") : "None"}`, 20, 30);
   ctx.fillText(`Dirt: ${state.me.dirt ?? 0}`, 20, 44);
   ctx.fillText(`Mode: ${MINING_MODES[state.miningMode]}`, 20, 58);
   ctx.fillText("Move: A/D or arrows", 20, 72);
@@ -317,8 +376,9 @@ function drawHud() {
   ctx.fillText("Break: left click / RT", 20, 128);
   ctx.fillText("Place: right click / LT", 20, 142);
   ctx.fillText("Mine mode: F / Xbox X", 20, 156);
-  ctx.fillText("Change: 1-9, wheel, LB/RB", 20, 170);
-  ctx.fillText("Click world: lock mouse, Esc: unlock", 20, 184);
+  ctx.fillText("E: inventory", 20, 170);
+  ctx.fillText("Change: 1-9, wheel, LB/RB", 20, 184);
+  ctx.fillText("Click world: lock mouse, Esc: unlock", 20, 198);
 
   if (!state.me.onGround) {
     ctx.fillText("Airborne", canvas.width - 100, 35);
@@ -342,23 +402,16 @@ function drawHotbar() {
   const totalWidth = 9 * slotSize + 8 * gap;
   const startX = (canvas.width - totalWidth) / 2;
   const y = canvas.height - 46;
-
-  const getCount = (blockType) => {
-    if (state.me.inventory && state.me.inventory[blockType] != null) {
-      return state.me.inventory[blockType];
-    }
-    if (blockType === 2) {
-      return state.me.dirt ?? 0;
-    }
-    return 0;
-  };
+  const slots = getInventorySlots();
+  const selected = getSelectedSlot();
 
   ctx.textAlign = "left";
   for (let i = 1; i <= 9; i++) {
     const x = startX + (i - 1) * (slotSize + gap);
-    const selected = i === state.selectedBlock;
-    const block = BLOCKS[i];
-    ctx.fillStyle = selected ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.45)";
+    const slot = slots[i - 1] || null;
+    const isSelected = !!selected && selected.index === i - 1;
+    const block = slot ? BLOCKS[slot.type] : null;
+    ctx.fillStyle = isSelected ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.45)";
     ctx.fillRect(x, y, slotSize, slotSize);
     if (block) {
       ctx.fillStyle = block.color;
@@ -366,20 +419,183 @@ function drawHotbar() {
       ctx.fillStyle = "rgba(255,255,255,0.12)";
       ctx.fillRect(x + 4, y + 4, slotSize - 8, (slotSize - 8) / 2);
     }
-    ctx.strokeStyle = selected ? "#ffe08a" : "rgba(255,255,255,0.25)";
-    ctx.lineWidth = selected ? 3 : 2;
+    ctx.strokeStyle = isSelected ? "#ffe08a" : "rgba(255,255,255,0.25)";
+    ctx.lineWidth = isSelected ? 3 : 2;
     ctx.strokeRect(x + 1, y + 1, slotSize - 2, slotSize - 2);
     ctx.fillStyle = "rgba(255,255,255,0.8)";
     ctx.font = "12px Arial";
     ctx.fillText(String(i), x + 4, y + 14);
-    const count = getCount(i);
+    const count = slot ? slot.count : 0;
     ctx.fillStyle = count > 0 ? "rgba(0, 0, 0, 0.45)" : "rgba(120, 120, 120, 0.4)";
     ctx.fillRect(x + slotSize - 16, y + slotSize - 16, 14, 14);
     ctx.fillStyle = count > 0 ? "#ffffff" : "rgba(255,255,255,0.75)";
     ctx.font = "10px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(String(count), x + slotSize - 9, y + slotSize - 5);
+    ctx.fillText(count > 0 ? String(count) : "", x + slotSize - 9, y + slotSize - 5);
     ctx.textAlign = "left";
+  }
+}
+
+function drawInventoryOverlay() {
+  if (!state.inventoryOpen) {
+    return;
+  }
+
+  const layout = inventoryLayout();
+  const slotSize = layout.slotSize;
+  const grid = getCraftingGrid();
+  const output = getCraftingOutput();
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.58)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "rgba(18, 25, 38, 0.96)";
+  ctx.fillRect(layout.panelX, layout.panelY, layout.panelWidth, layout.panelHeight);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(layout.panelX + 1, layout.panelY + 1, layout.panelWidth - 2, layout.panelHeight - 2);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "left";
+  ctx.font = "18px Arial";
+  ctx.fillText("Inventory", layout.panelX + 18, layout.panelY + 30);
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.fillText("E to close", layout.panelX + 18, layout.panelY + 48);
+  ctx.fillText("Click a hotbar item, then click the grid to add it.", layout.panelX + 150, layout.panelY + 30);
+  ctx.fillText("Right click a grid slot to take it back.", layout.panelX + 150, layout.panelY + 48);
+  ctx.fillText("Click the result slot to craft.", layout.panelX + 150, layout.panelY + 66);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "14px Arial";
+  ctx.fillText("Crafting", layout.panelX + 42, layout.panelY + 92);
+
+  for (let i = 0; i < 4; i++) {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const sx = layout.gridX + col * 44;
+    const sy = layout.gridY + row * 44;
+    const blockType = grid[i];
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(sx, sy, slotSize, slotSize);
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 1, sy + 1, slotSize - 2, slotSize - 2);
+    if (blockType != null) {
+      const block = BLOCKS[blockType] || BLOCKS[2];
+      ctx.fillStyle = block.color;
+      ctx.fillRect(sx + 4, sy + 4, slotSize - 8, slotSize - 8);
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(sx + 4, sy + 4, slotSize - 8, (slotSize - 8) / 2);
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = "12px Arial";
+      ctx.fillText(BLOCKS[blockType]?.name || "Item", sx + 4, sy + slotSize + 14);
+    }
+  }
+
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.font = "14px Arial";
+  ctx.fillText("=", layout.outputX - 18, layout.outputY + 24);
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(layout.outputX, layout.outputY, slotSize, slotSize);
+  ctx.strokeStyle = output ? "#ffe08a" : "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(layout.outputX + 1, layout.outputY + 1, slotSize - 2, slotSize - 2);
+  if (output) {
+    const block = BLOCKS[output.type] || BLOCKS[2];
+    ctx.fillStyle = block.color;
+    ctx.fillRect(layout.outputX + 4, layout.outputY + 4, slotSize - 8, slotSize - 8);
+    ctx.fillStyle = "rgba(255,255,255,0.12)";
+    ctx.fillRect(layout.outputX + 4, layout.outputY + 4, slotSize - 8, (slotSize - 8) / 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "10px Arial";
+    ctx.fillText(String(output.count), layout.outputX + slotSize - 9, layout.outputY + slotSize - 5);
+  }
+
+  const inventorySlots = getInventorySlots();
+  const hotbarX = layout.hotbarX;
+  const hotbarY = layout.hotbarY;
+  for (let i = 0; i < 9; i++) {
+    const x = hotbarX + i * 40;
+    const slot = inventorySlots[i] || null;
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(x, hotbarY, slotSize, slotSize);
+    ctx.strokeStyle = slot && i === getSelectedSlot()?.index ? "#ffe08a" : "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x + 1, hotbarY + 1, slotSize - 2, slotSize - 2);
+    if (slot) {
+      const block = BLOCKS[slot.type] || BLOCKS[2];
+      ctx.fillStyle = block.color;
+      ctx.fillRect(x + 4, hotbarY + 4, slotSize - 8, slotSize - 8);
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(x + 4, hotbarY + 4, slotSize - 8, (slotSize - 8) / 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "10px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(String(slot.count), x + slotSize - 9, hotbarY + slotSize - 5);
+    }
+  }
+
+  ctx.restore();
+}
+
+function hitTestInventory(px, py) {
+  if (!state.inventoryOpen) {
+    return null;
+  }
+
+  const layout = inventoryLayout();
+  const slotSize = layout.slotSize;
+  const localX = px;
+  const localY = py;
+
+  const outputRect = {
+    x: layout.outputX,
+    y: layout.outputY,
+    w: slotSize,
+    h: slotSize
+  };
+  if (localX >= outputRect.x && localX < outputRect.x + outputRect.w && localY >= outputRect.y && localY < outputRect.y + outputRect.h) {
+    return { kind: "output" };
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = layout.gridX + col * 44;
+    const y = layout.gridY + row * 44;
+    if (localX >= x && localX < x + slotSize && localY >= y && localY < y + slotSize) {
+      return { kind: "grid", index: i };
+    }
+  }
+
+  for (let i = 0; i < 9; i++) {
+    const x = layout.hotbarX + i * 40;
+    const y = layout.hotbarY;
+    if (localX >= x && localX < x + slotSize && localY >= y && localY < y + slotSize) {
+      return { kind: "hotbar", index: i };
+    }
+  }
+
+  return null;
+}
+
+async function inventoryAction(action, payload) {
+  try {
+    const result = await api("/api/inventory", "POST", {
+      action,
+      playerId: state.clientId,
+      ...payload
+    });
+    if (result.player) {
+      state.me = result.player;
+    }
+    if (result.world) {
+      mergeChunkSnapshot(result.world);
+    }
+  } catch (err) {
+    setStatus(`Inventory error: ${err.message}`);
   }
 }
 
@@ -432,6 +648,9 @@ function drawPlacementOutline() {
 }
 
 async function syncMove() {
+  if (state.inventoryOpen) {
+    return;
+  }
   const intent = getMoveIntent();
   const now = performance.now();
   if (now - state.lastSend < 50) return;
@@ -465,8 +684,12 @@ function getFrontTile() {
 }
 
 function cycleBlock(delta) {
-  const next = ((state.selectedBlock - 1 + delta + 9) % 9) + 1;
-  state.selectedBlock = next;
+  const slots = getInventorySlots();
+  if (!slots.length) {
+    state.selectedSlotIndex = 0;
+    return;
+  }
+  state.selectedSlotIndex = (state.selectedSlotIndex + delta + slots.length) % slots.length;
 }
 
 function cycleMiningMode(delta) {
@@ -497,11 +720,15 @@ async function syncWorld() {
 
 async function updateBlock(type, tx, ty) {
   try {
+    const selected = getSelectedSlot();
+    if (type === "place" && (!selected || selected.slot.count <= 0)) {
+      throw new Error("No blocks selected");
+    }
     const payload = {
       type,
       x: tx,
       y: ty,
-      blockType: state.selectedBlock,
+      blockType: selected ? selected.slot.type : 2,
       playerId: state.clientId,
       miningMode: state.miningMode
     };
@@ -540,27 +767,31 @@ function updateCamera() {
 
 async function tick() {
   if (state.joined) {
-    await syncMove();
-    const edges = getGamepadEdgeState();
-    if (edges.unlockPressed && document.pointerLockElement === canvas) {
-      document.exitPointerLock();
-    }
-    if (edges.prevBlockPressed) {
-      cycleBlock(-1);
-    }
-    if (edges.nextBlockPressed) {
-      cycleBlock(1);
-    }
-    if (edges.modeNextPressed) {
-      cycleMiningMode(1);
-    }
-    if (edges.breakPressed || edges.placePressed) {
-      if (edges.breakPressed && state.miningMode !== 2) {
-        await applyMiningAction("break");
+    if (!state.inventoryOpen) {
+      await syncMove();
+      const edges = getGamepadEdgeState();
+      if (edges.unlockPressed && document.pointerLockElement === canvas) {
+        document.exitPointerLock();
       }
-      if (edges.placePressed && state.miningMode !== 2) {
-        await placeActiveTarget();
+      if (edges.prevBlockPressed) {
+        cycleBlock(-1);
       }
+      if (edges.nextBlockPressed) {
+        cycleBlock(1);
+      }
+      if (edges.modeNextPressed) {
+        cycleMiningMode(1);
+      }
+      if (edges.breakPressed || edges.placePressed) {
+        if (edges.breakPressed && state.miningMode !== 2) {
+          await applyMiningAction("break");
+        }
+        if (edges.placePressed && state.miningMode !== 2) {
+          await placeActiveTarget();
+        }
+      }
+    } else {
+      getGamepadEdgeState();
     }
     await syncWorld();
     updateCamera();
@@ -574,9 +805,12 @@ async function tick() {
   }
 
   drawHud();
-  drawCrosshair();
-  drawPlacementOutline();
+  if (!state.inventoryOpen) {
+    drawCrosshair();
+    drawPlacementOutline();
+  }
   drawHotbar();
+  drawInventoryOverlay();
   requestAnimationFrame(tick);
 }
 
@@ -588,10 +822,12 @@ joinBtn.addEventListener("click", async () => {
     state.me = result.player;
     state.me.color = state.me.color || colorFromName(name);
     state.joined = true;
+    state.inventoryOpen = false;
     state.players = [result.player].map((player) => ({
       ...player,
       color: player.color || colorFromName(player.name)
     }));
+    state.selectedSlotIndex = 0;
     if (result.world) {
       mergeChunkSnapshot(result.world);
     }
@@ -646,8 +882,26 @@ document.addEventListener("keydown", (e) => {
     }
   }
   state.keys.add(e.key);
+  if (e.key.toLowerCase() === "e") {
+    state.inventoryOpen = !state.inventoryOpen;
+    if (state.inventoryOpen && document.pointerLockElement === canvas) {
+      document.exitPointerLock();
+    }
+    setStatus(state.inventoryOpen ? "Inventory open." : "Inventory closed.");
+    e.preventDefault();
+    return;
+  }
+  if (state.inventoryOpen && e.key === "Escape") {
+    state.inventoryOpen = false;
+    setStatus("Inventory closed.");
+    e.preventDefault();
+    return;
+  }
   if (e.key >= "1" && e.key <= "9") {
-    state.selectedBlock = Number(e.key);
+    const index = Number(e.key) - 1;
+    if (index < getInventorySlots().length) {
+      state.selectedSlotIndex = index;
+    }
   }
   if (e.key.toLowerCase() === "f") {
     cycleMiningMode(1);
@@ -662,6 +916,7 @@ document.addEventListener("keyup", (e) => state.keys.delete(e.key), true);
 window.addEventListener("wheel", (e) => {
   if (!state.joined) return;
   e.preventDefault();
+  if (!getInventorySlots().length) return;
   if (e.deltaY > 0) {
     cycleBlock(1);
   } else if (e.deltaY < 0) {
@@ -679,6 +934,7 @@ canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 canvas.addEventListener("click", async () => {
   if (!state.joined) return;
+  if (state.inventoryOpen) return;
   if (document.pointerLockElement !== canvas) {
     canvas.requestPointerLock();
   }
@@ -694,6 +950,33 @@ document.addEventListener("pointerlockchange", () => {
 
 canvas.addEventListener("mousedown", async (e) => {
   if (!state.joined) return;
+  if (state.inventoryOpen) {
+    const hit = hitTestInventory(state.mouse.x, state.mouse.y);
+    if (!hit) {
+      return;
+    }
+    if (hit.kind === "hotbar") {
+      state.selectedSlotIndex = hit.index;
+      return;
+    }
+    if (hit.kind === "grid") {
+      const selected = getSelectedSlot();
+      if (e.button === 0 && selected) {
+        await inventoryAction("place", {
+          slot: hit.index,
+          blockType: selected.slot.type
+        });
+      } else if (e.button === 2) {
+        await inventoryAction("remove", { slot: hit.index });
+      }
+      return;
+    }
+    if (hit.kind === "output" && e.button === 0) {
+      await inventoryAction("craft", {});
+      return;
+    }
+    return;
+  }
   if (document.pointerLockElement !== canvas) {
     return;
   }

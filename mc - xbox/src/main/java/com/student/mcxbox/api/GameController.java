@@ -150,6 +150,40 @@ public class GameController {
         return out;
     }
 
+    @PostMapping("/inventory")
+    public Map<String, Object> inventory(@RequestBody InventoryRequest req) {
+        if (req == null || req.playerId == null) {
+            throw new IllegalArgumentException("Missing request");
+        }
+
+        PlayerState player = worldState.getPlayer(req.playerId);
+        if (player == null) {
+            throw new IllegalArgumentException("Unknown player id");
+        }
+
+        if ("place".equalsIgnoreCase(req.action)) {
+            if (req.slot == null || req.blockType == null) {
+                throw new IllegalArgumentException("Missing crafting slot or block type");
+            }
+            player.placeCraftingItem(req.slot, req.blockType);
+        } else if ("remove".equalsIgnoreCase(req.action)) {
+            if (req.slot == null) {
+                throw new IllegalArgumentException("Missing crafting slot");
+            }
+            player.removeCraftingItem(req.slot);
+        } else if ("craft".equalsIgnoreCase(req.action)) {
+            craftFromGrid(player);
+        } else {
+            throw new IllegalArgumentException("Unknown inventory action");
+        }
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("ok", true);
+        out.put("player", player);
+        out.put("world", snapshotWorld((int) (player.x + PLAYER_W / 2.0), (int) (player.y + PLAYER_H / 2.0), ACTIVE_CHUNK_RADIUS));
+        return out;
+    }
+
     @PostMapping("/leave")
     public Map<String, Object> leave(@RequestBody Map<String, String> body) {
         if (body != null && body.get("id") != null) {
@@ -321,6 +355,48 @@ public class GameController {
         return Math.max(min, Math.min(max, value));
     }
 
+    private void craftFromGrid(PlayerState player) {
+        Integer[] grid = player.craftingGrid;
+        int woodCount = 0;
+        int plankCount = 0;
+        int nonEmpty = 0;
+        for (Integer slot : grid) {
+            if (slot == null) {
+                continue;
+            }
+            nonEmpty++;
+            if (slot == 7) {
+                woodCount++;
+            } else if (slot == 6) {
+                plankCount++;
+            } else {
+                throw new IllegalArgumentException("Unsupported crafting ingredient");
+            }
+        }
+
+        if (nonEmpty == 1 && woodCount == 1) {
+            for (int i = 0; i < grid.length; i++) {
+                if (grid[i] != null) {
+                    grid[i] = null;
+                    break;
+                }
+            }
+            player.addBlock(6);
+            player.addBlock(6);
+            player.addBlock(6);
+            player.addBlock(6);
+            return;
+        }
+
+        if (nonEmpty == 4 && plankCount == 4) {
+            player.clearCraftingGrid();
+            player.addBlock(11);
+            return;
+        }
+
+        throw new IllegalArgumentException("No matching recipe");
+    }
+
     public static class MoveRequest {
         public String id;
         public boolean left;
@@ -337,5 +413,12 @@ public class GameController {
         public Integer blockType;
         public String playerId;
         public Integer miningMode;
+    }
+
+    public static class InventoryRequest {
+        public String action;
+        public String playerId;
+        public Integer slot;
+        public Integer blockType;
     }
 }
