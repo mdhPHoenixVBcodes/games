@@ -394,6 +394,15 @@ fuel_text = Text(text="", position=(0, -0.32), scale=2, color=color.orange, orig
 speedometer = Text(text="", position=(0, -0.4), scale=2, color=color.yellow, origin=(0,0))
 shop = Button(text="SHOP", position=(-0.85, -0.45), scale=0.05, color=color.yellow, highlight_color=color.orange, pressed_color=color.white, text_color=color.black)
 
+def update_shop():
+    if shop.pressed:
+        shopui = Text(text="Welcome to the Shop!", position=(0, 0), scale=1, color=color.white, text_color=color.black)
+        bttn1 = Button(text="Buy Fuel Tank [x2] ($100)", position=(0, -0.5), scale=0.05, color=color.green, highlight_color=color.lime, pressed_color=color.white, text_color=color.black)
+        bttn2 = Button(text="Buy Engine [x1] ($200)", position=(0, -1), scale=0.05, color=color.green, highlight_color=color.lime, pressed_color=color.white, text_color=color.black)
+        bttn3 = Button(text="Buy Thruster [x1] ($1500)", position=(0, -1.5), scale=0.05, color=color.green, highlight_color=color.lime, pressed_color=color.white, text_color=color.black)
+
+
+
 def update_hotbar_ui():
     if is_multiplayer:
         role = "[HOST]" if is_hosting else "[CLIENT]"

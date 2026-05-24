@@ -670,6 +670,79 @@ stamina_value_text = Text(
     color=color.white
 )
 
+insanity_bar1 = Button(
+    text='___',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=(0.02, 0.1),
+    position=(-0.8, 0.2),
+    color=color.lime,
+    background=color.lime,
+    model='quad'
+)
+
+insanity_bar2 = Button(
+    text='___',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=(0.02, 0.1),
+    position=(-0.8, 0.1),
+    color=color.green,
+    background=color.green,
+    model='quad'
+)
+
+insanity_bar3 = Button(
+    text='___',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=(0.02, 0.1),
+    position=(-0.8, 0.0),
+    color=color.yellow,
+    background=color.yellow,
+    model='quad'
+)
+
+insanity_bar4 = Button(
+    text='___',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=(0.02, 0.1),
+    position=(-0.8, -0.1),
+    color=color.orange,
+    background=color.orange,
+    model='quad'
+)
+
+insanity_bar5 = Button(
+    text='___',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=(0.02, 0.1),
+    position=(-0.8, -0.2),
+    color=color.red,
+    background=color.red,
+    model='quad'
+)
+
+brain = Button(
+    text='@@',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=(0.05, 0.05),
+    position=(-0.81, 0.25),
+    color=color.rgb(209/255, 115/255, 157/255)
+)
+
+brain = Button(
+    text='@@',
+    parent=camera.ui,
+    origin=(0, 0),
+    scale=(0.05, 0.05),
+    position=(-0.79, 0.25),
+    color=color.rgb(209/255, 115/255, 157/255)
+)
+
 selected_hotbar_slot = 1
 axe_picked_up = False
 hotbar_slots = []
