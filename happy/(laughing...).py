@@ -19,10 +19,30 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Trapdoor Rage")
 clock = pygame.time.Clock()
 
-# 🔥 RANDOM CONTROL INVERSION
+#  RANDOM CONTROL INVERSION
 INVERT_EVERY_FRAMES = 300
 invert_active = False
 invert_timer = 0
+
+# 🔥 DEATH COUNTER & QUOTES (NEW)
+death_count = 0
+DEATH_QUOTES = [
+    "Skill issue.",
+    "Try pressing space?",
+    "Your mouse is broken.",
+    "Maybe try walking?",
+    "Gravity is hard.",
+    "I believe in you! (not really)",
+    "Rage quit yet?",
+    "That looked painful.",
+    "Almost... nope.",
+    "Git gud.",
+    "Did you forget how to jump?",
+    "The floor misses you."
+]
+current_death_quote = ""
+death_quote_timer = 0
+ui_font = pygame.font.Font(None, 28)
 
 # 🔥 FALL MESSAGE SYSTEM
 FALL_MESSAGES = [
@@ -37,14 +57,15 @@ win_font = pygame.font.Font(None, 52)
 win_text_active = False
 win_text_timer = 0
 
-# 🔥 LEVEL PROGRESSION
+#  LEVEL PROGRESSION
 current_level = 1
 flag_touch_count = 0
 LEVELS_TO_ADVANCE = 3
 level_transition_active = False
 level_transition_timer = 0
+flag_touched_this_round = False
 
-#  PLAYER ──────────────────────────────────────────────────────────────────
+# ─ PLAYER ──────────────────────────────────────────────────────────────────
 player = pygame.Rect(100, 500, 30, 30)
 vel_y = 0
 on_ground = False
@@ -181,16 +202,18 @@ def draw_level2(surf):
 
 # ── INITIAL SETUP ───────────────────────────────────────────────────────────
 def setup_level1():
-    return [
+    traps = [
         TrapPlatform(50, 550, 700, 20, is_trap=False),
         TrapPlatform(300, 480, 150, 20, is_trap=True),
         TrapPlatform(550, 410, 100, 20, is_trap=True),
         TrapPlatform(200, 340, 120, 20, is_trap=True),
         TrapPlatform(420, 375, 80, 20, is_trap=False, is_invisible=True)
     ]
+    traps[3].open_delay = 40
+    return traps
 
 platforms = setup_level1()
-flag = Flag(250, 270)
+flag = Flag(250, 300)
 side_wall = SideWall()
 
 # ─── MAIN LOOP ──────────────────────────────────────────────────────────────
@@ -222,24 +245,34 @@ while running:
     player.y += vel_y
     on_ground = False
 
-    # 🔥 LEVEL TRANSITION
-    if level_transition_active:
+    # 🔥 TIMERS
+    if win_text_timer > 0:
+        win_text_timer -= 1
+        if win_text_timer <= 0: win_text_active = False
+            
+    if fall_message_timer > 0:
+        fall_message_timer -= 1
+        if fall_message_timer == 0: fall_message = ""
+            
+    if level_transition_timer > 0:
         level_transition_timer -= 1
         if level_transition_timer <= 0:
             level_transition_active = False
-            flag_touch_count = 0
+            
+    if death_quote_timer > 0:
+        death_quote_timer -= 1
+        if death_quote_timer == 0: current_death_quote = ""
 
     # 🔥 FLAG COLLISION
     if flag.active and player.colliderect(flag.rect) and not level_transition_active:
         flag.active = False
         flag.touched = True
+        flag_touched_this_round = True
         flag_touch_count += 1
+        print(f"✓ Flag touched! Progress: {flag_touch_count}/{LEVELS_TO_ADVANCE}")
 
-        if flag_touch_count < LEVELS_TO_ADVANCE:
-            side_wall.activate(flag.rect.x + 100)
-            win_text_active = True
-            win_text_timer = 120
-        else:
+        if flag_touch_count >= LEVELS_TO_ADVANCE:
+            print(">>> LEVEL 2 ACTIVATED <<<")
             current_level = 2
             level_transition_active = True
             level_transition_timer = 150
@@ -249,17 +282,14 @@ while running:
             fall_message = ""
             fall_message_timer = 0
             win_text_active = False
+            win_text_timer = 0
             side_wall.active = False
+        else:
+            side_wall.activate(flag.rect.x + 100)
+            win_text_active = True
+            win_text_timer = 120
 
-    # 🔥 TIMERS
-    if win_text_active:
-        win_text_timer -= 1
-        if win_text_timer <= 0: win_text_active = False
-    if fall_message_timer > 0:
-        fall_message_timer -= 1
-        if fall_message_timer == 0: fall_message = ""
-
-    #  WALL UPDATE
+    # 🔥 WALL UPDATE
     side_wall.update()
     if side_wall.active and player.colliderect(side_wall.rect):
         player.right = side_wall.rect.left - 2
@@ -267,7 +297,7 @@ while running:
         player.x -= 8
         on_ground = False
 
-    #  CAMERA & COLLISION LOGIC ─────────────────────────────────────────────
+    # 🔥 CAMERA & COLLISION LOGIC
     if current_level == 2:
         target_cam = player.x - 300
         camera_x = max(0, target_cam)
@@ -301,29 +331,40 @@ while running:
                             p.is_trap = False
                             p.state = "closed"
 
-    # 🔥 DEATH RESET: HARD RESET TO LEVEL 1
+    # 🔥 DEATH RESET + COUNTER + QUOTES
     if player.y > HEIGHT and not level_transition_active:
+        death_count += 1
+        current_death_quote = random.choice(DEATH_QUOTES)
+        death_quote_timer = 180  # 3 seconds
+        
+        print(f"✗ Fell! Deaths: {death_count} | Quote: {current_death_quote}")
+        
+        if not flag_touched_this_round:
+            flag_touch_count = 0
+            print("  → Progress reset to 0")
+        else:
+            print(f"  → Progress SAVED at {flag_touch_count}")
+        
         current_level = 1
-        flag_touch_count = 0
         camera_x = 0
         player.topleft = (100, 500)
         vel_y = 0
         
-        # Wipe Level 2 data
         level2_platforms = []
         level2_next_x = 0
         
-        # Reset Level 1 state
         platforms = setup_level1()
-        flag = Flag(250, 270)
+        flag = Flag(250, 300)
         side_wall.active = False
         win_text_active = False
+        win_text_timer = 0
         fall_message = ""
         fall_message_timer = 0
         invert_active = False
         invert_timer = 0
+        flag_touched_this_round = False
 
-    # ── RENDER ────────────────────────────────────────────────────────────
+    # ── RENDER ───────────────────────────────────────────────────────────
     screen.fill((20, 20, 30))
     
     if level_transition_active:
@@ -341,12 +382,24 @@ while running:
         screen_player_rect = pygame.Rect(player.x - camera_x, player.y, player.width, player.height)
         pygame.draw.rect(screen, (255, 255, 255), screen_player_rect)
 
-        if win_text_active:
+        # 🔥 DEATH COUNTER (Top Right)
+        death_txt = ui_font.render(f"Deaths: {death_count}", True, (255, 100, 100))
+        screen.blit(death_txt, (WIDTH - death_txt.get_width() - 20, 20))
+
+        # 🔥 DEATH QUOTE (Bottom Center)
+        if death_quote_timer > 0 and current_death_quote:
+            quote_surf = msg_font.render(current_death_quote, True, (255, 120, 120))
+            screen.blit(quote_surf, (WIDTH//2 - quote_surf.get_width()//2, HEIGHT - 100))
+
+        # Existing messages
+        if win_text_active and win_text_timer > 0:
             win_txt = win_font.render("YOU WIN!", True, (255, 255, 0))
             screen.blit(win_txt, (WIDTH//2 - win_txt.get_width()//2, HEIGHT - 60))
-        if fall_message_timer > 0:
+            
+        if fall_message_timer > 0 and fall_message:
             msg_surf = msg_font.render(fall_message, True, (255, 255, 255))
             screen.blit(msg_surf, (WIDTH//2 - msg_surf.get_width()//2, HEIGHT - 60))
+            
         if invert_active:
             pygame.draw.rect(screen, (255, 50, 50), (10, 10, 20, 20))
 
