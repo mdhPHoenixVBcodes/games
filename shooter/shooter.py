@@ -11,6 +11,12 @@ from ursina import *
 import gltf._converter
 
 game = Ursina()
+
+# Add these lines right after: game = Ursina()
+sun = DirectionalLight()
+sun.look_at(Vec3(1, -1, -1))
+ambient_light = AmbientLight(color=color.rgb(100/255, 100/255, 100/255))
+
 sky = Sky(color=color.rgb(185/255, 207/255, 220/255))
 player = ursina.prefabs.first_person_controller.FirstPersonController()
 
@@ -109,20 +115,25 @@ env = Entity(model='cube', position=(0, 0, 0), scale=(100, 1, 100), color=color.
 
 from direct.actor.Actor import Actor
 from ursina import *
-# 1. Create a standard Ursina Entity attached to the camera
-# This gives the weapon full shaders, lighting, and coordinate systems!
+
+# 1. Add lights to the scene (put this at the top or here)
+# 2. Create the Entity attached to the camera
 gun_holder = Entity(parent=camera)
-# 2. Load the animated GLB model as a raw Actor and reparent it to our Entity
+
+# 3. Load the GLB as an Actor and attach to holder
 gun_actor = Actor('gun.glb')
 gun_actor.reparent_to(gun_holder)
-# 3. Position the gun relative to the camera using Ursina coordinates:
-# X = right (+0.5), Y = down (-0.4), Z = forward (+0.8)
-gun_holder.position = (0.5, 1, 5)
-# 4. Scale it UP (10x) so it becomes a realistic 1.25-meter visual size!
+
+# 4. Position it in the bottom-right corner of your screen
+gun_holder.position = (0.3, -0.25, 0.6)  # X=Right, Y=Down, Z=Forward
+
+# 5. Rotate it 90 degrees to face forward!
+gun_holder.rotation = (0, -90, 0)  # Tweak this rotation to align perfectly!
+
+# 6. Scale it UP (10x) so it's a realistic weapon size
 gun_holder.scale = 10.0
-# 5. Rotate it slightly to point forward if needed (Blender to Ursina rotation offset)
-gun_holder.rotation = (0, 0, 0)  # You can adjust this if it points the wrong way!
-# 6. Play the reload animation anytime!
+
+# 7. Play reload animation
 gun_actor.play('reload')
 
 game.run()
