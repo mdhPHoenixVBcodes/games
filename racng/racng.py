@@ -14,14 +14,17 @@ srv_lock = threading.Lock()
 
 def srv_broadcast(message, exclude_conn=None):
     data = json.dumps(message).encode('utf-8') + b'\n'
+    to_remove = []
     with srv_lock:
         for client in srv_clients:
             if client != exclude_conn:
                 try:
                     client.sendall(data)
                 except:
-                    if client in srv_clients:
-                        srv_clients.remove(client)
+                    to_remove.append(client)
+        for client in to_remove:
+            if client in srv_clients:
+                srv_clients.remove(client)
 
 def srv_handle_client(conn, addr):
     client_id = f"{addr[0]}:{addr[1]}"
@@ -144,6 +147,9 @@ from ursina.prefabs.first_person_controller import FirstPersonController
 app = Ursina()
 application.development_mode = False 
 
+# --- Ambient Background Music ---
+bg_music = Audio('calm.mp3', loop=True, autoplay=True, volume=0.3) 
+
 # --- Network Tracking Tables ---
 client_socket = None
 my_id = username
@@ -188,10 +194,16 @@ lap_start_time = 0
 best_lap_time = None
 current_lap_time = 0
 race_finished = False
+race_countdown = -1.0
 checkpoint_entities = []
 checkpoint_hit_times = {}  # Track when each checkpoint was hit
 checkpoints_rendered = set()  # Track which checkpoints are visible
 next_checkpoint_to_render = 3  # Next checkpoint index to display
+
+# --- Shop / Currency variables
+player_money = 500
+shop_ui_open = False
+shop_ui_elements = []
 
 
 PART_DATA = {
@@ -369,6 +381,7 @@ Entity(model='cube', scale=(160, 0.1, 230),
 # Start/finish line
 start_line = Entity(model='cube', scale=(60, 0.13, 4),
     position=(race_center.x, 0.02, race_center.z - 110),
+    rotation=(0, 90, 0),
     color=color.white, collider='box')
 # Barrier walls around the outside
 Entity(model='cube', scale=(225, 2, 4), position=(race_center.x, 1, race_center.z - 163), color=color.red, collider='box')
@@ -376,8 +389,8 @@ Entity(model='cube', scale=(225, 2, 4), position=(race_center.x, 1, race_center.
 Entity(model='cube', scale=(4, 2, 328), position=(race_center.x - 113, 1, race_center.z), color=color.red, collider='box')
 Entity(model='cube', scale=(4, 2, 328), position=(race_center.x + 113, 1, race_center.z), color=color.red, collider='box')
 
-# Return portal inside the race arena (cyan arch)
-return_portal_pos = Vec3(race_center.x, 0, race_center.z - 140)
+# Return portal on the side of the race arena (cyan arch)
+return_portal_pos = Vec3(race_center.x + 120, 0, race_center.z)
 _rpl = Entity(model='cube', scale=(1.2, 8, 1.2), position=(return_portal_pos.x, 4, return_portal_pos.z - 3.5), color=color.cyan, collider=None)
 _rpr = Entity(model='cube', scale=(1.2, 8, 1.2), position=(return_portal_pos.x, 4, return_portal_pos.z + 3.5), color=color.cyan, collider=None)
 _rpt = Entity(model='cube', scale=(1.2, 1.2, 9),  position=(return_portal_pos.x, 8.6, return_portal_pos.z), color=color.cyan, collider=None)
@@ -409,10 +422,10 @@ _inner_rz = 230 / 2
 _rx = (_outer_rx + _inner_rx) / 2
 _rz = (_outer_rz + _inner_rz) / 2
 for i in range(checkpoint_count):
-    ang = math.radians(i * (360 / checkpoint_count) - 90)
+    ang = math.radians(i * (360 / checkpoint_count) - 110)
     cx = race_center.x + math.cos(ang) * _rx
     cz = race_center.z + math.sin(ang) * _rz
-    cp = Entity(model='cube', scale=(10, 0.2, 4), position=(cx, 0.02, cz), color=color.yellow, collider='box')
+    cp = Entity(model='cube', scale=(18, 0.2, 8), position=(cx, 0.02, cz), color=color.yellow, collider='box')
     cp.checkpoint_index = i
     cp_text = Text(parent=cp, text=str(i+1), world_scale=2, position=(0, 1.2), color=color.black, origin=(0,0))
     # Only make first 3 visible initially
@@ -428,20 +441,81 @@ lap_text = Text(text='', position=(-0.6, 0.42), scale=1.4, color=color.white)
 lap_time_text = Text(text='', position=(-0.6, 0.38), scale=1.1, color=color.orange)
 best_lap_text = Text(text='', position=(-0.6, 0.34), scale=1.0, color=color.yellow)
 race_status_text = Text(text='', position=(0, 0.2), scale=2, color=color.green, origin=(0,0))
+countdown_text = Text(text='', position=(0, 0.15), scale=6, color=color.yellow, origin=(0,0))
 
 # Display UI Surfaces
 hotbar_text = Text(text="Loading...", position=(-0.85, 0.45), scale=1.2, color=color.yellow, background=True)
 warning_text = Text(text="", position=(0, 0.2), scale=2, color=color.red, origin=(0,0))
 fuel_text = Text(text="", position=(0, -0.32), scale=2, color=color.orange, origin=(0,0))
 speedometer = Text(text="", position=(0, -0.4), scale=2, color=color.yellow, origin=(0,0))
-shop = Button(text="SHOP", position=(-0.85, -0.45), scale=0.05, color=color.yellow, highlight_color=color.orange, pressed_color=color.white, text_color=color.black)
 
-def update_shop():
-    if shop.clicked and not is_driving  :
-        shopui = Text(text="Welcome to the Shop!", position=(0, 0), scale=1, color=color.white, text_color=color.black)
-        bttn1 = Button(text="Buy Fuel Tank [x2] ($100)", position=(0, -0.5), scale=0.05, color=color.green, highlight_color=color.lime, pressed_color=color.white, text_color=color.black)
-        bttn2 = Button(text="Buy Engine [x1] ($200)", position=(0, -1), scale=0.05, color=color.green, highlight_color=color.lime, pressed_color=color.white, text_color=color.black)
-        bttn3 = Button(text="Buy Thruster [x1] ($1500)", position=(0, -1.5), scale=0.05, color=color.green, highlight_color=color.lime, pressed_color=color.white, text_color=color.black)
+def toggle_shop():
+    global shop_ui_open
+    if not is_driving:
+        shop_ui_open = not shop_ui_open
+        if shop_ui_open:
+            open_shop()
+        else:
+            close_shop()
+
+def open_shop():
+    global player_money, shop_ui_open, shop_ui_elements
+    shop_ui_open = True
+    for elem in shop_ui_elements:
+        destroy(elem)
+    shop_ui_elements.clear()
+    
+    # Create shop background
+    bg = Panel(size=(0.6, 0.8), position=(0, 0))
+    shop_ui_elements.append(bg)
+    
+    # Title
+    title = Text(text='SHOP', parent=bg, position=(0, 0.35), scale=1.5, color=color.yellow)
+    shop_ui_elements.append(title)
+    
+    # Money display
+    money_text = Text(text=f'MONEY: ${player_money}', parent=bg, position=(0, 0.25), scale=1, color=color.white)
+    money_text.name = 'money_display'
+    shop_ui_elements.append(money_text)
+    
+    # Purchase buttons
+    y_pos = 0.12
+    items = [('Fuel Tank', 100, 6, 2), ('Engine', 200, 4, 1), ('Thruster', 1500, 7, 1)]
+    
+    for item_name, price, part_id, qty in items:
+        def make_purchase(item_name=item_name, price=price, part_id=part_id, qty=qty):
+            global player_money
+            if player_money >= price:
+                player_money -= price
+                PART_DATA[part_id]['inventory'] += qty
+                for e in shop_ui_elements:
+                    if isinstance(e, Text) and hasattr(e, 'name') and e.name == 'money_display':
+                        e.text = f'MONEY: ${player_money}'
+                update_hotbar_ui()
+        
+        btn = Button(text=f'{item_name} (${price})', parent=bg, position=(0, y_pos), scale=0.1,
+                    color=color.green, highlight_color=color.lime, pressed_color=color.white,
+                    text_color=color.black, on_click=make_purchase)
+        shop_ui_elements.append(btn)
+        y_pos -= 0.12
+    
+    # Close button
+    close_btn = Button(text='CLOSE', parent=bg, position=(0, -0.35), scale=0.04,
+                      color=color.red, highlight_color=color.orange, pressed_color=color.white,
+                      text_color=color.black, on_click=close_shop)
+    shop_ui_elements.append(close_btn)
+
+def close_shop():
+    global shop_ui_open, shop_ui_elements
+    shop_ui_open = False
+    for e in shop_ui_elements:
+        destroy(e)
+    shop_ui_elements.clear()
+
+shop = Button(text="SHOP", position=(-0.85, -0.45), scale=0.05, color=color.yellow, highlight_color=color.orange, pressed_color=color.white, text_color=color.black, on_click=toggle_shop)
+
+# update_shop function removed as it is a performance bottleneck to poll update_hotbar_ui every frame
+
 
 
 
@@ -791,6 +865,30 @@ def update():
     global current_lap, total_laps, checkpoints_hit, lap_start_time, best_lap_time, current_lap_time, race_finished, checkpoint_entities
     global lap_text, lap_time_text, best_lap_text, race_status_text
     global checkpoint_hit_times, checkpoints_rendered, next_checkpoint_to_render
+    global player_money, shop_ui_open, race_countdown
+    
+    # --- Race Countdown Handler ---
+    if race_countdown > -1.0:
+        race_countdown -= time.dt
+        if race_countdown > 2.0:
+            countdown_text.color = color.red
+            countdown_text.text = "3"
+        elif race_countdown > 1.0:
+            countdown_text.color = color.orange
+            countdown_text.text = "2"
+        elif race_countdown > 0.0:
+            countdown_text.color = color.yellow
+            countdown_text.text = "1"
+        elif race_countdown > -0.8:
+            countdown_text.color = color.lime
+            countdown_text.text = "GO!"
+            if lap_start_time == 0:
+                lap_start_time = time.time()
+        else:
+            countdown_text.text = ""
+            race_countdown = -1.0
+            
+    # Redundant/duplicate frame-polling shop updates removed to prevent extreme performance lag from Text rebuilds
     
     if is_multiplayer:
         messages_to_process = []
@@ -929,6 +1027,19 @@ def update():
     else: hologram.enabled = False
     
     if is_driving:
+        if race_countdown > 0.0:
+            current_speed = 0.0
+            car_velocity = Vec3(0, 0, 0)
+            vehicle_parent.position = Vec3(race_center.x, 3, race_center.z - 105)
+            vehicle_parent.rotation_y = 0
+            
+            # Lock camera behind the starting spot so they see the vehicle/countdown
+            ideal_cam_pos = vehicle_parent.position - (vehicle_parent.forward * 12) + Vec3(0, 4, 0)
+            camera.position = lerp(camera.position, ideal_cam_pos, time.dt * 7)
+            camera.look_at(vehicle_parent.position + vehicle_parent.forward * 3 + Vec3(0, 1.5, 0))
+            camera.rotation_z = 0
+            return
+            
         total_thrusters = sum(1 for part in car_parts if part.part_id == 7)
         bottom_thrusters = sum(1 for part in car_parts if part.part_id == 7 and part.y < -0.1)
         # Suspension count: each suspension part improves braking and drift stability
@@ -1072,7 +1183,8 @@ def update():
             warning_text.color = color.green
             warning_text.text = "ENTERING RACE ARENA!"
             # initialize lap timer and checkpoints
-            lap_start_time = time.time()
+            lap_start_time = 0  # Starts precisely when the countdown hits GO!
+            race_countdown = 3.0
             current_lap = 1
             checkpoints_hit.clear()
             checkpoint_hit_times.clear()
@@ -1080,11 +1192,7 @@ def update():
             race_status_text.text = ''
             # Reset checkpoint visibility
             for i, cp in enumerate(checkpoint_entities):
-                if i < 3:
-                    cp.enabled = True
-                    checkpoints_rendered.add(i)
-                else:
-                    cp.enabled = False
+                cp.enabled = (i < 3)
             checkpoints_rendered.clear()
             for i in range(3):
                 checkpoints_rendered.add(i)
@@ -1100,9 +1208,12 @@ def update():
             _last_portal_time = _now
             warning_text.color = color.cyan
             warning_text.text = "RETURNED TO GARAGE"
-            # leave race
+            # leave race - clear all lap UI
             lap_start_time = 0
             race_status_text.text = ''
+            lap_text.text = ''
+            lap_time_text.text = ''
+            best_lap_text.text = ''
             invoke(setattr, warning_text, 'text', '', delay=2)
             invoke(setattr, warning_text, 'color', color.red, delay=2)
 
@@ -1163,6 +1274,13 @@ def update():
                 # prepare next lap
                 lap_start_time = time.time()
                 checkpoints_hit.clear()
+                checkpoint_hit_times.clear()
+                checkpoints_rendered.clear()
+                next_checkpoint_to_render = 3
+                # re-enable first 3 checkpoints
+                for i in range(3):
+                    checkpoint_entities[i].enabled = True
+                    checkpoints_rendered.add(i)
                 warning_text.color = color.cyan
                 warning_text.text = f"LAP {current_lap} START!"
             invoke(setattr, warning_text, 'text', '', delay=3)

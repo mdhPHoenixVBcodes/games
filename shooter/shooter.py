@@ -8,13 +8,27 @@ import ursina
 import ursina.prefabs.first_person_controller
 import random
 from ursina import *
+import gltf._converter
 
 game = Ursina()
 sky = Sky(color=color.rgb(185/255, 207/255, 220/255))
 player = ursina.prefabs.first_person_controller.FirstPersonController()
 
 # ==============================================================================
-# --- 1. INTERNAL SERVER LOGIC (Runs inside a background thread if hosting) ---
+# --- 1. INTERNAL SERVER LOGIC (Runs inside a background thread if hosting)
+
+def patched_get_next_time_index(currtime: float, time_buffer: list[float]) -> int:
+    nextidx = 1
+    if nextidx >= len(time_buffer): return len(time_buffer) - 1
+    nexttime = time_buffer[nextidx]
+    while currtime > nexttime:
+        nextidx += 1
+        if nextidx >= len(time_buffer): return len(time_buffer) - 1
+        nexttime = time_buffer[nextidx]
+    return nextidx
+
+gltf._converter.get_next_time_index = patched_get_next_time_index
+
 class Server:
     def __init__(self, host='localhost', port=5050):
         self.host = host
@@ -82,12 +96,22 @@ def input(key):
         shoot()
     if key == 'right mouse down':
         ads()
-    
+    if key == 'r':
+        gun.play('reload')
+    if key == 'z':
+        player.position = (0, 5, 0)
+
 
 if player.y > -10:
-    player.position = (0, 1, 0)
+    player.position = (0, 5, 0)
 
-player = Entity(model='cube', color=color.white, scale=(1, 2, 1), position=(0, 1, 0), collider='box')
 env = Entity(model='cube', position=(0, 0, 0), scale=(100, 1, 100), color=color.green, collider='box')
+
+from direct.actor.Actor import Actor
+gun = Actor('gun.glb')
+gun.reparent_to(camera)
+gun.set_scale(3)
+gun.set_pos(0.5, 3, 1)
+
 
 game.run()
