@@ -150,6 +150,7 @@ my_id = username
 remote_players = {}  
 remote_blocks = {}   
 remote_vehicles = {}  # Track parented blocks for remote driving players
+remote_nametags = {}  # Floating username Text above each remote player
 net_queue = []       
 queue_lock = threading.Lock()
 save_plates = []
@@ -178,6 +179,20 @@ current_fuel = 0.0
 fuel_timer = 0.0
 is_drifting = False
 skid_timer = 0.0
+
+# --- Race / Lap variables
+current_lap = 1
+total_laps = 3
+checkpoints_hit = []
+lap_start_time = 0
+best_lap_time = None
+current_lap_time = 0
+race_finished = False
+checkpoint_entities = []
+checkpoint_hit_times = {}  # Track when each checkpoint was hit
+checkpoints_rendered = set()  # Track which checkpoints are visible
+next_checkpoint_to_render = 3  # Next checkpoint index to display
+
 
 PART_DATA = {
     1: {'name': 'Base Block', 'color': color.white, 'weight': 5, 'inventory': 10, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
@@ -323,17 +338,16 @@ _pt = Entity(model='cube', scale=(1.2, 1.2, 9),
 portal_fill = Entity(model='cube', scale=(0.3, 7, 7),
                      position=(portal_pos.x, 4.3, portal_pos.z),
                      color=color.rgba(180, 0, 255, 160), collider=None)
-# Sign board above arch (3D world-space)
-_psign = Entity(model='cube', scale=(0.25, 1.8, 7),
-                position=(portal_pos.x - 0.9, 10.2, portal_pos.z),
+# Sign board above arch
+_psign = Entity(model='cube', scale=(0.25, 2.0, 8),
+                position=(portal_pos.x - 0.5, 10.5, portal_pos.z),
                 color=color.black, collider=None)
-# 3D text parented to scene so it appears above the arch, not on screen
+# 3D billboard text -- look_at(camera) each frame makes it face the player
 portal_label = Text(
-    text='ENTER TO RACE',
+    text='ENTER RACE',
     parent=scene,
-    position=Vec3(portal_pos.x - 0.6, 10.2, portal_pos.z),
-    rotation=(0, 90, 0),
-    world_scale=4,
+    position=Vec3(portal_pos.x - 0.4, 10.5, portal_pos.z),
+    scale=20,
     color=color.cyan,
     origin=(0, 0)
 )
@@ -353,9 +367,9 @@ Entity(model='cube', scale=(160, 0.1, 230),
        position=(race_center.x, 0.01, race_center.z),
        color=color.dark_gray, collider='box')
 # Start/finish line
-Entity(model='cube', scale=(60, 0.13, 4),
-       position=(race_center.x, 0.02, race_center.z - 110),
-       color=color.white, collider='box')
+start_line = Entity(model='cube', scale=(60, 0.13, 4),
+    position=(race_center.x, 0.02, race_center.z - 110),
+    color=color.white, collider='box')
 # Barrier walls around the outside
 Entity(model='cube', scale=(225, 2, 4), position=(race_center.x, 1, race_center.z - 163), color=color.red, collider='box')
 Entity(model='cube', scale=(225, 2, 4), position=(race_center.x, 1, race_center.z + 163), color=color.red, collider='box')
@@ -369,16 +383,15 @@ _rpr = Entity(model='cube', scale=(1.2, 8, 1.2), position=(return_portal_pos.x, 
 _rpt = Entity(model='cube', scale=(1.2, 1.2, 9),  position=(return_portal_pos.x, 8.6, return_portal_pos.z), color=color.cyan, collider=None)
 return_fill = Entity(model='cube', scale=(0.3, 7, 7), position=(return_portal_pos.x - 0.8, 4.3, return_portal_pos.z), color=color.rgba(0, 220, 255, 160), collider=None)
 # Sign board above return arch
-_rsign = Entity(model='cube', scale=(0.25, 1.8, 6),
-                position=(return_portal_pos.x - 0.9, 10.2, return_portal_pos.z),
+_rsign = Entity(model='cube', scale=(0.25, 2.0, 7),
+                position=(return_portal_pos.x - 0.5, 10.5, return_portal_pos.z),
                 color=color.black, collider=None)
-# 3D world-space text above return arch
+# 3D billboard text -- look_at(camera) each frame makes it face the player
 _return_label = Text(
     text='EXIT RACE',
     parent=scene,
-    position=Vec3(return_portal_pos.x - 0.6, 10.2, return_portal_pos.z),
-    rotation=(0, 90, 0),
-    world_scale=4,
+    position=Vec3(return_portal_pos.x - 0.4, 10.5, return_portal_pos.z),
+    scale=20,
     color=color.magenta,
     origin=(0, 0)
 )
@@ -386,6 +399,35 @@ _return_label = Text(
 # Teleport cooldown
 portal_cooldown = 2.0
 _last_portal_time = -999.0
+
+# --- Checkpoints for lap system (placed around oval)
+checkpoint_count = 10
+_outer_rx = 220 / 2
+_outer_rz = 320 / 2
+_inner_rx = 160 / 2
+_inner_rz = 230 / 2
+_rx = (_outer_rx + _inner_rx) / 2
+_rz = (_outer_rz + _inner_rz) / 2
+for i in range(checkpoint_count):
+    ang = math.radians(i * (360 / checkpoint_count) - 90)
+    cx = race_center.x + math.cos(ang) * _rx
+    cz = race_center.z + math.sin(ang) * _rz
+    cp = Entity(model='cube', scale=(10, 0.2, 4), position=(cx, 0.02, cz), color=color.yellow, collider='box')
+    cp.checkpoint_index = i
+    cp_text = Text(parent=cp, text=str(i+1), world_scale=2, position=(0, 1.2), color=color.black, origin=(0,0))
+    # Only make first 3 visible initially
+    if i < 3:
+        cp.enabled = True
+        checkpoints_rendered.add(i)
+    else:
+        cp.enabled = False
+    checkpoint_entities.append(cp)
+
+# UI for laps and times
+lap_text = Text(text='', position=(-0.6, 0.42), scale=1.4, color=color.white)
+lap_time_text = Text(text='', position=(-0.6, 0.38), scale=1.1, color=color.orange)
+best_lap_text = Text(text='', position=(-0.6, 0.34), scale=1.0, color=color.yellow)
+race_status_text = Text(text='', position=(0, 0.2), scale=2, color=color.green, origin=(0,0))
 
 # Display UI Surfaces
 hotbar_text = Text(text="Loading...", position=(-0.85, 0.45), scale=1.2, color=color.yellow, background=True)
@@ -745,7 +787,10 @@ def load_vehicle_design():
 
 def update():
     global current_speed, vehicle_y_velocity, car_velocity, my_id, current_fuel, fuel_timer, is_drifting, skid_timer
-    global player_last_on_save, player_last_on_load, _last_portal_time
+    global player_last_on_save, player_last_on_load, _last_portal_time, remote_nametags
+    global current_lap, total_laps, checkpoints_hit, lap_start_time, best_lap_time, current_lap_time, race_finished, checkpoint_entities
+    global lap_text, lap_time_text, best_lap_text, race_status_text
+    global checkpoint_hit_times, checkpoints_rendered, next_checkpoint_to_render
     
     if is_multiplayer:
         messages_to_process = []
@@ -806,13 +851,27 @@ def update():
                         
                     if p_id not in remote_players:
                         remote_players[p_id] = Entity(model='cube', color=color.orange, scale=(1.5, 1, 3))
-                    
+                    # Create floating username nametag if not yet created
+                    if p_id not in remote_nametags:
+                        uname = p_data.get("username", p_id)
+                        remote_nametags[p_id] = Text(
+                            text=uname,
+                            parent=scene,
+                            scale=12,
+                            color=color.white,
+                            origin=(0, 0)
+                        )
                     target_pos = Vec3(p_data["x"], p_data["y"], p_data["z"])
                     remote_players[p_id].position = lerp(remote_players[p_id].position, target_pos, time.dt * 15)
                     remote_players[p_id].rotation_y = p_data["rot_y"]
+                    # Float nametag 2.5 units above the player
+                    remote_nametags[p_id].position = remote_players[p_id].world_position + Vec3(0, 2.5, 0)
                     
             elif msg["type"] == "player_left":
                 p_id = msg["id"]
+                if p_id in remote_nametags:
+                    destroy(remote_nametags[p_id])
+                    del remote_nametags[p_id]
                 if p_id in remote_players:
                     destroy(remote_players[p_id])
                     del remote_players[p_id]
@@ -849,7 +908,7 @@ def update():
         my_rot = vehicle_parent.rotation_y if is_driving else player.rotation_y
         
         if not (my_pos.x != my_pos.x or my_pos.y != my_pos.y or my_pos.z != my_pos.z):
-            send_net_msg("move", {"x": my_pos.x, "y": my_pos.y, "z": my_pos.z, "rot_y": my_rot, "is_driving": is_driving})
+            send_net_msg("move", {"x": my_pos.x, "y": my_pos.y, "z": my_pos.z, "rot_y": my_rot, "is_driving": is_driving, "username": username})
 
     if is_driving and vehicle_parent.y < -30:
         exit_vehicle()
@@ -993,6 +1052,12 @@ def update():
     portal_fill.color = color.rgba(int(180 * _pulse), 0, 255, 150)
     return_fill.color = color.rgba(0, int(220 * _pulse), 255, 150)
 
+    # --- Billboard: portal labels and nametags always face the camera ---
+    portal_label.look_at(camera.world_position)
+    _return_label.look_at(camera.world_position)
+    for _nt in remote_nametags.values():
+        _nt.look_at(camera.world_position)
+
     # --- Vehicle portal teleport (XZ distance, vehicle-only) ---
     _now = time.time()
     if is_driving and (_now - _last_portal_time) > portal_cooldown:
@@ -1006,6 +1071,24 @@ def update():
             _last_portal_time = _now
             warning_text.color = color.green
             warning_text.text = "ENTERING RACE ARENA!"
+            # initialize lap timer and checkpoints
+            lap_start_time = time.time()
+            current_lap = 1
+            checkpoints_hit.clear()
+            checkpoint_hit_times.clear()
+            race_finished = False
+            race_status_text.text = ''
+            # Reset checkpoint visibility
+            for i, cp in enumerate(checkpoint_entities):
+                if i < 3:
+                    cp.enabled = True
+                    checkpoints_rendered.add(i)
+                else:
+                    cp.enabled = False
+            checkpoints_rendered.clear()
+            for i in range(3):
+                checkpoints_rendered.add(i)
+            next_checkpoint_to_render = 3
             invoke(setattr, warning_text, 'text', '', delay=2)
             invoke(setattr, warning_text, 'color', color.red, delay=2)
         # Exit portal: warp back to garages
@@ -1017,8 +1100,72 @@ def update():
             _last_portal_time = _now
             warning_text.color = color.cyan
             warning_text.text = "RETURNED TO GARAGE"
+            # leave race
+            lap_start_time = 0
+            race_status_text.text = ''
             invoke(setattr, warning_text, 'text', '', delay=2)
             invoke(setattr, warning_text, 'color', color.red, delay=2)
+
+    # --- Lap / Checkpoint detection and UI updates ---
+    if is_driving and lap_start_time and not race_finished:
+        # update current lap timer
+        current_lap_time = time.time() - lap_start_time
+        lap_text.text = f"LAP {current_lap}/{total_laps}"
+        # format time mm:ss.xx
+        mins = int(current_lap_time // 60)
+        secs = current_lap_time % 60
+        lap_time_text.text = f"TIME {mins:02d}:{secs:05.2f}"
+        if best_lap_time:
+            bm = int(best_lap_time // 60)
+            bs = best_lap_time % 60
+            best_lap_text.text = f"BEST {bm:02d}:{bs:05.2f}"
+
+        # checkpoint progression (ordered)
+        next_idx = len(checkpoints_hit)
+        if next_idx < len(checkpoint_entities):
+            cp = checkpoint_entities[next_idx]
+            if cp.enabled and distance(vehicle_parent.position, cp.position) < 8:
+                checkpoints_hit.append(next_idx)
+                checkpoint_hit_times[next_idx] = time.time()
+                warning_text.color = color.yellow
+                warning_text.text = f"CHECKPOINT {next_idx+1}"
+                invoke(setattr, warning_text, 'text', '', delay=1.5)
+
+        # handle checkpoint disappearance after 1 second
+        checkpoints_to_remove = []
+        for cp_idx, hit_time in checkpoint_hit_times.items():
+            if time.time() - hit_time > 1.0:
+                if cp_idx < len(checkpoint_entities):
+                    checkpoint_entities[cp_idx].enabled = False
+                    checkpoints_rendered.discard(cp_idx)
+                    checkpoints_to_remove.append(cp_idx)
+                # render next checkpoint if available
+                if next_checkpoint_to_render < len(checkpoint_entities):
+                    checkpoint_entities[next_checkpoint_to_render].enabled = True
+                    checkpoints_rendered.add(next_checkpoint_to_render)
+                    next_checkpoint_to_render = next_checkpoint_to_render + 1
+        for idx in checkpoints_to_remove:
+            del checkpoint_hit_times[idx]
+
+        # crossing start/finish to complete a lap
+        if distance(vehicle_parent.position, start_line.position) < 10 and len(checkpoints_hit) == len(checkpoint_entities) and (time.time() - lap_start_time) > 3:
+            lap_time = time.time() - lap_start_time
+            # record best lap
+            if best_lap_time is None or lap_time < best_lap_time:
+                best_lap_time = lap_time
+            current_lap += 1
+            if current_lap > total_laps:
+                race_finished = True
+                race_status_text.text = f"RACE FINISHED - LAST LAP {lap_time:0.2f}s"
+                warning_text.color = color.lime
+                warning_text.text = "RACE FINISHED!"
+            else:
+                # prepare next lap
+                lap_start_time = time.time()
+                checkpoints_hit.clear()
+                warning_text.color = color.cyan
+                warning_text.text = f"LAP {current_lap} START!"
+            invoke(setattr, warning_text, 'text', '', delay=3)
 
     # --- Pressure Plate Step Detection (on-foot only) ---
     if not is_driving:

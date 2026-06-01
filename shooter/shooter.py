@@ -88,6 +88,6 @@ if player.y > -10:
     player.position = (0, 1, 0)
 
 player = Entity(model='cube', color=color.white, scale=(1, 2, 1), position=(0, 1, 0), collider='box')
-env = Entity(model='cube', position=(0, 0, 0), scale=(10, 1, 10), color=color.green, collider='box')
+env = Entity(model='cube', position=(0, 0, 0), scale=(100, 1, 100), color=color.green, collider='box')
 
 game.run()
