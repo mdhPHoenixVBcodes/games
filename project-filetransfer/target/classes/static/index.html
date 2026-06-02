@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local File Transfer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      background: radial-gradient(circle at top left, #1a1c23, #000000);
+      min-height: 100vh;
+      color: #e2e8f0;
+    }
+    .glass-panel {
+      background: rgba(20, 25, 30, 0.6);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
+      transition: all 0.3s ease;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+    }
+    .btn-secondary {
+      background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
+      transition: all 0.3s ease;
+    }
+    .btn-secondary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(124, 58, 237, 0.6);
+    }
+    .drop-zone {
+      border: 2px dashed rgba(255, 255, 255, 0.2);
+      transition: all 0.3s ease;
+    }
+    .drop-zone.dragover {
+      border-color: #3b82f6;
+      background: rgba(59, 130, 246, 0.1);
+    }
+    .loader {
+      border: 3px solid rgba(255,255,255,0.1);
+      border-radius: 50%;
+      border-top: 3px solid #3b82f6;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="flex items-center justify-center p-4">
+  <div class="glass-panel rounded-2xl w-full max-w-4xl p-6 md:p-8">
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <h1 class="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-2">
+        Local File Transfer
+      </h1>
+      <p class="text-gray-400 text-sm">Secure, fast, localhost-only sharing</p>
+    </div>
+
+    <!-- Screens -->
+    <div id="app-container" class="relative min-h-[300px]">
+      
+      <!-- Screen 1: Main Menu -->
+      <div id="screen-menu" class="flex flex-col items-center justify-center h-full space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-md">
+          <button onclick="startFlow('send')" class="btn-primary py-6 px-6 rounded-xl text-white font-semibold text-lg flex flex-col items-center gap-3">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4 4v12"></path></svg>
+            <span>Send Files</span>
+          </button>
+          <button onclick="startFlow('receive')" class="btn-secondary py-6 px-6 rounded-xl text-white font-semibold text-lg flex flex-col items-center gap-3">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4 4v12"></path></svg>
+            <span>Receive Files</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Screen 2: Username Input -->
+      <div id="screen-username" class="hidden flex flex-col items-center justify-center h-full space-y-6">
+        <h2 class="text-2xl font-semibold">Identify Yourself</h2>
+        <div class="w-full max-w-sm">
+          <label class="block text-sm font-medium text-gray-400 mb-2">Username / Device ID</label>
+          <input type="text" id="username-input" class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., my-laptop">
+          <div class="flex justify-between mt-4">
+            <button onclick="goToMenu()" class="text-gray-400 hover:text-white text-sm">Cancel</button>
+            <button onclick="confirmUsername()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium">Continue</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Screen 3: Connection Status -->
+      <div id="screen-status" class="hidden flex flex-col items-center justify-center h-full space-y-8">
+        <div id="status-icon" class="w-20 h-20 rounded-full bg-gray-800 flex items-center justify-center border-4 border-gray-600 transition-all duration-500">
+          <div class="loader" id="loader-spinner"></div>
+          <svg id="check-icon" class="w-10 h-10 text-green-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        </div>
+        <div class="text-center">
+          <h2 id="status-text" class="text-xl font-semibold mb-1">Waiting for peer...</h2>
+          <p id="status-subtext" class="text-gray-400 text-sm">Ensure the other device is on the same network.</p>
+        </div>
+        <button id="disconnect-btn" onclick="goToMenu()" class="hidden text-red-400 hover:text-red-300 text-sm">Disconnect</button>
+      </div>
+
+      <!-- Screen 4: Transfer Dashboard -->
+      <div id="screen-dashboard" class="hidden h-full flex flex-col">
+        <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-700">
+          <div>
+            <span class="text-green-400 font-bold">● Connected</span>
+            <span class="text-gray-500 mx-2">|</span>
+            <span class="text-gray-400">Peer: <span id="peer-name" class="text-white">Unknown</span></span>
+          </div>
+          <button onclick="goToMenu()" class="text-gray-400 hover:text-white">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+          </button>
+        </div>
+        <div id="drop-zone" class="drop-zone rounded-xl p-8 text-center mb-6 cursor-pointer hover:bg-gray-800/50">
+          <input type="file" id="file-input" class="hidden" multiple onchange="handleFiles(this.files)">
+          <svg class="w-12 h-12 text-gray-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+          <p class="text-lg font-medium text-white">Drop files here to send</p>
+          <p class="text-sm text-gray-400 mt-1">Supports all file types</p>
+        </div>
+        <div id="preview-area" class="hidden bg-gray-900/50 rounded-xl p-4 border border-gray-700 max-h-[400px] overflow-y-auto">
+          <div id="preview-content" class="flex flex-col items-center"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // ✅ DYNAMIC API BASE - Works on localhost OR IP address
+    const API_BASE = window.location.origin;
+    
+    let currentUser = '';
+    let peerUser = '';
+    let connectionStatus = 'disconnected';
+
+    function showScreen(id) {
+      ['screen-menu', 'screen-username', 'screen-status', 'screen-dashboard'].forEach(s => {
+        document.getElementById(s).classList.add('hidden');
+      });
+      document.getElementById(id).classList.remove('hidden');
+    }
+
+    function goToMenu() {
+      connectionStatus = 'disconnected';
+      showScreen('screen-menu');
+      document.getElementById('username-input').value = '';
+    }
+
+    function startFlow(mode) {
+      currentUser = '';
+      peerUser = '';
+      document.getElementById('username-input').value = '';
+      const input = document.getElementById('username-input');
+      input.placeholder = mode === 'send' ? 'Enter Sender Name' : 'Enter Receiver Name';
+      input.setAttribute('data-mode', mode);
+      showScreen('screen-username');
+    }
+
+    async function confirmUsername() {
+      const input = document.getElementById('username-input');
+      const name = input.value.trim();
+      if (!name) return alert('Please enter a username');
+      
+      currentUser = name;
+      showScreen('screen-status');
+      
+      const mode = input.getAttribute('data-mode');
+      await handleConnection(mode);
+    }
+
+    async function handleConnection(mode) {
+      const loader = document.getElementById('loader-spinner');
+      const check = document.getElementById('check-icon');
+      const statusText = document.getElementById('status-text');
+      const subText = document.getElementById('status-subtext');
+      const btn = document.getElementById('disconnect-btn');
+      const statusIcon = document.getElementById('status-icon');
+
+      loader.classList.remove('hidden');
+      check.classList.add('hidden');
+      statusIcon.classList.remove('border-green-500');
+      statusIcon.classList.add('border-gray-600');
+      btn.classList.add('hidden');
+
+      try {
+        if (mode === 'receive') {
+          statusText.innerText = 'Waiting for sender...';
+          subText.innerText = 'Share this link: ' + window.location.href;
+          
+          // Register as receiver
+          await fetch(`${API_BASE}/api/register?username=${currentUser}`, { method: 'POST' });
+          
+          // Poll for connection
+          const poll = setInterval(async () => {
+            try {
+              const res = await fetch(`${API_BASE}/api/status/${currentUser}`);
+              const status = await res.text();
+              if (status === 'connected') {
+                clearInterval(poll);
+                showConnected('Peer');
+              }
+            } catch (e) {
+              clearInterval(poll);
+              showError('Connection lost');
+            }
+          }, 1500);
+          
+        } else {
+          statusText.innerText = 'Connecting...';
+          peerUser = prompt('Enter receiver username:');
+          if (!peerUser) { goToMenu(); return; }
+          
+          // Register sender
+          await fetch(`${API_BASE}/api/register?username=${currentUser}`, { method: 'POST' });
+          
+          // Connect to receiver
+          const res = await fetch(`${API_BASE}/api/connect?sender=${currentUser}&receiver=${peerUser}`, { method: 'POST' });
+          
+          if (res.ok) {
+            showConnected(peerUser);
+          } else {
+            const error = await res.text();
+            throw new Error(error || 'Could not find peer');
+          }
+        }
+      } catch (error) {
+        showError(error.message);
+      }
+    }
+
+    function showConnected(peer) {
+      connectionStatus = 'connected';
+      document.getElementById('loader-spinner').classList.add('hidden');
+      document.getElementById('check-icon').classList.remove('hidden');
+      document.getElementById('status-icon').classList.remove('border-gray-600');
+      document.getElementById('status-icon').classList.add('border-green-500');
+      document.getElementById('status-text').innerText = 'Device Connected';
+      document.getElementById('status-subtext').innerText = `Peer: ${peer}`;
+      document.getElementById('disconnect-btn').classList.remove('hidden');
+      document.getElementById('peer-name').innerText = peer;
+      
+      setTimeout(() => {
+        showScreen('screen-dashboard');
+        setupDropZone();
+      }, 800);
+    }
+
+    function showError(message) {
+      document.getElementById('loader-spinner').classList.add('hidden');
+      document.getElementById('status-text').innerText = '❌ ' + message;
+      document.getElementById('status-subtext').innerText = 'Try reconnecting.';
+    }
+
+    function setupDropZone() {
+      const zone = document.getElementById('drop-zone');
+      const input = document.getElementById('file-input');
+
+      zone.onclick = () => input.click();
+      
+      zone.ondragover = (e) => {
+        e.preventDefault();
+        zone.classList.add('dragover');
+      };
+      zone.ondragleave = () => zone.classList.remove('dragover');
+      zone.ondrop = (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+      };
+    }
+
+    async function handleFiles(files) {
+      if (!files || files.length === 0) return;
+      
+      const area = document.getElementById('preview-area');
+      const content = document.getElementById('preview-content');
+      area.classList.remove('hidden');
+      content.innerHTML = '';
+
+      const file = files[0];
+      const url = URL.createObjectURL(file);
+
+      const info = document.createElement('div');
+      info.className = 'w-full flex justify-between items-center mb-4 pb-2 border-b border-gray-700';
+      info.innerHTML = `
+        <span class="font-bold text-lg">${file.name}</span>
+        <div class="flex gap-2">
+          <span class="text-xs bg-gray-700 px-2 py-1 rounded">${(file.size / 1024 / 1024).toFixed(2)} MB</span>
+          <a href="${url}" download="${file.name}" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition">Download</a>
+        </div>
+      `;
+      content.appendChild(info);
+
+      // Upload file to server
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('target', peerUser);
+      
+      try {
+        const uploadRes = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (uploadRes.ok) {
+          const msg = document.createElement('p');
+          msg.className = 'text-green-400 mt-2';
+          msg.textContent = '✅ File uploaded successfully!';
+          content.appendChild(msg);
+        }
+      } catch (e) {
+        const msg = document.createElement('p');
+        msg.className = 'text-red-400 mt-2';
+        msg.textContent = '❌ Upload failed: ' + e.message;
+        content.appendChild(msg);
+      }
+
+      // Preview based on type
+      if (file.type.startsWith('image/')) {
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'max-h-[40vh] rounded-lg shadow-lg mt-4';
+        content.appendChild(img);
+      } else if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.src = url;
+        video.controls = true;
+        video.className = 'w-full max-h-[40vh] rounded-lg mt-4';
+        content.appendChild(video);
+      } else {
+        const p = document.createElement('p');
+        p.className = 'text-gray-400 mt-4';
+        p.textContent = 'Preview not available for this file type.';
+        content.appendChild(p);
+      }
+    }
+  </script>
+</body>
+</html>
