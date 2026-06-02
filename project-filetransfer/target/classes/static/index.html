@@ -106,7 +106,13 @@
       if (status === 'connected') {
         clearInterval(poll);
         connected = true;
-        targetUser = await fetch(`/api/connections`).then(r=>r.text()); // simplified
+        const peerRes = await fetch(`/api/connections/${myUser}`);
+        if (peerRes.ok) {
+          targetUser = await peerRes.text();
+        } else {
+          document.getElementById('status-text').textContent = '❌ Could not find peer. Try reconnecting.';
+          return;
+        }
         showConnected();
       }
     }, 1500);
