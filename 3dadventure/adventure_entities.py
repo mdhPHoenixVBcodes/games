@@ -426,7 +426,7 @@ class ArcherCompanion(Entity):
             return
 
         self.attack_cooldown = 0.5
-        spawn_pos = self.position + (0, 1.2, 0) + self.forward * 1.5
+        spawn_pos = self.position + (0, 1.5, 0) + self.forward * 1.5
         ray = raycast(camera.world_position, camera.forward, distance=500, ignore=(self,))
         if ray.hit:
             target_point = ray.world_point
@@ -1077,10 +1077,9 @@ class BossCube(Entity):
 class SphereBoss(Entity):
     def __init__(self, target, spawn_pos):
         super().__init__(
-            model='sphere',
-            texture='Logo/boss_texture2.png',
+            model='Logo/bss2.glb',
             color=color.white,
-            scale=(5.5, 7.0, 5.5),
+            scale=8,
             position=spawn_pos,
             collider='box'
         )
@@ -1133,7 +1132,7 @@ class SphereBoss(Entity):
                 hit_enemies=False,
                 hit_cannons=False,
                 hit_spheres=False,
-                damage=14,
+                damage=10,
             )
             self.shoot_timer = random.uniform(1.5, 2.8)
 

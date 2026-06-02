@@ -2,6 +2,8 @@ from ursina import *
 import random
 import os
 
+sky = Sky(color=color.rgb(135/255, 206/255, 235/255))
+
 ground_1 = Entity(model='plane', color=color.green, collider='box', scale=(100, 1, 100), position=(0, 0, 0))
 for _ in range(15):
     Entity(model='cube', color=color.brown, position=(random.uniform(-30, 30), 1, random.uniform(-30, 30)), scale=(2, 2, 2), collider='box')
