@@ -3,8 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Local File Transfer</title>
+  <title>Local File Transfer - Pro</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     body {
@@ -21,7 +25,6 @@
     }
     .btn-primary {
       background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
       transition: all 0.3s ease;
     }
     .btn-primary:hover {
@@ -30,7 +33,6 @@
     }
     .btn-secondary {
       background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-      box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
       transition: all 0.3s ease;
     }
     .btn-secondary:hover {
@@ -45,6 +47,15 @@
       border-color: #3b82f6;
       background: rgba(59, 130, 246, 0.1);
     }
+    .file-item {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: all 0.3s ease;
+    }
+    .file-item:hover {
+      border-color: #3b82f6;
+      transform: translateX(4px);
+    }
     .loader {
       border: 3px solid rgba(255,255,255,0.1);
       border-radius: 50%;
@@ -54,16 +65,42 @@
       animation: spin 1s linear infinite;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .preview-container {
+      max-height: 500px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.3);
+      border-radius: 0.5rem;
+      padding: 1rem;
+    }
+    model-viewer {
+      width: 100%;
+      height: 400px;
+      background: #1f2937;
+      border-radius: 0.5rem;
+    }
+    .docx-viewer {
+      background: white;
+      color: black;
+      padding: 2rem;
+      border-radius: 0.5rem;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .progress-bar {
+      height: 4px;
+      background: #3b82f6;
+      transition: width 0.3s ease;
+    }
   </style>
 </head>
 <body class="flex items-center justify-center p-4">
-  <div class="glass-panel rounded-2xl w-full max-w-4xl p-6 md:p-8">
+  <div class="glass-panel rounded-2xl w-full max-w-6xl p-6 md:p-8">
     <!-- Header -->
     <div class="text-center mb-8">
       <h1 class="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-2">
-        Local File Transfer
+        Local File Transfer - Pro
       </h1>
-      <p class="text-gray-400 text-sm">Secure, fast, localhost-only sharing</p>
+      <p class="text-gray-400 text-sm">Share files with preview • 3D models • Documents • Media</p>
     </div>
 
     <!-- Screens -->
@@ -111,7 +148,7 @@
 
       <!-- Screen 4: Transfer Dashboard -->
       <div id="screen-dashboard" class="hidden h-full flex flex-col">
-        <div class="flex justify-between items-center mb-4 pb-4 border-b border-gray-700">
+        <div class="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
           <div>
             <span class="text-green-400 font-bold">● Connected</span>
             <span class="text-gray-500 mx-2">|</span>
@@ -121,14 +158,43 @@
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
           </button>
         </div>
-        <div id="drop-zone" class="drop-zone rounded-xl p-8 text-center mb-6 cursor-pointer hover:bg-gray-800/50">
-          <input type="file" id="file-input" class="hidden" multiple onchange="handleFiles(this.files)">
-          <svg class="w-12 h-12 text-gray-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-          <p class="text-lg font-medium text-white">Drop files here to send</p>
-          <p class="text-sm text-gray-400 mt-1">Supports all file types</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Send Section -->
+          <div>
+            <h3 class="text-lg font-semibold mb-3 text-blue-400">📤 Send Files</h3>
+            <div id="drop-zone" class="drop-zone rounded-xl p-6 text-center mb-4 cursor-pointer hover:bg-gray-800/50">
+              <input type="file" id="file-input" class="hidden" multiple onchange="handleFiles(this.files)">
+              <svg class="w-10 h-10 text-gray-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+              <p class="text-sm font-medium text-white">Drop multiple files here</p>
+              <p class="text-xs text-gray-400 mt-1">or click to browse</p>
+            </div>
+            <div id="upload-queue" class="space-y-2 mb-3"></div>
+            <div id="upload-status" class="text-sm"></div>
+          </div>
+
+          <!-- Receive Section -->
+          <div>
+            <h3 class="text-lg font-semibold mb-3 text-purple-400">📥 Received Files</h3>
+            <div id="received-files" class="space-y-2 max-h-[400px] overflow-y-auto">
+              <p class="text-gray-500 text-sm text-center py-4">No files received yet</p>
+            </div>
+            <div id="bulk-actions" class="hidden mt-3 flex gap-2">
+              <button onclick="downloadAllAsZip()" class="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded transition">
+                📦 Download All as ZIP
+              </button>
+            </div>
+            <button onclick="refreshFiles()" class="mt-2 text-xs text-blue-400 hover:text-blue-300">🔄 Refresh</button>
+          </div>
         </div>
-        <div id="preview-area" class="hidden bg-gray-900/50 rounded-xl p-4 border border-gray-700 max-h-[400px] overflow-y-auto">
-          <div id="preview-content" class="flex flex-col items-center"></div>
+
+        <!-- Preview Section -->
+        <div id="preview-section" class="hidden mt-6">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-lg font-semibold text-green-400">👁️ Preview</h3>
+            <button onclick="closePreview()" class="text-gray-400 hover:text-white text-sm">✕ Close</button>
+          </div>
+          <div id="preview-content" class="preview-container"></div>
         </div>
       </div>
 
@@ -136,12 +202,12 @@
   </div>
 
   <script>
-    // ✅ DYNAMIC API BASE - Works on localhost OR IP address
     const API_BASE = window.location.origin;
-    
     let currentUser = '';
     let peerUser = '';
-    let connectionStatus = 'disconnected';
+    let fileCheckInterval = null;
+    let uploadedFiles = [];
+    let receivedFilesList = [];
 
     function showScreen(id) {
       ['screen-menu', 'screen-username', 'screen-status', 'screen-dashboard'].forEach(s => {
@@ -151,7 +217,7 @@
     }
 
     function goToMenu() {
-      connectionStatus = 'disconnected';
+      if (fileCheckInterval) clearInterval(fileCheckInterval);
       showScreen('screen-menu');
       document.getElementById('username-input').value = '';
     }
@@ -197,10 +263,8 @@
           statusText.innerText = 'Waiting for sender...';
           subText.innerText = 'Share this link: ' + window.location.href;
           
-          // Register as receiver
           await fetch(`${API_BASE}/api/register?username=${currentUser}`, { method: 'POST' });
           
-          // Poll for connection
           const poll = setInterval(async () => {
             try {
               const res = await fetch(`${API_BASE}/api/status/${currentUser}`);
@@ -220,10 +284,8 @@
           peerUser = prompt('Enter receiver username:');
           if (!peerUser) { goToMenu(); return; }
           
-          // Register sender
           await fetch(`${API_BASE}/api/register?username=${currentUser}`, { method: 'POST' });
           
-          // Connect to receiver
           const res = await fetch(`${API_BASE}/api/connect?sender=${currentUser}&receiver=${peerUser}`, { method: 'POST' });
           
           if (res.ok) {
@@ -239,7 +301,6 @@
     }
 
     function showConnected(peer) {
-      connectionStatus = 'connected';
       document.getElementById('loader-spinner').classList.add('hidden');
       document.getElementById('check-icon').classList.remove('hidden');
       document.getElementById('status-icon').classList.remove('border-gray-600');
@@ -252,6 +313,8 @@
       setTimeout(() => {
         showScreen('screen-dashboard');
         setupDropZone();
+        refreshFiles();
+        fileCheckInterval = setInterval(refreshFiles, 5000);
       }, 800);
     }
 
@@ -282,67 +345,224 @@
     async function handleFiles(files) {
       if (!files || files.length === 0) return;
       
-      const area = document.getElementById('preview-area');
-      const content = document.getElementById('preview-content');
-      area.classList.remove('hidden');
-      content.innerHTML = '';
+      const queueDiv = document.getElementById('upload-queue');
+      const statusDiv = document.getElementById('upload-status');
+      uploadedFiles = [];
+      
+      // Show all files in queue
+      Array.from(files).forEach((file, index) => {
+        const fileDiv = document.createElement('div');
+        fileDiv.className = 'bg-gray-800 rounded p-2 text-sm flex justify-between items-center';
+        fileDiv.innerHTML = `
+          <span class="truncate flex-1">${index + 1}. ${file.name}</span>
+          <span class="text-xs text-gray-400 ml-2">${formatSize(file.size)}</span>
+        `;
+        queueDiv.appendChild(fileDiv);
+      });
+      
+      statusDiv.innerHTML = `<p class="text-blue-400">📤 Uploading ${files.length} file(s)...</p>`;
+      
+      let successCount = 0;
+      for (let file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('target', peerUser);
+        
+        try {
+          const uploadRes = await fetch(`${API_BASE}/api/upload`, {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (uploadRes.ok) {
+            successCount++;
+            uploadedFiles.push(file.name);
+          }
+        } catch (e) {
+          console.error('Upload error:', e);
+        }
+      }
+      
+      statusDiv.innerHTML = `<p class="text-green-400">✅ ${successCount}/${files.length} file(s) sent successfully!</p>`;
+      setTimeout(() => {
+        queueDiv.innerHTML = '';
+        statusDiv.innerHTML = '';
+      }, 3000);
+    }
 
-      const file = files[0];
-      const url = URL.createObjectURL(file);
+    async function refreshFiles() {
+      try {
+        const res = await fetch(`${API_BASE}/api/files/${currentUser}`);
+        if (!res.ok) return;
+        
+        const files = await res.json();
+        receivedFilesList = files;
+        const container = document.getElementById('received-files');
+        const bulkActions = document.getElementById('bulk-actions');
+        
+        if (files.length === 0) {
+          container.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">No files received yet</p>';
+          bulkActions.classList.add('hidden');
+          return;
+        }
+        
+        bulkActions.classList.remove('hidden');
+        container.innerHTML = '';
+        
+        files.forEach((file, index) => {
+          const div = document.createElement('div');
+          div.className = 'file-item rounded-lg p-3 flex flex-col gap-2';
+          
+          const previewBtn = canPreview(file.name) ? 
+            `<button onclick="previewFile('${file.name}')" class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition">👁️ Preview</button>` : '';
+          
+          div.innerHTML = `
+            <div class="flex justify-between items-start">
+              <div class="flex items-center gap-2 overflow-hidden flex-1">
+                <span class="text-xl">${getFileIcon(file.name)}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-white truncate">${file.name}</p>
+                  <p class="text-xs text-gray-400">${file.size}</p>
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              ${previewBtn}
+              <a href="${API_BASE}/api/download/${currentUser}/${file.name}" 
+                 download="${file.name}"
+                 class="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition">
+                ⬇️ Download
+              </a>
+            </div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (e) {
+        console.error('Error refreshing files:', e);
+      }
+    }
 
-      const info = document.createElement('div');
-      info.className = 'w-full flex justify-between items-center mb-4 pb-2 border-b border-gray-700';
-      info.innerHTML = `
-        <span class="font-bold text-lg">${file.name}</span>
-        <div class="flex gap-2">
-          <span class="text-xs bg-gray-700 px-2 py-1 rounded">${(file.size / 1024 / 1024).toFixed(2)} MB</span>
-          <a href="${url}" download="${file.name}" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition">Download</a>
-        </div>
-      `;
-      content.appendChild(info);
+    function canPreview(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      const previewable = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm', 'ogg', 'mp3', 'wav', 'glb', 'gltf', 'obj', 'docx', 'txt', 'pdf'];
+      return previewable.includes(ext);
+    }
 
-      // Upload file to server
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('target', peerUser);
+    function getFileIcon(filename) {
+      const ext = filename.split('.').pop().toLowerCase();
+      const icons = {
+        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'webp': '🖼️',
+        'mp4': '🎬', 'webm': '🎬', 'ogg': '🎬', 'avi': '🎬',
+        'mp3': '🎵', 'wav': '🎵', 'ogg': '🎵', 'flac': '🎵',
+        'glb': '🎮', 'gltf': '🎮', 'obj': '🎮',
+        'docx': '📄', 'doc': '📄',
+        'pdf': '📕',
+        'txt': '📝',
+        'zip': '📦'
+      };
+      return icons[ext] || '📄';
+    }
+
+    async function previewFile(filename) {
+      const previewSection = document.getElementById('preview-section');
+      const previewContent = document.getElementById('preview-content');
+      const ext = filename.split('.').pop().toLowerCase();
+      
+      previewSection.classList.remove('hidden');
+      previewContent.innerHTML = '<div class="flex justify-center"><div class="loader"></div></div>';
       
       try {
-        const uploadRes = await fetch(`${API_BASE}/api/upload`, {
-          method: 'POST',
-          body: formData
-        });
+        const response = await fetch(`${API_BASE}/api/download/${currentUser}/${filename}`);
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
         
-        if (uploadRes.ok) {
-          const msg = document.createElement('p');
-          msg.className = 'text-green-400 mt-2';
-          msg.textContent = '✅ File uploaded successfully!';
-          content.appendChild(msg);
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+          previewContent.innerHTML = `<img src="${url}" class="max-w-full rounded-lg shadow-lg" alt="${filename}">`;
+        }
+        else if (['mp4', 'webm', 'ogg'].includes(ext)) {
+          previewContent.innerHTML = `
+            <video controls class="w-full rounded-lg">
+              <source src="${url}" type="video/${ext}">
+              Your browser does not support video playback.
+            </video>`;
+        }
+        else if (['mp3', 'wav', 'ogg'].includes(ext)) {
+          previewContent.innerHTML = `
+            <div class="flex flex-col items-center">
+              <span class="text-4xl mb-4">🎵</span>
+              <audio controls class="w-full">
+                <source src="${url}" type="audio/${ext}">
+                Your browser does not support audio playback.
+              </audio>
+            </div>`;
+        }
+        else if (['glb', 'gltf', 'obj'].includes(ext)) {
+          previewContent.innerHTML = `
+            <model-viewer 
+              src="${url}" 
+              camera-controls 
+              auto-rotate 
+              shadow-intensity="1"
+              class="w-full rounded-lg"
+              style="height: 400px;">
+            </model-viewer>
+            <p class="text-sm text-gray-400 mt-2">🖱️ Drag to rotate • Scroll to zoom</p>`;
+        }
+        else if (ext === 'docx') {
+          const arrayBuffer = await blob.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+          previewContent.innerHTML = `
+            <div class="docx-viewer">
+              ${result.value}
+            </div>
+            <p class="text-sm text-gray-400 mt-2">📜 Scroll to view entire document</p>`;
+        }
+        else if (ext === 'txt') {
+          const text = await blob.text();
+          previewContent.innerHTML = `<pre class="bg-gray-800 p-4 rounded-lg text-sm overflow-auto max-h-[400px]">${text}</pre>`;
+        }
+        else {
+          previewContent.innerHTML = `<p class="text-center text-gray-400">Preview not available for this file type.</p>`;
         }
       } catch (e) {
-        const msg = document.createElement('p');
-        msg.className = 'text-red-400 mt-2';
-        msg.textContent = '❌ Upload failed: ' + e.message;
-        content.appendChild(msg);
+        previewContent.innerHTML = `<p class="text-red-400 text-center">Error loading preview: ${e.message}</p>`;
       }
+    }
 
-      // Preview based on type
-      if (file.type.startsWith('image/')) {
-        const img = document.createElement('img');
-        img.src = url;
-        img.className = 'max-h-[40vh] rounded-lg shadow-lg mt-4';
-        content.appendChild(img);
-      } else if (file.type.startsWith('video/')) {
-        const video = document.createElement('video');
-        video.src = url;
-        video.controls = true;
-        video.className = 'w-full max-h-[40vh] rounded-lg mt-4';
-        content.appendChild(video);
-      } else {
-        const p = document.createElement('p');
-        p.className = 'text-gray-400 mt-4';
-        p.textContent = 'Preview not available for this file type.';
-        content.appendChild(p);
+    function closePreview() {
+      document.getElementById('preview-section').classList.add('hidden');
+      document.getElementById('preview-content').innerHTML = '';
+    }
+
+    async function downloadAllAsZip() {
+      if (receivedFilesList.length === 0) return;
+      
+      const zip = new JSZip();
+      const statusDiv = document.getElementById('upload-status');
+      statusDiv.innerHTML = '<p class="text-blue-400">📦 Creating ZIP file...</p>';
+      
+      try {
+        for (let file of receivedFilesList) {
+          const response = await fetch(`${API_BASE}/api/download/${currentUser}/${file.name}`);
+          const blob = await response.blob();
+          const arrayBuffer = await blob.arrayBuffer();
+          zip.file(file.name, arrayBuffer);
+        }
+        
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, `files-from-${peerUser}.zip`);
+        statusDiv.innerHTML = '<p class="text-green-400">✅ ZIP downloaded!</p>';
+        setTimeout(() => statusDiv.innerHTML = '', 3000);
+      } catch (e) {
+        statusDiv.innerHTML = `<p class="text-red-400">❌ ZIP creation failed: ${e.message}</p>`;
       }
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
     }
   </script>
 </body>

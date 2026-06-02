@@ -11,7 +11,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @RestController
 @RequestMapping("/api")
@@ -64,6 +67,36 @@ public class FileTransferController {
         }
     }
 
+    @GetMapping("/files/{username}")
+    public ResponseEntity<List<Map<String, String>>> listFiles(@PathVariable String username) {
+        Path userDir = baseDir.resolve(username);
+        if (!Files.exists(userDir)) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+        
+        try (Stream<Path> paths = Files.list(userDir)) {
+            List<Map<String, String>> files = paths
+                .filter(Files::isRegularFile)
+                .map(path -> {
+                    Map<String, String> fileInfo = new HashMap<>();
+                    fileInfo.put("name", path.getFileName().toString());
+                    try {
+                        long size = Files.size(path);
+                        fileInfo.put("size", formatSize(size));
+                        fileInfo.put("sizeBytes", String.valueOf(size));
+                    } catch (IOException e) {
+                        fileInfo.put("size", "Unknown");
+                        fileInfo.put("sizeBytes", "0");
+                    }
+                    return fileInfo;
+                })
+                .collect(Collectors.toList());
+            return ResponseEntity.ok(files);
+        } catch (IOException e) {
+            return ResponseEntity.status(500).body(Collections.emptyList());
+        }
+    }
+
     @GetMapping("/download/{username}/{filename:.+}")
     public ResponseEntity<Resource> download(@PathVariable String username, @PathVariable String filename) {
         Path filePath = baseDir.resolve(username).resolve(filename);
@@ -75,5 +108,12 @@ public class FileTransferController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .header(HttpHeaders.CONTENT_TYPE, contentType)
                 .body(resource);
+    }
+
+    private String formatSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024) + " KB";
+        if (bytes < 1024 * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+        return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
 }
