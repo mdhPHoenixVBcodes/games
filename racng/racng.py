@@ -145,7 +145,16 @@ from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
 
 app = Ursina()
-application.development_mode = False 
+application.development_mode = False
+
+# Set window icon from logo.png
+try:
+    import os
+    logo_path = os.path.join('racng', 'logo.png')
+    if os.path.exists(logo_path):
+        window.icon = logo_path
+except:
+    pass  # Skip if not available 
 
 # --- Ambient Background Music ---
 bg_music = Audio('calm.mp3', loop=True, autoplay=True, volume=0.3) 
@@ -239,6 +248,15 @@ for center in garage_centers:
 
 # Bridge to new area
 bridge = Entity(model='cube', scale=(20, 0.1, 200), position=(20, 0.01, 160), color=color.gray, collider='box')
+
+# Add image to garage wall (garage 0, left side)
+try:
+    import os
+    image_path = os.path.join(os.path.dirname(__file__), 'image.png')
+    garage_wall = Entity(model='cube', scale=(5, 8, 30), position=(garage_centers[0].x - 17.5, 4, garage_centers[0].z), 
+                         color=color.white, collider=None, texture=image_path)
+except Exception as e:
+    print(f"Could not load image texture: {e}")
 
 # Oval race track (very big) - positioned far away
 oval_track_center = Vec3(20, 0.01, 380)
