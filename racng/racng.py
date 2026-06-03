@@ -467,6 +467,11 @@ warning_text = Text(text="", position=(0, 0.2), scale=2, color=color.red, origin
 fuel_text = Text(text="", position=(0, -0.32), scale=2, color=color.orange, origin=(0,0))
 speedometer = Text(text="", position=(0, -0.4), scale=2, color=color.yellow, origin=(0,0))
 
+# --- ADD THIS RIGHT HERE ---
+speedo_bg = Entity(parent=camera.ui, model='circle', color=color.rgba(10, 10, 10, 200), scale=0.25, position=(0.7, -0.35))
+speedo_needle = Entity(parent=speedo_bg, model='quad', color=color.red, scale=(0.03, 0.45), origin=(0, -0.5), position=(0, 0), rotation_z=135)
+speedo_center_pin = Entity(parent=speedo_bg, model='circle', color=color.white, scale=0.1, position=(0, 0, -0.1))
+
 def toggle_shop():
     global shop_ui_open
     if not is_driving:
@@ -658,6 +663,7 @@ class VehiclePart(Entity):
             remote_blocks[coord_key] = self
 
 def input(key):
+    global vehicle_y_velocity
     global selected_block_type, is_driving, mouse_accelerate, mouse_brake
 
     if key == 'escape':
@@ -673,6 +679,9 @@ def input(key):
         update_hotbar_ui()
         
     if is_driving:
+        if key == 'space' and vehicle_y_velocity == 0:
+            vehicle_y_velocity = 9.0
+            vehicle_parent.y += 5
         if key == 'right mouse down':
             mouse_accelerate = True
         if key == 'right mouse up':
@@ -1086,7 +1095,7 @@ def update():
                 else:
                     vehicle_y_velocity -= 25 * time.dt
                 
-                vehicle_y_velocity = clamp(vehicle_y_velocity, -50.0, bottom_thrusters * 25.0 if bottom_thrusters > 0 else 0)
+                vehicle_y_velocity = clamp(vehicle_y_velocity, -50.0, bottom_thrusters * 25.0 if bottom_thrusters > 0 else 50.0)
                 vehicle_parent.y += vehicle_y_velocity * time.dt
             else:
                 # We are on the ground!
@@ -1104,7 +1113,7 @@ def update():
             else:
                 vehicle_y_velocity -= 25 * time.dt
             
-            vehicle_y_velocity = clamp(vehicle_y_velocity, -50.0, bottom_thrusters * 25.0 if bottom_thrusters > 0 else 0)
+            vehicle_y_velocity = clamp(vehicle_y_velocity, -50.0, bottom_thrusters * 25.0 if bottom_thrusters > 0 else 50.0)
             vehicle_parent.y += vehicle_y_velocity * time.dt
 
         # Input and Fuel Management
@@ -1171,6 +1180,12 @@ def update():
         speedometer.text = f"SPEED: {int(abs(current_speed * 4.2))} km/h{drift_indicator}"
         fuel_text.text = f"FUEL: {int(current_fuel)}/{int(max_fuel)} L"
         
+        # Prevent max_speed from being 0 to avoid division errors
+        safe_max = max_speed if max_speed > 0 else 1 
+        display_speed = min(abs(current_speed), safe_max)
+        speed_percent = display_speed / safe_max
+        speedo_needle.rotation_z = 135 - (speed_percent * 270)
+
         ideal_cam_pos = vehicle_parent.position - (vehicle_parent.forward * 12) + Vec3(0, 4, 0)
         camera.position = lerp(camera.position, ideal_cam_pos, time.dt * 7)
         camera.look_at(vehicle_parent.position + vehicle_parent.forward * 3 + Vec3(0, 1.5, 0))
@@ -1306,7 +1321,7 @@ def update():
     # --- Pressure Plate Step Detection (on-foot only) ---
     if not is_driving:
         px, pz = player.x, player.z
-        on_save = any(abs(px - sp.x) < 1.8 and abs(pz - sp.z) < 1.8 for sp in save_plates)
+        on_save = any(abs(px - sp.x) < 1.8 and abs(pz - pz) < 1.8 for sp in save_plates)
         on_load = any(abs(px - lp.x) < 1.8 and abs(pz - lp.z) < 1.8 for lp in load_plates)
         if on_save and not player_last_on_save:
             save_vehicle_design()

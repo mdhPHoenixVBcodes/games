@@ -727,7 +727,7 @@ insanity_bar5 = Button(
 )
 
 max_bar_height = 0.67   # The max scale you requested
-max_radar_distance = 50
+max_radar_distance = 75
 
 brain = Button(
     text='@@',
