@@ -726,8 +726,8 @@ insanity_bar5 = Button(
     model='quad'
 )
 
-max_bar_height = 5       # The max scale you requested
-max_radar_distance = 25
+max_bar_height = 0.67   # The max scale you requested
+max_radar_distance = 50
 
 brain = Button(
     text='@@',
@@ -748,12 +748,12 @@ brain = Button(
 )
 
 sanity_bar = Entity(
-    parent=insanity_bar3,
+    parent=camera.ui,
     model='quad',
-    color=color.red,
-    position=(-0.8, 0.2, -0.01), 
-    scale=(0.8, 4.96),       
-    origin=(0, 0.04)     
+    color=color.white,
+    position=(-0.8, -0.4), 
+    scale=(0.03, 0.01),       
+    origin=(0, -0.5, 1)
 )
 
 selected_hotbar_slot = 1
@@ -1441,22 +1441,30 @@ def check_door_hit():
 # --- THE MASTER GAME LOOP ---
 def update():
     if sanity_bar.scale_y < 5:
-        while True:
-            time.sleep(10)
-            sanity_bar.scale_y -= 0.2 * time.dt
+        sanity_bar.scale_y -= 0.1 * time.dt
 
+    # 1. Get the distance every frame
     dist = distance(player, monster)
 
-    # --- SMOOTH RADAR LOGIC ---
+    # 2. Smooth Radar Logic
     if dist < max_radar_distance:
-        # Math trick: Calculate the percentage of closeness and map it to the 0-5 scale
+        # Monster is close! Calculate the percentage
         percentage = dist / max_radar_distance
+        
+        # NOTE: This shrinks the bar as the monster gets closer.
+        # If you want it to GROW when the monster gets closer, change it to:
+        # sanity_bar.scale_y = (1 - percentage) * max_bar_height
         sanity_bar.scale_y = percentage * max_bar_height 
 
     else:
-        # Monster is totally out of range, meter stays full and calm
-        sanity_bar.scale_y = max_bar_height
+        # 3. Monster is out of range. 
+        # If the bar is below 5, slowly recover it smoothly over time (no sleep needed!)
+        if sanity_bar.scale_y < max_bar_height:
+            sanity_bar.scale_y += 0.2 * time.dt
+        else:
+            sanity_bar.scale_y = max_bar_height
 
+    # 4. Lock the scale so it never goes below 0 or above 5
     sanity_bar.scale_y = clamp(sanity_bar.scale_y, 0, max_bar_height)
 
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
