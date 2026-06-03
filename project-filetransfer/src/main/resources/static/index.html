@@ -4,41 +4,68 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Local File Transfer - Pro</title>
+  
+  <!-- External Libraries -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-java.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css">
+
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: #4b5563 #1f2937;
+    }
+    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar-track { background: #1f2937; border-radius: 4px; }
+    *::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+    
     body {
       font-family: 'Inter', sans-serif;
       background: radial-gradient(circle at top left, #1a1c23, #000000);
       min-height: 100vh;
       color: #e2e8f0;
     }
+    
     .glass-panel {
-      background: rgba(20, 25, 30, 0.6);
-      backdrop-filter: blur(16px);
+      background: rgba(20, 25, 30, 0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border: 1px solid rgba(255, 255, 255, 0.1);
       box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
     }
+    
     .btn-primary {
       background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
       transition: all 0.3s ease;
     }
     .btn-primary:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
     }
+    
     .btn-secondary {
       background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+      box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
       transition: all 0.3s ease;
     }
     .btn-secondary:hover {
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(124, 58, 237, 0.6);
     }
+    
     .drop-zone {
       border: 2px dashed rgba(255, 255, 255, 0.2);
       transition: all 0.3s ease;
@@ -47,6 +74,7 @@
       border-color: #3b82f6;
       background: rgba(59, 130, 246, 0.1);
     }
+    
     .file-item {
       background: rgba(30, 41, 59, 0.8);
       border: 1px solid rgba(255, 255, 255, 0.1);
@@ -56,6 +84,7 @@
       border-color: #3b82f6;
       transform: translateX(4px);
     }
+    
     .loader {
       border: 3px solid rgba(255,255,255,0.1);
       border-radius: 50%;
@@ -65,67 +94,139 @@
       animation: spin 1s linear infinite;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    
     .preview-container {
-      max-height: 500px;
+      max-height: 600px;
       overflow-y: auto;
-      background: rgba(0,0,0,0.3);
-      border-radius: 0.5rem;
-      padding: 1rem;
+      background: rgba(0,0,0,0.4);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
     }
+    
     model-viewer {
       width: 100%;
-      height: 400px;
+      height: 500px;
       background: #1f2937;
       border-radius: 0.5rem;
     }
+    
+    .image-zoom-container {
+      overflow: hidden;
+      cursor: zoom-in;
+      background: #000;
+      border-radius: 0.5rem;
+    }
+    .image-zoom-container.zoomed {
+      cursor: zoom-out;
+    }
+    .image-zoom-container.zoomed img {
+      transform: scale(2);
+      transition: transform 0.3s ease;
+    }
+    .image-zoom-container img {
+      width: 100%;
+      transition: transform 0.3s ease;
+    }
+    
     .docx-viewer {
       background: white;
       color: black;
       padding: 2rem;
       border-radius: 0.5rem;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    
+    .table-container {
+      overflow-x: auto;
+      background: white;
+      border-radius: 0.5rem;
       max-height: 500px;
       overflow-y: auto;
     }
-    .progress-bar {
-      height: 4px;
-      background: #3b82f6;
-      transition: width 0.3s ease;
+    .table-container table {
+      width: 100%;
+      border-collapse: collapse;
+      color: black;
     }
+    .table-container th, .table-container td {
+      padding: 0.75rem;
+      border: 1px solid #e5e7eb;
+      text-align: left;
+    }
+    .table-container th {
+      background: #f3f4f6;
+      font-weight: 600;
+    }
+    
+    .copy-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(59, 130, 246, 0.9);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      border: none;
+      z-index: 10;
+    }
+    .copy-btn:hover { background: #2563eb; }
+    
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: #1e293b;
+      color: white;
+      padding: 1rem 1.5rem;
+      border-radius: 0.5rem;
+      border: 1px solid #3b82f6;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      z-index: 1000;
+      animation: slideIn 0.3s ease;
+    }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   </style>
 </head>
 <body class="flex items-center justify-center p-4">
-  <div class="glass-panel rounded-2xl w-full max-w-6xl p-6 md:p-8">
+
+  <div class="glass-panel rounded-2xl w-full max-w-7xl p-6 md:p-8">
+    
     <!-- Header -->
     <div class="text-center mb-8">
-      <h1 class="text-3xl md:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-2">
+      <h1 class="text-3xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 mb-3">
         Local File Transfer - Pro
       </h1>
-      <p class="text-gray-400 text-sm">Share files with preview • 3D models • Documents • Media</p>
+      <p class="text-gray-400 text-sm md:text-base">Preview, share, and download files with advanced viewers</p>
     </div>
 
-    <!-- Screens -->
-    <div id="app-container" class="relative min-h-[300px]">
+    <!-- Screens Container -->
+    <div id="app-container" class="relative min-h-[400px]">
       
       <!-- Screen 1: Main Menu -->
-      <div id="screen-menu" class="flex flex-col items-center justify-center h-full space-y-6">
+      <div id="screen-menu" class="flex flex-col items-center justify-center h-full space-y-8 py-12">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-md">
-          <button onclick="startFlow('send')" class="btn-primary py-6 px-6 rounded-xl text-white font-semibold text-lg flex flex-col items-center gap-3">
-            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4 4v12"></path></svg>
+          <button onclick="startFlow('send')" class="btn-primary py-8 px-6 rounded-xl text-white font-semibold text-lg flex flex-col items-center gap-3">
+            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4 4v12"></path></svg>
             <span>Send Files</span>
           </button>
-          <button onclick="startFlow('receive')" class="btn-secondary py-6 px-6 rounded-xl text-white font-semibold text-lg flex flex-col items-center gap-3">
-            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4 4v12"></path></svg>
+          <button onclick="startFlow('receive')" class="btn-secondary py-8 px-6 rounded-xl text-white font-semibold text-lg flex flex-col items-center gap-3">
+            <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4 4v12"></path></svg>
             <span>Receive Files</span>
           </button>
         </div>
       </div>
 
       <!-- Screen 2: Username Input -->
-      <div id="screen-username" class="hidden flex flex-col items-center justify-center h-full space-y-6">
+      <div id="screen-username" class="hidden flex flex-col items-center justify-center h-full space-y-6 py-12">
         <h2 class="text-2xl font-semibold">Identify Yourself</h2>
-        <div class="w-full max-w-sm">
-          <label class="block text-sm font-medium text-gray-400 mb-2">Username / Device ID</label>
-          <input type="text" id="username-input" class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., my-laptop">
+        <div class="w-full max-w-sm space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-400 mb-2">Username / Device ID</label>
+            <input type="text" id="username-input" class="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., my-laptop">
+          </div>
           <div class="flex justify-between mt-4">
             <button onclick="goToMenu()" class="text-gray-400 hover:text-white text-sm">Cancel</button>
             <button onclick="confirmUsername()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium">Continue</button>
@@ -134,13 +235,13 @@
       </div>
 
       <!-- Screen 3: Connection Status -->
-      <div id="screen-status" class="hidden flex flex-col items-center justify-center h-full space-y-8">
-        <div id="status-icon" class="w-20 h-20 rounded-full bg-gray-800 flex items-center justify-center border-4 border-gray-600 transition-all duration-500">
+      <div id="screen-status" class="hidden flex flex-col items-center justify-center h-full space-y-8 py-12">
+        <div id="status-icon" class="w-20 h-20 rounded-full bg-gray-800 flex items-center justify-center border-4 border-gray-600">
           <div class="loader" id="loader-spinner"></div>
           <svg id="check-icon" class="w-10 h-10 text-green-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
         </div>
-        <div class="text-center">
-          <h2 id="status-text" class="text-xl font-semibold mb-1">Waiting for peer...</h2>
+        <div class="text-center space-y-2">
+          <h2 id="status-text" class="text-xl font-semibold">Waiting for peer...</h2>
           <p id="status-subtext" class="text-gray-400 text-sm">Ensure the other device is on the same network.</p>
         </div>
         <button id="disconnect-btn" onclick="goToMenu()" class="hidden text-red-400 hover:text-red-300 text-sm">Disconnect</button>
@@ -148,66 +249,91 @@
 
       <!-- Screen 4: Transfer Dashboard -->
       <div id="screen-dashboard" class="hidden h-full flex flex-col">
+        <!-- Top Bar -->
         <div class="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
-          <div>
-            <span class="text-green-400 font-bold">● Connected</span>
-            <span class="text-gray-500 mx-2">|</span>
-            <span class="text-gray-400">Peer: <span id="peer-name" class="text-white">Unknown</span></span>
+          <div class="flex items-center gap-2">
+            <span class="text-green-400 font-bold text-sm">● Connected</span>
+            <span class="text-gray-500">|</span>
+            <span class="text-gray-400 text-sm">Peer: <span id="peer-name" class="text-white font-medium">Unknown</span></span>
           </div>
           <button onclick="goToMenu()" class="text-gray-400 hover:text-white">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
           </button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <!-- Send Section -->
-          <div>
-            <h3 class="text-lg font-semibold mb-3 text-blue-400">📤 Send Files</h3>
-            <div id="drop-zone" class="drop-zone rounded-xl p-6 text-center mb-4 cursor-pointer hover:bg-gray-800/50">
+          <div class="space-y-4">
+            <h3 class="text-lg font-semibold text-blue-400 flex items-center gap-2">
+              <span>📤</span> Send Files
+            </h3>
+            <div id="drop-zone" class="drop-zone rounded-xl p-8 text-center cursor-pointer hover:bg-gray-800/50">
               <input type="file" id="file-input" class="hidden" multiple onchange="handleFiles(this.files)">
-              <svg class="w-10 h-10 text-gray-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-              <p class="text-sm font-medium text-white">Drop multiple files here</p>
-              <p class="text-xs text-gray-400 mt-1">or click to browse</p>
+              <svg class="w-12 h-12 text-gray-500 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+              <p class="text-base font-medium text-white">Drop multiple files here</p>
+              <p class="text-sm text-gray-400 mt-1">or click to browse</p>
             </div>
-            <div id="upload-queue" class="space-y-2 mb-3"></div>
+            <div id="upload-queue" class="space-y-2 max-h-[200px] overflow-y-auto"></div>
             <div id="upload-status" class="text-sm"></div>
           </div>
 
           <!-- Receive Section -->
-          <div>
-            <h3 class="text-lg font-semibold mb-3 text-purple-400">📥 Received Files</h3>
+          <div class="space-y-4">
+            <h3 class="text-lg font-semibold text-purple-400 flex items-center gap-2">
+              <span>📥</span> Received Files
+            </h3>
             <div id="received-files" class="space-y-2 max-h-[400px] overflow-y-auto">
-              <p class="text-gray-500 text-sm text-center py-4">No files received yet</p>
+              <p class="text-gray-500 text-sm text-center py-8">No files received yet</p>
             </div>
-            <div id="bulk-actions" class="hidden mt-3 flex gap-2">
-              <button onclick="downloadAllAsZip()" class="flex-1 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs rounded transition">
+            <div id="bulk-actions" class="hidden flex gap-2">
+              <button onclick="downloadAllAsZip()" class="flex-1 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm rounded-lg transition shadow-lg">
                 📦 Download All as ZIP
               </button>
             </div>
-            <button onclick="refreshFiles()" class="mt-2 text-xs text-blue-400 hover:text-blue-300">🔄 Refresh</button>
+            <button onclick="refreshFiles()" class="text-xs text-blue-400 hover:text-blue-300">🔄 Refresh</button>
           </div>
         </div>
 
         <!-- Preview Section -->
         <div id="preview-section" class="hidden mt-6">
-          <div class="flex justify-between items-center mb-3">
-            <h3 class="text-lg font-semibold text-green-400">👁️ Preview</h3>
-            <button onclick="closePreview()" class="text-gray-400 hover:text-white text-sm">✕ Close</button>
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold text-green-400 flex items-center gap-2">
+              <span>️</span> Preview
+            </h3>
+            <div class="flex gap-2">
+              <button id="copy-code-btn" onclick="copyCode()" class="hidden px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition">
+                 Copy Code
+              </button>
+              <button onclick="closePreview()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition">
+                 Close
+              </button>
+            </div>
           </div>
-          <div id="preview-content" class="preview-container"></div>
+          <div id="preview-content" class="preview-container relative"></div>
         </div>
       </div>
 
     </div>
   </div>
 
+  <!-- JavaScript Logic -->
   <script>
     const API_BASE = window.location.origin;
     let currentUser = '';
     let peerUser = '';
-    let fileCheckInterval = null;
+    let authToken = '';
+    let ws = null;
     let uploadedFiles = [];
     let receivedFilesList = [];
+    let currentPreviewFile = null;
+
+    function showToast(message, type = 'success') {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `<div class="flex items-center gap-2"><span>${type === 'success' ? '✅' : ''}</span><span>${message}</span></div>`;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
 
     function showScreen(id) {
       ['screen-menu', 'screen-username', 'screen-status', 'screen-dashboard'].forEach(s => {
@@ -217,14 +343,12 @@
     }
 
     function goToMenu() {
-      if (fileCheckInterval) clearInterval(fileCheckInterval);
+      if (ws) ws.close();
       showScreen('screen-menu');
       document.getElementById('username-input').value = '';
     }
 
     function startFlow(mode) {
-      currentUser = '';
-      peerUser = '';
       document.getElementById('username-input').value = '';
       const input = document.getElementById('username-input');
       input.placeholder = mode === 'send' ? 'Enter Sender Name' : 'Enter Receiver Name';
@@ -240,43 +364,69 @@
       currentUser = name;
       showScreen('screen-status');
       
-      const mode = input.getAttribute('data-mode');
-      await handleConnection(mode);
+      try {
+        // Generate token
+        const tokenRes = await fetch(`${API_BASE}/api/token?username=${currentUser}`, { method: 'POST' });
+        if (!tokenRes.ok) throw new Error('Failed to get token');
+        const tokenData = await tokenRes.json();
+        authToken = tokenData.token;
+        
+        // Init WebSocket
+        initWebSocket();
+        
+        const mode = input.getAttribute('data-mode');
+        await handleConnection(mode);
+      } catch (e) {
+        showToast('Error: ' + e.message, 'error');
+        goToMenu();
+      }
+    }
+
+    function initWebSocket() {
+      const wsUrl = `ws://${window.location.host}/ws/transfer`;
+      ws = new WebSocket(wsUrl);
+      
+      ws.onopen = () => console.log('WS Connected');
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'connected') {
+          showConnected(data.from || data.to);
+        } else if (data.type === 'fileReceived') {
+          showToast(`New file: ${data.filename}`);
+          refreshFiles();
+        }
+      };
+      ws.onerror = (e) => console.error('WS Error', e);
+      ws.onclose = () => console.log('WS Closed');
     }
 
     async function handleConnection(mode) {
       const loader = document.getElementById('loader-spinner');
       const check = document.getElementById('check-icon');
       const statusText = document.getElementById('status-text');
-      const subText = document.getElementById('status-subtext');
-      const btn = document.getElementById('disconnect-btn');
       const statusIcon = document.getElementById('status-icon');
+      const disconnectBtn = document.getElementById('disconnect-btn');
 
       loader.classList.remove('hidden');
       check.classList.add('hidden');
       statusIcon.classList.remove('border-green-500');
       statusIcon.classList.add('border-gray-600');
-      btn.classList.add('hidden');
+      disconnectBtn.classList.add('hidden');
 
       try {
         if (mode === 'receive') {
           statusText.innerText = 'Waiting for sender...';
-          subText.innerText = 'Share this link: ' + window.location.href;
+          await fetch(`${API_BASE}/api/register?username=${currentUser}&token=${authToken}`, { method: 'POST' });
           
-          await fetch(`${API_BASE}/api/register?username=${currentUser}`, { method: 'POST' });
-          
+          // Polling backup
           const poll = setInterval(async () => {
             try {
               const res = await fetch(`${API_BASE}/api/status/${currentUser}`);
-              const status = await res.text();
-              if (status === 'connected') {
+              if ((await res.text()) === 'connected') {
                 clearInterval(poll);
                 showConnected('Peer');
               }
-            } catch (e) {
-              clearInterval(poll);
-              showError('Connection lost');
-            }
+            } catch (e) { clearInterval(poll); }
           }, 1500);
           
         } else {
@@ -284,19 +434,20 @@
           peerUser = prompt('Enter receiver username:');
           if (!peerUser) { goToMenu(); return; }
           
-          await fetch(`${API_BASE}/api/register?username=${currentUser}`, { method: 'POST' });
+          await fetch(`${API_BASE}/api/register?username=${currentUser}&token=${authToken}`, { method: 'POST' });
           
-          const res = await fetch(`${API_BASE}/api/connect?sender=${currentUser}&receiver=${peerUser}`, { method: 'POST' });
-          
+          const res = await fetch(`${API_BASE}/api/connect?sender=${currentUser}&receiver=${peerUser}&token=${authToken}`, { method: 'POST' });
           if (res.ok) {
-            showConnected(peerUser);
+            // Wait for WS message or fallback
+            setTimeout(() => {
+               if (statusText.innerText.includes('Connecting')) showConnected(peerUser);
+            }, 1500);
           } else {
-            const error = await res.text();
-            throw new Error(error || 'Could not find peer');
+            throw new Error('Could not find peer');
           }
         }
       } catch (error) {
-        showError(error.message);
+        statusText.innerText = '❌ ' + error.message;
       }
     }
 
@@ -306,226 +457,169 @@
       document.getElementById('status-icon').classList.remove('border-gray-600');
       document.getElementById('status-icon').classList.add('border-green-500');
       document.getElementById('status-text').innerText = 'Device Connected';
-      document.getElementById('status-subtext').innerText = `Peer: ${peer}`;
       document.getElementById('disconnect-btn').classList.remove('hidden');
       document.getElementById('peer-name').innerText = peer;
+      peerUser = peer;
       
       setTimeout(() => {
         showScreen('screen-dashboard');
         setupDropZone();
         refreshFiles();
-        fileCheckInterval = setInterval(refreshFiles, 5000);
       }, 800);
-    }
-
-    function showError(message) {
-      document.getElementById('loader-spinner').classList.add('hidden');
-      document.getElementById('status-text').innerText = '❌ ' + message;
-      document.getElementById('status-subtext').innerText = 'Try reconnecting.';
     }
 
     function setupDropZone() {
       const zone = document.getElementById('drop-zone');
       const input = document.getElementById('file-input');
-
       zone.onclick = () => input.click();
-      
-      zone.ondragover = (e) => {
-        e.preventDefault();
-        zone.classList.add('dragover');
-      };
+      zone.ondragover = (e) => { e.preventDefault(); zone.classList.add('dragover'); };
       zone.ondragleave = () => zone.classList.remove('dragover');
-      zone.ondrop = (e) => {
-        e.preventDefault();
-        zone.classList.remove('dragover');
-        handleFiles(e.dataTransfer.files);
-      };
+      zone.ondrop = (e) => { e.preventDefault(); zone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); };
     }
 
     async function handleFiles(files) {
-      if (!files || files.length === 0) return;
-      
+      if (!files.length) return;
       const queueDiv = document.getElementById('upload-queue');
       const statusDiv = document.getElementById('upload-status');
-      uploadedFiles = [];
+      queueDiv.innerHTML = '';
       
-      // Show all files in queue
-      Array.from(files).forEach((file, index) => {
-        const fileDiv = document.createElement('div');
-        fileDiv.className = 'bg-gray-800 rounded p-2 text-sm flex justify-between items-center';
-        fileDiv.innerHTML = `
-          <span class="truncate flex-1">${index + 1}. ${file.name}</span>
-          <span class="text-xs text-gray-400 ml-2">${formatSize(file.size)}</span>
-        `;
-        queueDiv.appendChild(fileDiv);
+      files.forEach((f, i) => {
+        const d = document.createElement('div');
+        d.className = 'bg-gray-800 rounded-lg p-3 text-sm flex justify-between items-center';
+        d.innerHTML = `<span>${i+1}. ${f.name}</span><span class="text-gray-400">${formatSize(f.size)}</span>`;
+        queueDiv.appendChild(d);
       });
-      
-      statusDiv.innerHTML = `<p class="text-blue-400">📤 Uploading ${files.length} file(s)...</p>`;
-      
-      let successCount = 0;
+
+      statusDiv.innerHTML = '<p class="text-blue-400">Uploading...</p>';
+      let count = 0;
+
       for (let file of files) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('target', peerUser);
-        
         try {
-          const uploadRes = await fetch(`${API_BASE}/api/upload`, {
-            method: 'POST',
-            body: formData
-          });
-          
-          if (uploadRes.ok) {
-            successCount++;
-            uploadedFiles.push(file.name);
+          if (file.size > 10 * 1024 * 1024) {
+            await uploadChunked(file);
+          } else {
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('target', peerUser);
+            fd.append('token', authToken);
+            await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: fd });
           }
-        } catch (e) {
-          console.error('Upload error:', e);
-        }
+          count++;
+        } catch(e) { console.error(e); }
       }
       
-      statusDiv.innerHTML = `<p class="text-green-400">✅ ${successCount}/${files.length} file(s) sent successfully!</p>`;
-      setTimeout(() => {
-        queueDiv.innerHTML = '';
-        statusDiv.innerHTML = '';
-      }, 3000);
+      statusDiv.innerHTML = `<p class="text-green-400">✅ ${count}/${files.length} sent!</p>`;
+      setTimeout(() => { queueDiv.innerHTML = ''; statusDiv.innerHTML = ''; }, 3000);
+    }
+
+    async function uploadChunked(file) {
+      const size = 5 * 1024 * 1024;
+      const total = Math.ceil(file.size / size);
+      const init = await fetch(`${API_BASE}/api/upload/chunk/init?filename=${file.name}&totalSize=${file.size}&target=${peerUser}&token=${authToken}`, { method: 'POST' });
+      const { uploadId } = await init.json();
+
+      for (let i = 0; i < total; i++) {
+        const chunk = file.slice(i * size, (i + 1) * size);
+        const fd = new FormData();
+        fd.append('uploadId', uploadId);
+        fd.append('chunkIndex', i);
+        fd.append('file', chunk);
+        fd.append('token', authToken);
+        await fetch(`${API_BASE}/api/upload/chunk`, { method: 'POST', body: fd });
+      }
     }
 
     async function refreshFiles() {
-      try {
-        const res = await fetch(`${API_BASE}/api/files/${currentUser}`);
-        if (!res.ok) return;
-        
-        const files = await res.json();
-        receivedFilesList = files;
-        const container = document.getElementById('received-files');
-        const bulkActions = document.getElementById('bulk-actions');
-        
-        if (files.length === 0) {
-          container.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">No files received yet</p>';
-          bulkActions.classList.add('hidden');
-          return;
-        }
-        
-        bulkActions.classList.remove('hidden');
-        container.innerHTML = '';
-        
-        files.forEach((file, index) => {
-          const div = document.createElement('div');
-          div.className = 'file-item rounded-lg p-3 flex flex-col gap-2';
-          
-          const previewBtn = canPreview(file.name) ? 
-            `<button onclick="previewFile('${file.name}')" class="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition">👁️ Preview</button>` : '';
-          
-          div.innerHTML = `
-            <div class="flex justify-between items-start">
-              <div class="flex items-center gap-2 overflow-hidden flex-1">
-                <span class="text-xl">${getFileIcon(file.name)}</span>
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-white truncate">${file.name}</p>
-                  <p class="text-xs text-gray-400">${file.size}</p>
-                </div>
+      const res = await fetch(`${API_BASE}/api/files/${currentUser}?token=${authToken}`);
+      const files = await res.json();
+      receivedFilesList = files;
+      const container = document.getElementById('received-files');
+      const bulk = document.getElementById('bulk-actions');
+      
+      if (!files.length) {
+        container.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">No files received yet</p>';
+        bulk.classList.add('hidden');
+        return;
+      }
+      
+      bulk.classList.remove('hidden');
+      container.innerHTML = '';
+      
+      files.forEach(f => {
+        const div = document.createElement('div');
+        div.className = 'file-item rounded-lg p-3 flex flex-col gap-2';
+        const preview = canPreview(f.name) ? `<button onclick="previewFile('${f.name}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded">👁️ Preview</button>` : '';
+        div.innerHTML = `
+          <div class="flex justify-between items-start">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+              <span class="text-2xl">${getFileIcon(f.name)}</span>
+              <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-white truncate">${f.name}</p>
+                <p class="text-xs text-gray-400">${f.size}</p>
               </div>
             </div>
-            <div class="flex gap-2">
-              ${previewBtn}
-              <a href="${API_BASE}/api/download/${currentUser}/${file.name}" 
-                 download="${file.name}"
-                 class="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition">
-                ⬇️ Download
-              </a>
-            </div>
-          `;
-          container.appendChild(div);
-        });
-      } catch (e) {
-        console.error('Error refreshing files:', e);
-      }
+          </div>
+          <div class="flex gap-2">
+            ${preview}
+            <a href="${API_BASE}/api/download/${currentUser}/${f.name}?token=${authToken}" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs rounded">⬇️ Download</a>
+          </div>
+        `;
+        container.appendChild(div);
+      });
     }
 
-    function canPreview(filename) {
-      const ext = filename.split('.').pop().toLowerCase();
-      const previewable = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm', 'ogg', 'mp3', 'wav', 'glb', 'gltf', 'obj', 'docx', 'txt', 'pdf'];
-      return previewable.includes(ext);
+    function canPreview(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      return ['jpg','jpeg','png','gif','webp','mp4','webm','mp3','wav','glb','gltf','obj','docx','txt','py','js','html','css','java','json','csv','xlsx'].includes(ext);
     }
 
-    function getFileIcon(filename) {
-      const ext = filename.split('.').pop().toLowerCase();
-      const icons = {
-        'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'webp': '🖼️',
-        'mp4': '🎬', 'webm': '🎬', 'ogg': '🎬', 'avi': '🎬',
-        'mp3': '🎵', 'wav': '🎵', 'ogg': '🎵', 'flac': '🎵',
-        'glb': '🎮', 'gltf': '🎮', 'obj': '🎮',
-        'docx': '📄', 'doc': '📄',
-        'pdf': '📕',
-        'txt': '📝',
-        'zip': '📦'
-      };
+    function getFileIcon(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      const icons = { jpg:'️', png:'🖼️', gif:'🖼️', mp4:'', mp3:'🎵', glb:'🎮', docx:'', txt:'📝', py:'', js:'📜', csv:'' };
       return icons[ext] || '📄';
     }
 
     async function previewFile(filename) {
-      const previewSection = document.getElementById('preview-section');
-      const previewContent = document.getElementById('preview-content');
+      const section = document.getElementById('preview-section');
+      const content = document.getElementById('preview-content');
+      const copyBtn = document.getElementById('copy-code-btn');
       const ext = filename.split('.').pop().toLowerCase();
       
-      previewSection.classList.remove('hidden');
-      previewContent.innerHTML = '<div class="flex justify-center"><div class="loader"></div></div>';
-      
+      currentPreviewFile = filename;
+      section.classList.remove('hidden');
+      content.innerHTML = '<div class="flex justify-center py-12"><div class="loader"></div></div>';
+      copyBtn.classList.add('hidden');
+
       try {
-        const response = await fetch(`${API_BASE}/api/download/${currentUser}/${filename}`);
-        const blob = await response.blob();
+        const res = await fetch(`${API_BASE}/api/download/${currentUser}/${filename}?token=${authToken}`);
+        const blob = await res.blob();
         const url = URL.createObjectURL(blob);
-        
-        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
-          previewContent.innerHTML = `<img src="${url}" class="max-w-full rounded-lg shadow-lg" alt="${filename}">`;
-        }
-        else if (['mp4', 'webm', 'ogg'].includes(ext)) {
-          previewContent.innerHTML = `
-            <video controls class="w-full rounded-lg">
-              <source src="${url}" type="video/${ext}">
-              Your browser does not support video playback.
-            </video>`;
-        }
-        else if (['mp3', 'wav', 'ogg'].includes(ext)) {
-          previewContent.innerHTML = `
-            <div class="flex flex-col items-center">
-              <span class="text-4xl mb-4">🎵</span>
-              <audio controls class="w-full">
-                <source src="${url}" type="audio/${ext}">
-                Your browser does not support audio playback.
-              </audio>
-            </div>`;
-        }
-        else if (['glb', 'gltf', 'obj'].includes(ext)) {
-          previewContent.innerHTML = `
-            <model-viewer 
-              src="${url}" 
-              camera-controls 
-              auto-rotate 
-              shadow-intensity="1"
-              class="w-full rounded-lg"
-              style="height: 400px;">
-            </model-viewer>
-            <p class="text-sm text-gray-400 mt-2">🖱️ Drag to rotate • Scroll to zoom</p>`;
-        }
-        else if (ext === 'docx') {
-          const arrayBuffer = await blob.arrayBuffer();
-          const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
-          previewContent.innerHTML = `
-            <div class="docx-viewer">
-              ${result.value}
-            </div>
-            <p class="text-sm text-gray-400 mt-2">📜 Scroll to view entire document</p>`;
-        }
-        else if (ext === 'txt') {
+
+        if (['jpg','jpeg','png','gif','webp'].includes(ext)) {
+          content.innerHTML = `<div class="image-zoom-container" onclick="this.classList.toggle('zoomed')"><img src="${url}"></div><p class="text-sm text-gray-400 mt-2 text-center">Click to zoom</p>`;
+        } else if (['mp4','webm'].includes(ext)) {
+          content.innerHTML = `<video controls src="${url}" class="w-full rounded-lg max-h-[500px]"></video>`;
+        } else if (['mp3','wav'].includes(ext)) {
+          content.innerHTML = `<div class="text-center p-8"><span class="text-5xl mb-4 block">🎵</span><audio controls src="${url}" class="w-full"></audio></div>`;
+        } else if (['glb','gltf','obj'].includes(ext)) {
+          content.innerHTML = `<model-viewer src="${url}" camera-controls auto-rotate shadow-intensity="1" style="width:100%;height:500px;"></model-viewer><p class="text-sm text-gray-400 mt-2 text-center">Drag to rotate • Scroll to zoom</p>`;
+        } else if (['docx','doc'].includes(ext)) {
+          const result = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
+          content.innerHTML = `<div class="docx-viewer">${result.value}</div>`;
+        } else if (['txt','py','js','html','css','java','json'].includes(ext)) {
           const text = await blob.text();
-          previewContent.innerHTML = `<pre class="bg-gray-800 p-4 rounded-lg text-sm overflow-auto max-h-[400px]">${text}</pre>`;
+          const lang = ext === 'py' ? 'python' : ext === 'js' ? 'javascript' : ext === 'html' ? 'markup' : ext === 'css' ? 'css' : ext === 'java' ? 'java' : ext;
+          content.innerHTML = `<div class="relative code-viewer"><button onclick="copyToClipboard(this)" class="copy-btn" data-text="${escapeHtml(text)}">📋 Copy</button><pre class="p-4 rounded overflow-auto max-h-[500px]"><code class="language-${lang}">${escapeHtml(text)}</code></pre></div>`;
+          Prism.highlightAll();
+        } else if (['csv','xlsx'].includes(ext)) {
+          const wb = XLSX.read(await blob.arrayBuffer(), {type:'array'});
+          const html = XLSX.utils.sheet_to_html(wb.Sheets[wb.SheetNames[0]]);
+          content.innerHTML = `<div class="table-container">${html}</div>`;
+        } else {
+          content.innerHTML = '<p class="text-center text-gray-400 py-12">Preview not available for this file type.</p>';
         }
-        else {
-          previewContent.innerHTML = `<p class="text-center text-gray-400">Preview not available for this file type.</p>`;
-        }
-      } catch (e) {
-        previewContent.innerHTML = `<p class="text-red-400 text-center">Error loading preview: ${e.message}</p>`;
+      } catch(e) {
+        content.innerHTML = `<p class="text-red-400 text-center py-12">Error loading preview</p>`;
       }
     }
 
@@ -534,35 +628,39 @@
       document.getElementById('preview-content').innerHTML = '';
     }
 
-    async function downloadAllAsZip() {
-      if (receivedFilesList.length === 0) return;
-      
-      const zip = new JSZip();
-      const statusDiv = document.getElementById('upload-status');
-      statusDiv.innerHTML = '<p class="text-blue-400">📦 Creating ZIP file...</p>';
-      
-      try {
-        for (let file of receivedFilesList) {
-          const response = await fetch(`${API_BASE}/api/download/${currentUser}/${file.name}`);
-          const blob = await response.blob();
-          const arrayBuffer = await blob.arrayBuffer();
-          zip.file(file.name, arrayBuffer);
-        }
-        
-        const content = await zip.generateAsync({ type: 'blob' });
-        saveAs(content, `files-from-${peerUser}.zip`);
-        statusDiv.innerHTML = '<p class="text-green-400">✅ ZIP downloaded!</p>';
-        setTimeout(() => statusDiv.innerHTML = '', 3000);
-      } catch (e) {
-        statusDiv.innerHTML = `<p class="text-red-400">❌ ZIP creation failed: ${e.message}</p>`;
-      }
+    function copyToClipboard(btn) {
+      navigator.clipboard.writeText(btn.getAttribute('data-text'));
+      const original = btn.innerText;
+      btn.innerText = '✅ Copied!';
+      setTimeout(() => btn.innerText = original, 2000);
+    }
+    
+    function copyCode() {
+      if (currentPreviewFile) previewFile(currentPreviewFile);
     }
 
-    function formatSize(bytes) {
-      if (bytes < 1024) return bytes + ' B';
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-      return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    async function downloadAllAsZip() {
+      if (!receivedFilesList.length) return;
+      showToast('Creating ZIP...', 'info');
+      const zip = new JSZip();
+      for (let f of receivedFilesList) {
+        const res = await fetch(`${API_BASE}/api/download/${currentUser}/${f.name}?token=${authToken}`);
+        zip.file(f.name, await res.blob());
+      }
+      const blob = await zip.generateAsync({type:'blob'});
+      saveAs(blob, `files-from-${peerUser}.zip`);
+    }
+
+    function formatSize(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+      return (b/(1024*1024)).toFixed(1) + ' MB';
+    }
+
+    function escapeHtml(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
     }
   </script>
 </body>

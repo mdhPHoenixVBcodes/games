@@ -1,0 +1,8 @@
+com\filetransfer\controller\FileTransferController.class
+com\filetransfer\FileTransferApplication.class
+com\filetransfer\config\SecurityConfig.class
+com\filetransfer\controller\FileTransferController$ChunkedUpload.class
+com\filetransfer\config\FileCleanupScheduler.class
+com\filetransfer\config\SecurityConfig$SessionToken.class
+com\filetransfer\config\TransferWebSocketHandler.class
+com\filetransfer\config\WebSocketConfig.class
