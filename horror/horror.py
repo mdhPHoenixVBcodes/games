@@ -572,6 +572,7 @@ monster_body = safe_entity(
 
 # --- THE PLAYER ---
 player = FirstPersonController()
+playerbdy = Entity(parent=player, model='cube', color=color.white, collider='box', position=(-12, 30, -12), scale = 0.05)
 player_default_mouse_sensitivity = getattr(player, 'mouse_sensitivity', 40)
 player.cursor.color = color.white
 player.gravity = 1
@@ -725,6 +726,9 @@ insanity_bar5 = Button(
     model='quad'
 )
 
+max_bar_height = 5       # The max scale you requested
+max_radar_distance = 25
+
 brain = Button(
     text='@@',
     parent=camera.ui,
@@ -741,6 +745,15 @@ brain = Button(
     scale=(0.05, 0.05),
     position=(-0.79, 0.25),
     color=color.rgb(209/255, 115/255, 157/255)
+)
+
+sanity_bar = Entity(
+    parent=insanity_bar3,
+    model='quad',
+    color=color.red,
+    position=(-0.8, 0.2, -0.01), 
+    scale=(0.8, 4.96),       
+    origin=(0, 0.04)     
 )
 
 selected_hotbar_slot = 1
@@ -1427,6 +1440,25 @@ def check_door_hit():
 
 # --- THE MASTER GAME LOOP ---
 def update():
+    if sanity_bar.scale_y < 5:
+        while True:
+            time.sleep(10)
+            sanity_bar.scale_y -= 0.2 * time.dt
+
+    dist = distance(player, monster)
+
+    # --- SMOOTH RADAR LOGIC ---
+    if dist < max_radar_distance:
+        # Math trick: Calculate the percentage of closeness and map it to the 0-5 scale
+        percentage = dist / max_radar_distance
+        sanity_bar.scale_y = percentage * max_bar_height 
+
+    else:
+        # Monster is totally out of range, meter stays full and calm
+        sanity_bar.scale_y = max_bar_height
+
+    sanity_bar.scale_y = clamp(sanity_bar.scale_y, 0, max_bar_height)
+
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
     global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health, jumpscare_phase
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
