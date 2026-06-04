@@ -223,6 +223,10 @@ PART_DATA = {
     5: {'name': 'Driver Seat', 'color': color.azure, 'weight': 4, 'inventory': 1, 'model': 'cube', 'scale': (1, 0.5, 1), 'rot': (0, 0, 0)}, 
     6: {'name': 'Fuel Tank', 'color': color.orange, 'weight': 10, 'inventory': 2, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
     7: {'name': 'Thruster', 'color': color.magenta, 'weight': 6, 'inventory': 0, 'model': 'cube', 'scale': (0.8, 0.8, 0.8), 'rot': (0, 0, 0)},
+    8: {'name': 'Scaffolding', 'color': color.gray, 'weight': 0.1, 'inventory': 50, 'model': 'cube', 'scale': (1, 1, 1), 'rot': (0, 0, 0)},
+    9: {'name': 'Aerodynamic Wing', 'color': color.cyan, 'weight': 2, 'inventory': 4, 'model': 'cube', 'scale': (1, 0.3, 1), 'rot': (0, 0, 0)},
+
+
 }
 
 garage_centers = [
@@ -467,10 +471,9 @@ warning_text = Text(text="", position=(0, 0.2), scale=2, color=color.red, origin
 fuel_text = Text(text="", position=(0, -0.32), scale=2, color=color.orange, origin=(0,0))
 speedometer = Text(text="", position=(0, -0.4), scale=2, color=color.yellow, origin=(0,0))
 
-# --- ADD THIS RIGHT HERE ---
 speedo_bg = Entity(parent=camera.ui, model='circle', color=color.rgba(10, 10, 10, 200), scale=0.25, position=(0.7, -0.35))
-speedo_needle = Entity(parent=speedo_bg, model='quad', color=color.red, scale=(0.03, 0.45), origin=(0, -0.5), position=(0, 0), rotation_z=135)
-speedo_center_pin = Entity(parent=speedo_bg, model='circle', color=color.white, scale=0.1, position=(0, 0, -0.1))
+speedo_needle = Entity(parent=speedo_bg, model='quad', color=color.red, scale=(0.03, 0.45), origin=(0, -0.5), position=(0, 0, -0.1), rotation_z=135)
+speedo_center_pin = Entity(parent=speedo_bg, model='circle', color=color.red, scale=0.1, position=(0, 0, -0.1))
 
 def toggle_shop():
     global shop_ui_open
