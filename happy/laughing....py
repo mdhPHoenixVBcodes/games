@@ -7,7 +7,7 @@ pygame.init()
 pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.mixer.init()
 
-# ─ AUDIO SETUP ─────────────────────────────────────────────────────────────
+# ── AUDIO SETUP ─────────────────────────────────────────────────────────────
 try:
     crack_sound = pygame.mixer.Sound("crack.wav")
     crack_sound.set_volume(0.5)
@@ -147,9 +147,11 @@ class SideWall:
         self.rect = pygame.Rect(0, 0, 40, HEIGHT)
         self.active = False
         self.speed = 7.5
+        self.killed = False  #  HARD KILL SWITCH
 
     def activate(self, spawn_x):
         self.active = True
+        self.killed = False
         self.rect.x = spawn_x
         self.rect.y = 0
 
@@ -160,7 +162,7 @@ class SideWall:
                 self.active = False
 
     def draw(self, surf, camera_x=0):
-        if not self.active: return
+        if not self.active or self.killed: return
         r = self.rect.copy()
         r.x -= camera_x
         pygame.draw.rect(surf, (220, 50, 50), r)
@@ -264,22 +266,31 @@ while running:
     left, right, jump = keys[pygame.K_LEFT], keys[pygame.K_RIGHT], keys[pygame.K_SPACE]
     if invert_active: left, right = right, left
 
-    if left: player.x -= 5
-    if right: player.x += 5
-    if jump and on_ground:
-        vel_y = -12
+    # 🔥 TRANSITION LOCK: Keep player safe during white screen
+    if level_transition_active:
+        player.topleft = (100, 450)
+        vel_y = 0
         on_ground = False
+    else:
+        if left: player.x -= 5
+        if right: player.x += 5
+        if jump and on_ground:
+            vel_y = -12
+            on_ground = False
 
-    # Physics
-    prev_bottom = player.bottom
-    vel_y += 0.8
-    player.y += vel_y
-    on_ground = False
+    # Physics (only if not transitioning)
+    if not level_transition_active:
+        prev_bottom = player.bottom
+        vel_y += 0.8
+        player.y += vel_y
+        on_ground = False
 
     # 🔥 TIMERS
     if win_text_timer > 0: win_text_timer -= 1; win_text_active = win_text_timer > 0
     if fall_message_timer > 0: fall_message_timer -= 1; fall_message = fall_message if fall_message_timer > 0 else ""
-    if level_transition_timer > 0: level_transition_timer -= 1; level_transition_active = level_transition_timer > 0
+    if level_transition_timer > 0: 
+        level_transition_timer -= 1
+        if level_transition_timer <= 0: level_transition_active = False
     if death_quote_timer > 0: death_quote_timer -= 1; current_death_quote = current_death_quote if death_quote_timer > 0 else ""
     if flag_touch_cooldown > 0: flag_touch_cooldown -= 1
 
@@ -316,7 +327,7 @@ while running:
                 current_death_quote = "yr hallucinating"
                 death_quote_timer = 180
 
-        # 🧱 SUDDEN BACKTRACKING WALL
+        #  SUDDEN BACKTRACKING WALL
         if time_in_l2 >= next_barrier_time and not barrier_active:
             barrier_world_x = player.x + 300
             barrier_wall = pygame.Rect(barrier_world_x, 0, 12, HEIGHT)
@@ -345,9 +356,10 @@ while running:
             flag_touch_cooldown = 60
             
             if flag_touch_count >= LEVELS_TO_ADVANCE:
-                # 🔥 FIX 1: FORCE KILL THE WALL IMMEDIATELY
+                # 🔥 HARD KILL THE WALL
+                side_wall.killed = True
                 side_wall.active = False
-                side_wall.rect.x = -200  # Move completely off-screen
+                side_wall.rect.x = -999
                 
                 if current_level == 1:
                     current_level = 2
@@ -373,10 +385,9 @@ while running:
                 win_text_active = True
                 win_text_timer = 120
 
-    # 🔥 WALL UPDATE & PUSH (Level 1/3)
-    # 🔥 FIX 2: SKIP WALL LOGIC DURING TRANSITION
+    # 🔥 WALL UPDATE & PUSH (Level 1/3) - 🔒 GUARDED
     active_wall = side_wall if current_level == 1 else level3_side_wall
-    if active_wall and active_wall.active and not level_transition_active:
+    if active_wall and active_wall.active and not active_wall.killed and not level_transition_active:
         active_wall.update()
         if player.colliderect(active_wall.rect):
             player.right = active_wall.rect.left - 2
@@ -384,7 +395,7 @@ while running:
             player.x -= 8
             on_ground = False
 
-    # 🔥 CAMERA & COLLISION (Level 1/3)
+    # 🔥 PLATFORM COLLISION (Level 1/3) - 🔒 GUARDED
     if current_level != 2 and not level_transition_active:
         lvl_platforms = platforms if current_level == 1 else level3_platforms
         for p in lvl_platforms:
@@ -408,8 +419,8 @@ while running:
                             p.is_trap = False
                             p.state = "closed"
 
-    # 🔥 DEATH RESET
-    if player.y > HEIGHT and not level_transition_active:
+    # 🔥 DEATH RESET - 🔒 STRICT GUARDS
+    if player.y > HEIGHT and not level_transition_active and not side_wall.killed:
         death_count += 1
         if not current_death_quote: current_death_quote = random.choice(DEATH_QUOTES)
         death_quote_timer = 180
@@ -431,6 +442,7 @@ while running:
         
         platforms = setup_level1()
         flag = Flag(250, 300)
+        side_wall.killed = False  # Reset kill flag for next run
         side_wall.active = False
         side_wall.rect.x = -200
         if level3_side_wall: level3_side_wall.active = False
@@ -439,7 +451,7 @@ while running:
         invert_active = False
         invert_timer = 0
 
-    # ─ RENDER ───────────────────────────────────────────────────────────
+    # ── RENDER ───────────────────────────────────────────────────────────
     screen.fill((20, 20, 30))
     
     if level_transition_active:

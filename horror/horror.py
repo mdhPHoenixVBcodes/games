@@ -572,8 +572,60 @@ monster_body = safe_entity(
 
 # --- THE PLAYER ---
 player = FirstPersonController()
-playerbdy = Entity(parent=player, model='cube', color=color.white, collider='box', position=(-12, 30, -12), scale = 0.05)
+playerbdy = Entity(parent=player, model='cube', color=color.white, position=(0, 1, 0), scale=0.05)
 player_default_mouse_sensitivity = getattr(player, 'mouse_sensitivity', 40)
+
+# Xbox Series X/S Controller Support Setup
+gamepad_active = False
+from ursina import input_handler
+input_handler.bind('gamepad a', 'space')
+input_handler.bind('gamepad b', 'shift')
+input_handler.bind('gamepad left trigger', 'control')
+input_handler.bind('gamepad x', 'f')
+input_handler.bind('gamepad y', 'e')
+input_handler.bind('gamepad start', 'escape')
+
+old_player_update = player.update
+def custom_player_update():
+    global gamepad_active
+    
+    # Deactivate gamepad if keyboard/mouse activity is detected
+    if mouse.velocity[0] != 0.0 or mouse.velocity[1] != 0.0 or any(held_keys[k] for k in ('w', 's', 'a', 'd', 'space', 'shift', 'control')):
+        gamepad_active = False
+
+    left_x = held_keys['gamepad left stick x'] if gamepad_active else 0.0
+    left_y = held_keys['gamepad left stick y'] if gamepad_active else 0.0
+    
+    if abs(left_x) < 0.15: left_x = 0.0
+    if abs(left_y) < 0.15: left_y = 0.0
+    
+    # Analog right stick look
+    if not jumpscare_active and gamepad_active:
+        right_x = held_keys['gamepad right stick x']
+        right_y = held_keys['gamepad right stick y']
+        if abs(right_x) > 0.1 or abs(right_y) > 0.1:
+            gamepad_sensitivity = 120
+            player.rotation_y += right_x * gamepad_sensitivity * time.dt
+            player.camera_pivot.rotation_x -= right_y * gamepad_sensitivity * time.dt
+            player.camera_pivot.rotation_x = clamp(player.camera_pivot.rotation_x, -90, 90)
+
+    if left_x != 0.0 or left_y != 0.0:
+        # Override held_keys temporarily with left stick analog tilt values
+        old_keys = {k: held_keys[k] for k in ('w', 's', 'a', 'd')}
+        held_keys['w'] = max(0.0, left_y)
+        held_keys['s'] = max(0.0, -left_y)
+        held_keys['d'] = max(0.0, left_x)
+        held_keys['a'] = max(0.0, -left_x)
+        
+        old_player_update()
+        
+        # Restore keyboard states
+        for k in ('w', 's', 'a', 'd'):
+            held_keys[k] = old_keys[k]
+    else:
+        old_player_update()
+
+player.update = custom_player_update
 player.cursor.color = color.white
 player.gravity = 1
 player_legs = Entity(parent=player, model='cube', color=color.blue, scale=(0.8, 0.6, 0.4), position=(0, 0.3, 0))
@@ -729,7 +781,7 @@ insanity_bar5 = Button(
 max_bar_height = 0.67   # The max scale you requested
 max_radar_distance = 75
 
-brain = Button(
+brain1 = Button(
     text='@@',
     parent=camera.ui,
     origin=(0, 0),
@@ -738,7 +790,7 @@ brain = Button(
     color=color.rgb(209/255, 115/255, 157/255)
 )
 
-brain = Button(
+brain2 = Button(
     text='@@',
     parent=camera.ui,
     origin=(0, 0),
@@ -947,7 +999,7 @@ vignette_top = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 
 vignette_bottom = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(2.2, 0.18), position=(0, -0.52), z=1)
 vignette_left = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(0.18, 1.2), position=(-1.02, 0), z=1)
 vignette_right = Entity(parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 0), scale=(0.18, 1.2), position=(1.02, 0), z=1)
-jumpscare_overlay = Entity(parent=camera.ui, model='quad', texture='jmpscare.png', color=color.rgba(255, 255, 255, 0), scale=(2.6, 1.6), z=-10, unlit=True)
+jumpscare_overlay = Entity(parent=camera.ui, model='quad', texture='jmpscare', color=color.rgba(255, 255, 255, 0), scale=(2.6, 1.6), z=-10, unlit=True)
 jumpscare_text = Text(
     text='GET OUT',
     parent=camera.ui,
@@ -1002,8 +1054,8 @@ respawn_button = Button(
 )
 
 # --- MONSTER PATHFINDING ---
-WORLD_MIN = -96
-WORLD_MAX = 96
+WORLD_MIN = -24
+WORLD_MAX = 24
 monster_path = []
 path_repath_timer = 0
 path_repath_interval = 0.35
@@ -1019,6 +1071,26 @@ jumpscare_phase = 'turning'
 jumpscare_timer = 0
 jumpscare_active = False
 jumpscare_armed = True
+
+send_jumpscare_trigger = False
+
+def trigger_local_jumpscare():
+    global jumpscare_active, jumpscare_armed, jumpscare_phase, jumpscare_timer
+    jumpscare_active = True
+    jumpscare_armed = False
+    jumpscare_phase = 'turning'
+    jumpscare_timer = 0.4
+    scream_sound.play()
+    scream_sound1.play()
+    invoke(scream_sound2.play, delay=0.08)
+    invoke(scream_sound3.play, delay=0.16)
+    invoke(scream_sound4.play, delay=0.24)
+    invoke(scream_sound5.play, delay=0.32)
+    invoke(scream_sound6.play, delay=0.42)
+    invoke(scream_sound7.play, delay=0.52)
+    invoke(scream_sound8.play, delay=0.62)
+    invoke(scream_sound9.play, delay=0.72)
+    player.mouse_sensitivity = (0, 0)
 monster_search_mode = False
 monster_search_timer = 0
 monster_search_duration = 8.0
@@ -1200,7 +1272,14 @@ def apply_network_packet():
     remote_player.rotation_y = remote_player_state['ry']
     remote_player.scale_y = 0.78 if remote_player_crouching else 1.0
 
-    remote_player_health = int(packet.get('health', remote_player_health))
+    received_health = int(packet.get('health', remote_player_health))
+    if lan_role == 'host':
+        if received_health <= 0:
+            remote_player_health = 0
+        elif received_health == 100 and remote_player_health <= 0:
+            remote_player_health = 100
+    else:
+        remote_player_health = received_health
 
     if lan_role == 'join':
         remote_monster_state = {
@@ -1215,9 +1294,12 @@ def apply_network_packet():
         player_health = remote_player_health
         if player_health <= 0 and not game_over:
             trigger_game_over()
+        if packet.get('jumpscare'):
+            trigger_local_jumpscare()
 
 
 def broadcast_network_state(is_moving):
+    global send_jumpscare_trigger
     if game_mode != 'lan' or not network_connected:
         return
 
@@ -1240,6 +1322,9 @@ def broadcast_network_state(is_moving):
             'monster_ry': monster.rotation_y,
             'monster_moving': is_moving,
         })
+        if send_jumpscare_trigger:
+            payload['jumpscare'] = True
+            send_jumpscare_trigger = False
 
     send_network_state(payload)
 
@@ -1440,8 +1525,7 @@ def check_door_hit():
 
 # --- THE MASTER GAME LOOP ---
 def update():
-    if sanity_bar.scale_y < 5:
-        sanity_bar.scale_y -= 0.1 * time.dt
+    target_is_remote = False
 
     # 1. Get the distance every frame
     dist = distance(player, monster)
@@ -1470,7 +1554,7 @@ def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
     global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health, jumpscare_phase
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
-    global fly_mode, fly_exit_protection_timer, compass_update_timer
+    global fly_mode, fly_exit_protection_timer, compass_update_timer, send_jumpscare_trigger
 
     if game_over:
         return
@@ -1641,37 +1725,16 @@ def update():
             jumpscare_armed = True
 
         if jumpscare_armed and not jumpscare_active and monster_distance <= jumpscare_trigger_distance:
-            jumpscare_active = True
             jumpscare_armed = False
-            jumpscare_phase = 'turning'
-            jumpscare_timer = 0.4
-            scream_sound.play()
-            scream_sound1.play()
-            time.sleep(0.08)
-            scream_sound2.play()
-            time.sleep(0.08)
-            scream_sound3.play()
-            time.sleep(0.08)
-            scream_sound4.play()
-            time.sleep(0.08)
-            scream_sound5.play()
-            time.sleep(0.1)
-            scream_sound6.play()
-            time.sleep(0.1)
-            scream_sound7.play()
-            time.sleep(0.1)
-            scream_sound8.play()
-            time.sleep(0.1)
-            scream_sound9.play()
-            player.mouse_sensitivity = (0, 0)
+            if target_is_remote:
+                send_jumpscare_trigger = True
+                if spawn_protection_timer <= 0:
+                    remote_player_health = max(0, remote_player_health - monster_attack_damage * 2)
+            else:
+                trigger_local_jumpscare()
+                if spawn_protection_timer <= 0:
+                    player_health = max(0, player_health - monster_attack_damage * 2)
             monster_path = []
-            if spawn_protection_timer <= 0 and target_is_remote:
-                remote_player_health = max(0, remote_player_health - monster_attack_damage * 2)
-            elif spawn_protection_timer <= 0:
-                player_health = max(0, player_health - monster_attack_damage * 2)
-            if False: # Delayed game over check to end of jumpscare
-                trigger_game_over()
-                return
 
         if jumpscare_active:
             # jumpscare_phase is declared global at the start of update()
@@ -1797,8 +1860,10 @@ def update():
 # --- INPUT HANDLING ---
 def input(key):
     # Unlocks the mouse cursor so you can close the window easily
-    global fly_mode, axe_picked_up, selected_hotbar_slot
-    if key == 'escape':
+    global fly_mode, axe_picked_up, selected_hotbar_slot, fly_exit_protection_timer, gamepad_active
+    if key.startswith('gamepad'):
+        gamepad_active = True
+    if key in ('escape', 'gamepad start'):
         if inventory_open:
             hide_inventory()
             mouse.locked = True
@@ -1807,7 +1872,7 @@ def input(key):
             mouse.visible = not mouse.locked
             if game_mode == 'single_player':
                 save_button.enabled = mouse.visible
-    elif key in ('='):
+    elif key in ('=', 'gamepad back'):
         fly_mode = not fly_mode
         if fly_mode:
             player.gravity = 0
@@ -1824,7 +1889,7 @@ def input(key):
                 player.velocity = Vec3(0, 0, 0)
             if player.y < 5:
                 player.y = 5
-    elif key == 'f':
+    elif key in ('f', 'gamepad x'):
         if axe_world and not axe_picked_up and distance(player.position, axe_world.position) < 6:
             axe_picked_up = True
             selected_hotbar_slot = 1
@@ -1837,7 +1902,7 @@ def input(key):
             axe_prompt.enabled = False
         # F key no longer opens the door directly; the axe must be used to break it
         pass
-    elif key == 'e' and not game_over:
+    elif key in ('e', 'gamepad y') and not game_over:
         if inventory_open:
             hide_inventory()
             mouse.locked = True
@@ -1846,7 +1911,11 @@ def input(key):
             show_inventory()
     elif key in ('1', '2', '3', '4'):
         selected_hotbar_slot = int(key)
-    elif key == 'left mouse down' and axe_picked_up and not game_over and not inventory_open:
+    elif key == 'gamepad left shoulder':
+        selected_hotbar_slot = 1 if selected_hotbar_slot == 1 else selected_hotbar_slot - 1
+    elif key == 'gamepad right shoulder':
+        selected_hotbar_slot = 4 if selected_hotbar_slot == 4 else selected_hotbar_slot + 1
+    elif key in ('left mouse down', 'gamepad right trigger', 'gamepad right shoulder') and axe_picked_up and not game_over and not inventory_open:
         swing_axe()
 
 # Run the game!

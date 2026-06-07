@@ -682,7 +682,7 @@ def input(key):
         update_hotbar_ui()
         
     if is_driving:
-        if key == 'space' and vehicle_y_velocity == 0:
+        if (key == 'space' or key == 'gamepad a') and vehicle_y_velocity == 0:
             vehicle_y_velocity = 9.0
             vehicle_parent.y += 5
         if key == 'right mouse down':
@@ -733,11 +733,11 @@ def input(key):
     if key == 'e' and is_driving:
         exit_vehicle()
     
-    if key == 'shift' and is_driving:
+    if (key == 'shift' or key == 'gamepad b') and is_driving:
         global is_drifting
         is_drifting = True
     
-    if key == 'shift up' and is_driving:
+    if (key == 'shift up' or key == 'gamepad b up') and is_driving:
         is_drifting = False
 
 def enter_vehicle(seat_entity):
@@ -1075,7 +1075,7 @@ def update():
         # Suspension count: each suspension part improves braking and drift stability
         suspension_count = sum(1 for part in car_parts if part.part_id == 3)
         suspension_boost = 1.0 + suspension_count * 0.25  # 25% braking boost per suspension
-        is_ctrl_held = held_keys['left control'] or held_keys['control']
+        is_ctrl_held = held_keys['left control'] or held_keys['control'] or held_keys['gamepad x']
         
         # Update thruster colors depending on activation
         for part in car_parts:
@@ -1127,12 +1127,24 @@ def update():
                 thrust_accel = total_thrusters * 40.0
                 temp_max_speed += total_thrusters * 15.0
 
-            if held_keys['w'] or mouse_accelerate:
-                current_speed += (acceleration + thrust_accel) * time.dt
+            # Gamepad analog triggers / stick y (combined with keyboard)
+            gp_accel  = held_keys.get('gamepad right trigger', 0)
+            gp_brake  = held_keys.get('gamepad left trigger', 0)
+            gp_stick_y = held_keys.get('gamepad left stick y', 0)
+            if gp_stick_y >  0.15: gp_accel = max(gp_accel,  gp_stick_y)
+            elif gp_stick_y < -0.15: gp_brake = max(gp_brake, -gp_stick_y)
+
+            is_accel = held_keys['w'] or mouse_accelerate or gp_accel > 0.15
+            is_brake = held_keys['s'] or mouse_brake or gp_brake > 0.15
+
+            if is_accel:
+                accel_factor = gp_accel if gp_accel > 0.15 else 1.0
+                current_speed += (acceleration + thrust_accel) * accel_factor * time.dt
             elif is_ctrl_held and total_thrusters > 0:
                 current_speed += thrust_accel * time.dt
-            elif held_keys['s'] or mouse_brake:
-                decel_amount = deceleration * suspension_boost
+            elif is_brake:
+                brake_factor = gp_brake if gp_brake > 0.15 else 1.0
+                decel_amount = deceleration * suspension_boost * brake_factor
                 current_speed -= decel_amount * time.dt
             else:
                 current_speed = lerp(current_speed, 0, time.dt * 2)
@@ -1157,16 +1169,22 @@ def update():
             turn_direction = 1 if current_speed > 0 else -1
             # Smooth turning - increased during drift for responsive control
             turn_speed = 120 if is_drifting else 75
-            if held_keys['a']: vehicle_parent.rotation_y -= turn_speed * turn_direction * time.dt
-            if held_keys['d']: vehicle_parent.rotation_y += turn_speed * turn_direction * time.dt
+            # Gamepad left stick x gives analog steering (proportional to tilt)
+            gp_steer = held_keys.get('gamepad left stick x', 0)
+            if held_keys['a'] or gp_steer < -0.15:
+                stick_factor = abs(gp_steer) if abs(gp_steer) > 0.15 else 1.0
+                vehicle_parent.rotation_y -= turn_speed * turn_direction * stick_factor * time.dt
+            if held_keys['d'] or gp_steer > 0.15:
+                stick_factor = abs(gp_steer) if abs(gp_steer) > 0.15 else 1.0
+                vehicle_parent.rotation_y += turn_speed * turn_direction * stick_factor * time.dt
                 
         # --- DRIFTING MOMENTUM CORE ENGINE ---
         target_velocity = vehicle_parent.forward * current_speed
-        # When drifting, reduce control for lateral sliding; otherwise normal physics
-        # Adjust drift responsiveness depending on how many suspensions are installed
-        if is_drifting and (held_keys['a'] or held_keys['d']):
+        gp_steer_check = abs(held_keys.get('gamepad left stick x', 0)) > 0.15
+        is_turning = held_keys['a'] or held_keys['d'] or gp_steer_check
+        if is_drifting and is_turning:
             drift_factor = 0.8 * (1.0 + suspension_count * 0.5)
-        elif held_keys['a'] or held_keys['d']:
+        elif is_turning:
             drift_factor = 1.8 * (1.0 + suspension_count * 0.3)
         else:
             drift_factor = 5.5 * (1.0 + suspension_count * 0.1)
