@@ -1,8 +1,0 @@
-com\student\mcxbox\api\GameController.class
-com\student\mcxbox\McXboxApplication.class
-com\student\mcxbox\world\WorldState.class
-com\student\mcxbox\world\PlayerState.class
-com\student\mcxbox\api\GameController$InventoryRequest.class
-com\student\mcxbox\api\GameController$MoveRequest.class
-com\student\mcxbox\api\GameController$BlockRequest.class
-com\student\mcxbox\StartupLogger.class
