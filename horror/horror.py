@@ -304,9 +304,10 @@ camera.clip_plane_far = 25 # <--- Reduced to 20 for maximum performance!
 
 # --- ATMOSPHERE ---
 window.color = color.black
+Sky(color=color.grey)
 # Increased fog density so the 20-unit cutoff is hidden by thick mist
 scene.fog_density = 0.15
-scene.fog_color = color.black
+scene.fog_color = color.gray
 
 # --- THE ENVIRONMENT ---
 ground = Entity(

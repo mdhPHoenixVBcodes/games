@@ -28,12 +28,29 @@ camera.clip_plane_near = 0.1
 # =============================================================================
 game_state          = 'selection'   # 'selection' | 'playing' | 'game_over'
 player              = None          # Active player entity (root pivot)
-weapon_arm          = None          # Right arm entity / pivot
-arm_left            = None          # Left arm entity / pivot
-leg_left            = None          # Left leg pivot
-leg_right           = None          # Right leg pivot
+weapon_arm          = None          # Right arm entity / pivot (or mouth stick pivot)
+arm_left            = None          # Left arm entity / pivot (or head pivot)
+leg_left            = None          # Left leg pivot (or front-left leg)
+leg_right           = None          # Right leg pivot (or front-right leg)
+leg_back_l          = None          # Back-left leg pivot (for Perrito quadruped)
+leg_back_r          = None          # Back-right leg pivot (for Perrito quadruped)
+tail_entity         = None          # Tail pivot (for Perrito wagging)
 body_entity         = None          # Torso entity for sprint lean
 weapon_entity       = None          # Main weapon mesh
+
+def deep_destroy(ent):
+    """Recursively destroys all child entities and shapes to eliminate memory leaks and lag."""
+    if not ent:
+        return
+    try:
+        for child in list(ent.children):
+            deep_destroy(child)
+    except Exception:
+        pass
+    try:
+        destroy(ent)
+    except Exception:
+        pass
 
 # Combat & Stats
 player_hp           = 100.0
@@ -44,16 +61,20 @@ is_attacking        = False
 walk_time           = 0.0
 dash_cooldown       = 0.0
 DASH_COOLDOWN       = 1.0
-DASH_FORCE          = 8.0
-BASE_SPEED          = 4.0           # 4.0 for Puss/Kitty, 8.0 for Death (2x faster)
+DASH_FORCE          = 12.0          # Snappy, athletic dash
+BASE_SPEED          = 7.0           # Increased equally for fast, fluid combat (was 4.0)
 SPRINT_MULT         = 2.0
 y_velocity          = 0.0
 is_grounded         = True
-GRAVITY             = 22.0
-JUMP_FORCE          = 7.5
+GRAVITY             = 24.0
+JUMP_FORCE          = 8.5
 camera_pivot        = None
 selection_ui        = []
 selected_char       = 'puss'
+
+# Pause menu state
+is_paused           = False
+pause_ui_elems      = []        # holds every entity/text in the pause overlay
 kills_count         = 0
 
 # Bot Spawning
@@ -65,15 +86,30 @@ bot_respawn_timer   = 0.0
 selected_preview_key= 'puss'
 
 # =============================================================================
-# GROUND PLANE & LIGHTING (Optimized for weak PCs)
+# FLOATING ARENA PLATFORM & LIGHTING
 # =============================================================================
+PLATFORM_SIZE = 80.0
+PLATFORM_HALF = PLATFORM_SIZE / 2.0   # 40.0 units from center to edge
+
+# Main 3D Floating Battle Platform
 ground = Entity(
-    model         = 'plane',
-    scale         = (120, 1, 120),
+    model         = 'cube',
+    scale         = (PLATFORM_SIZE, 3, PLATFORM_SIZE),
+    position      = (0, -1.5, 0),
     color         = color.rgb(60/255, 110/255, 50/255),
     texture       = 'white_cube',
-    texture_scale = (30, 30),
+    texture_scale = (20, 20),
     collider      = 'box'
+)
+# Rocky cliff underside of the floating battle island
+ground_under = Entity(
+    parent        = ground,
+    model         = 'cube',
+    scale         = (0.94, 2.0, 0.94),
+    position      = (0, -1.2, 0),
+    color         = color.rgb(55/255, 45/255, 40/255),
+    texture       = 'white_cube',
+    texture_scale = (10, 10),
 )
 
 sky = Sky(color=color.rgb(100/255, 160/255, 220/255))
@@ -462,6 +498,111 @@ def build_death():
     }
 
 
+def build_perrito():
+    """
+    Procedurally build Perrito (The Therapy Dog from The Last Wish).
+    Quadruped dog on all fours wearing his knitted blue/teal sweater, floppy ears,
+    expressive eyes, wagging tail, and holding a wooden stick sword in his mouth.
+    """
+    root = Entity()
+    root.scale = Vec3(0.95, 0.95, 0.95)
+
+    C_TAN          = color.rgb(225/255, 185/255, 135/255)
+    C_WHITE        = color.rgb(250/255, 246/255, 240/255)
+    C_TEAL_SWEATER = color.rgb(55/255, 140/255, 150/255)
+    C_DARK_BROWN   = color.rgb(85/255, 48/255, 25/255)
+    C_BLACK        = color.rgb(25/255, 25/255, 28/255)
+    C_STICK        = color.rgb(130/255, 75/255, 35/255)
+
+    # --- Torso (Quadruped Dog Body with Hand-Knit Sweater) ---
+    body = Entity(parent=root, position=(0, 0.45, 0))
+    # Sweater body (horizontal rounded oval)
+    Entity(parent=body, model='sphere', color=C_TEAL_SWEATER, scale=(0.44, 0.40, 0.72))
+    # White collar at front of sweater
+    Entity(parent=body, model='sphere', color=C_WHITE, scale=(0.40, 0.38, 0.16), position=(0, 0.08, 0.32))
+    # Sweater ribbing hem
+    Entity(parent=body, model='cube', color=color.rgb(45/255, 120/255, 130/255), scale=(0.46, 0.05, 0.70), position=(0, -0.02, 0))
+
+    # --- Tail (Happy Wagging Tail at rear) ---
+    tail_pivot = Entity(parent=root, position=(0, 0.52, -0.36), rotation=(35, 0, 0))
+    Entity(parent=tail_pivot, model='cube', color=C_TAN, scale=(0.07, 0.28, 0.07), position=(0, 0.12, 0), rotation=(15, 0, 0))
+    Entity(parent=tail_pivot, model='sphere', color=C_WHITE, scale=(0.10, 0.10, 0.10), position=(0, 0.26, 0.04))
+
+    # --- 4 Legs on Pivots (Quadruped Walking Dog) ---
+    # Front Left
+    leg_fl = Entity(parent=root, position=(-0.16, 0.32, 0.24))
+    Entity(parent=leg_fl, model='cube', color=C_TEAL_SWEATER, scale=(0.12, 0.16, 0.12), position=(0, -0.06, 0))
+    Entity(parent=leg_fl, model='cube', color=C_TAN, scale=(0.10, 0.22, 0.10), position=(0, -0.22, 0))
+    Entity(parent=leg_fl, model='sphere', color=C_WHITE, scale=(0.12, 0.08, 0.14), position=(0, -0.32, 0.03))
+
+    # Front Right
+    leg_fr = Entity(parent=root, position=(0.16, 0.32, 0.24))
+    Entity(parent=leg_fr, model='cube', color=C_TEAL_SWEATER, scale=(0.12, 0.16, 0.12), position=(0, -0.06, 0))
+    Entity(parent=leg_fr, model='cube', color=C_TAN, scale=(0.10, 0.22, 0.10), position=(0, -0.22, 0))
+    Entity(parent=leg_fr, model='sphere', color=C_WHITE, scale=(0.12, 0.08, 0.14), position=(0, -0.32, 0.03))
+
+    # Back Left
+    leg_bl = Entity(parent=root, position=(-0.16, 0.32, -0.24))
+    Entity(parent=leg_bl, model='cube', color=C_TAN, scale=(0.11, 0.28, 0.11), position=(0, -0.14, 0))
+    Entity(parent=leg_bl, model='sphere', color=C_WHITE, scale=(0.12, 0.08, 0.14), position=(0, -0.28, 0.03))
+
+    # Back Right
+    leg_br = Entity(parent=root, position=(0.16, 0.32, -0.24))
+    Entity(parent=leg_br, model='cube', color=C_TAN, scale=(0.11, 0.28, 0.11), position=(0, -0.14, 0))
+    Entity(parent=leg_br, model='sphere', color=C_WHITE, scale=(0.12, 0.08, 0.14), position=(0, -0.28, 0.03))
+
+    # --- Head & Floppy Ears ---
+    head = Entity(parent=root, position=(0, 0.74, 0.40))
+    Entity(parent=head, model='sphere', color=C_TAN, scale=(0.48, 0.44, 0.46))
+    # White muzzle
+    Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.34, 0.24, 0.36), position=(0, -0.07, 0.28))
+    # Black button nose
+    Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.11, 0.09, 0.10), position=(0, -0.01, 0.46))
+    # Pink tongue peek
+    Entity(parent=head, model='cube', color=color.rgb(240/255, 110/255, 130/255), scale=(0.08, 0.03, 0.10), position=(0, -0.14, 0.40))
+
+    # Big Expressive Eyes
+    for sx in (-0.13, 0.13):
+        Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.15, 0.17, 0.10), position=(sx, 0.08, 0.32))
+        Entity(parent=head, model='sphere', color=C_DARK_BROWN, scale=(0.11, 0.13, 0.08), position=(sx, 0.08, 0.36))
+        Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.07, 0.09, 0.06), position=(sx, 0.08, 0.38))
+        Entity(parent=head, model='sphere', color=color.white, scale=(0.03, 0.04, 0.03), position=(sx + 0.02, 0.11, 0.40))
+
+    # Long Floppy Brown Ears (drooping down like the movie)
+    for sx, rot_z in ((-0.25, 18), (0.25, -18)):
+        ear = Entity(parent=head, position=(sx, 0.10, -0.05), rotation=(15, 0, rot_z))
+        Entity(parent=ear, model='cube', color=C_DARK_BROWN, scale=(0.14, 0.38, 0.10), position=(0, -0.14, 0))
+
+    # --- Wooden Stick Sword Held Horizontally Across Muzzle ---
+    # Clamped crosswise in teeth across his muzzle (left-to-right along X-axis), NOT sticking out forward!
+    stick_pivot = Entity(parent=head, position=(0, -0.09, 0.32), rotation=(0, 0, 0))
+    # Main stick branch running horizontally across the mouth (X-axis)
+    stick = Entity(parent=stick_pivot, model='cube', color=C_STICK,
+                   scale=(1.18, 0.055, 0.055), position=(0.06, 0, 0))
+    # Whittled wooden sword blade on right side
+    Entity(parent=stick_pivot, model='cube', color=color.rgb(175/255, 110/255, 55/255),
+           scale=(0.28, 0.045, 0.045), position=(0.58, 0, 0))
+    # Small branch knot / twig crossguard on the left side near cheek
+    Entity(parent=stick_pivot, model='cube', color=color.rgb(90/255, 50/255, 22/255),
+           scale=(0.065, 0.16, 0.065), position=(-0.24, 0, 0), rotation=(0, 0, 15))
+    # Bark wrapped grip on left end
+    Entity(parent=stick_pivot, model='cube', color=color.rgb(80/255, 45/255, 20/255),
+           scale=(0.20, 0.068, 0.068), position=(-0.36, 0, 0))
+
+    return {
+        'root': root,
+        'weapon_arm': stick_pivot,    # drives stick attack swing
+        'left_arm': head,             # head pivot
+        'leg_l': leg_fl,              # front left
+        'leg_r': leg_fr,              # front right
+        'leg_bl': leg_bl,             # back left
+        'leg_br': leg_br,             # back right
+        'tail': tail_pivot,           # wagging tail
+        'body': body,
+        'weapon': stick,
+    }
+
+
 # =============================================================================
 # ENEMY BOT CLASS (Puss Bots)
 # =============================================================================
@@ -477,7 +618,7 @@ class PussBot:
 
         self.hp         = 100.0
         self.max_hp     = 100.0
-        self.speed      = 3.2
+        self.speed      = 5.6           # Increased bot speed for faster, dynamic battle
         self.attack_range = 2.4
         self.attack_cooldown = 1.3
         self.cooldown_timer = random.uniform(0.2, 0.8)
@@ -493,6 +634,14 @@ class PussBot:
 
     def update_ai(self, dt, target_pos):
         if self.is_dead:
+            return
+
+        # Fall-off platform detection for bots!
+        bot_on_platform = (abs(self.root.x) <= PLATFORM_HALF and abs(self.root.z) <= PLATFORM_HALF)
+        if not bot_on_platform or self.root.y < -0.2:
+            self.root.y -= GRAVITY * 0.9 * dt
+            if self.root.y < -20.0:
+                self.die()
             return
 
         if self.cooldown_timer > 0:
@@ -511,7 +660,7 @@ class PussBot:
             move_dir = diff.normalized()
             self.root.position += move_dir * self.speed * dt
 
-            self.walk_time += dt * 8.0
+            self.walk_time += dt * 13.0
             swing = math.sin(self.walk_time) * 22.0
             if self.leg_l: self.leg_l.rotation_x = swing
             if self.leg_r: self.leg_r.rotation_x = -swing
@@ -582,13 +731,20 @@ class PussBot:
 
 
 def spawn_bot():
-    """Spawn a Puss Bot at a safe perimeter around player."""
+    """Spawn a Puss Bot at a safe perimeter around player strictly within platform bounds."""
     if player is None:
         return
-    angle = random.uniform(0, math.pi * 2)
-    dist  = random.uniform(16.0, 26.0)
-    spawn_pos = player.position + Vec3(math.cos(angle) * dist, 0, math.sin(angle) * dist)
-    bot = PussBot(spawn_pos)
+    for _ in range(12):
+        angle = random.uniform(0, math.pi * 2)
+        dist  = random.uniform(14.0, 22.0)
+        spawn_pos = player.position + Vec3(math.cos(angle) * dist, 0, math.sin(angle) * dist)
+        if abs(spawn_pos.x) < (PLATFORM_HALF - 5.0) and abs(spawn_pos.z) < (PLATFORM_HALF - 5.0):
+            bot = PussBot(spawn_pos)
+            active_bots.append(bot)
+            return
+    rx = random.uniform(-PLATFORM_HALF + 8.0, PLATFORM_HALF - 8.0)
+    rz = random.uniform(-PLATFORM_HALF + 8.0, PLATFORM_HALF - 8.0)
+    bot = PussBot(Vec3(rx, 0, rz))
     active_bots.append(bot)
 
 
@@ -704,24 +860,26 @@ def setup_selection_menu():
                   scale=(0.40, 0.005), position=(0.0, 0.28), z=0.02)
     selection_ui.append(div2)
 
-    # --- Character Cards: Name only ---
+    # --- Character Cards: 2x2 Modern Grid with Outlines ---
     chars = [
-        ('puss',  'Puss in Boots',  -0.13, color.rgb(180/255, 90/255, 20/255),  color.rgb(255/255, 165/255, 50/255)),
-        ('kitty', 'Kitty Softpaws',  0.0,   color.rgb(35/255, 45/255, 55/255),   color.rgb(80/255, 200/255, 220/255)),
-        ('death', 'Death',           0.13,  color.rgb(110/255, 18/255, 22/255),  color.rgb(220/255, 50/255, 60/255)),
+        ('puss',    'Puss in Boots',  -0.095,  0.14, color.rgb(180/255, 90/255, 20/255),   color.rgb(255/255, 165/255, 50/255)),
+        ('kitty',   'Kitty Softpaws',  0.095,  0.14, color.rgb(35/255, 45/255, 55/255),    color.rgb(80/255, 200/255, 220/255)),
+        ('death',   'Death',          -0.095, -0.02, color.rgb(110/255, 18/255, 22/255),   color.rgb(220/255, 50/255, 60/255)),
+        ('perrito', 'Perrito',         0.095, -0.02, color.rgb(35/255, 115/255, 125/255),  color.rgb(65/255, 215/255, 230/255)),
     ]
 
-    for char_key, label_txt, x_pos, btn_col, border_col in chars:
+    for char_key, label_txt, x_pos, y_pos, btn_col, border_col in chars:
         card_border = Entity(parent=camera.ui, model='quad',
                              color=border_col,
-                             scale=(0.125, 0.38), position=(x_pos, 0.08), z=0.02)
+                             scale=(0.178, 0.138), position=(x_pos, y_pos), z=0.02)
         card = Button(
             text            = label_txt,
             color           = btn_col,
             highlight_color = color.rgba(border_col[0], border_col[1], border_col[2], 0.7),
-            scale           = (0.112, 0.36),
+            text_color      = color.white,
+            scale           = (0.165, 0.125),
             x               = x_pos,
-            y               = 0.08,
+            y               = y_pos,
             z               = 0.0,
             text_size       = 0.95,
         )
@@ -729,19 +887,19 @@ def setup_selection_menu():
         selection_ui.extend([card_border, card])
         card_buttons[char_key] = (card_border, card)
 
-    # CHOOSE CHARACTER button
+    # CHOOSE CHARACTER button (Modern red gradient with border)
     choose_border = Entity(parent=camera.ui, model='quad',
                            color=color.rgb(255/255, 80/255, 80/255),
-                           scale=(0.36, 0.095), position=(0.0, -0.27), z=0.02)
+                           scale=(0.36, 0.088), position=(0.0, -0.22), z=0.02)
     btn_choose = Button(
         text            = "CHOOSE CHARACTER",
         color           = color.rgb(200/255, 30/255, 30/255),
         highlight_color = color.rgb(255/255, 80/255, 80/255),
-        scale           = (0.34, 0.080),
-        x               = 0.0,
-        y               = -0.27,
+        text_color      = color.white,
+        scale           = (0.345, 0.074),
+        position        = (0.0, -0.22),
         z               = 0.0,
-        text_size       = 1.2,
+        text_size       = 1.15,
     )
     btn_choose.on_click = confirm_and_start_game
     selection_ui.extend([choose_border, btn_choose])
@@ -779,33 +937,40 @@ def setup_selection_menu():
 
 
 def select_preview_character(char_key):
-    """Switch the 3D rotating preview model and update selection indicators."""
+    """Switch the 3D rotating preview model and update selection indicators, destroying old shapes cleanly."""
     global preview_model, selected_preview_key
 
     selected_preview_key = char_key
 
-    # Destroy previous 3D preview model
+    # Completely destroy previous 3D preview model shapes
     if preview_model:
-        destroy(preview_model)
+        deep_destroy(preview_model)
         preview_model = None
 
     # Build 3D character on turntable
-    builders = {'puss': build_puss, 'kitty': build_kitty, 'death': build_death}
+    builders = {'puss': build_puss, 'kitty': build_kitty, 'death': build_death, 'perrito': build_perrito}
     result = builders[char_key]()
     preview_model = result['root']
     preview_model.parent = preview_pivot
     preview_model.position = Vec3(0, 0, 0)
-    preview_model.scale = Vec3(0.58, 0.58, 0.58) if char_key == 'death' else Vec3(0.72, 0.72, 0.72)
+    if char_key == 'death':
+        preview_model.scale = Vec3(0.58, 0.58, 0.58)
+    elif char_key == 'perrito':
+        preview_model.scale = Vec3(0.85, 0.85, 0.85)
+    else:
+        preview_model.scale = Vec3(0.72, 0.72, 0.72)
 
     names = {
-        'puss':  'Puss in Boots',
-        'kitty': 'Kitty Softpaws',
-        'death': 'Death',
+        'puss':    'Puss in Boots',
+        'kitty':   'Kitty Softpaws',
+        'death':   'Death',
+        'perrito': 'Perrito',
     }
     name_cols = {
-        'puss':  color.orange,
-        'kitty': color.cyan,
-        'death': color.rgb(255/255, 80/255, 80/255),
+        'puss':    color.orange,
+        'kitty':   color.cyan,
+        'death':   color.rgb(255/255, 80/255, 80/255),
+        'perrito': color.rgb(65/255, 215/255, 230/255),
     }
 
     if preview_char_name:
@@ -817,20 +982,21 @@ def select_preview_character(char_key):
 
     # Highlight active card border
     highlight_cols = {
-        'puss':  color.rgb(255/255, 200/255, 80/255),
-        'kitty': color.rgb(80/255, 220/255, 240/255),
-        'death': color.rgb(255/255, 80/255, 80/255),
+        'puss':    color.rgb(255/255, 200/255, 80/255),
+        'kitty':   color.rgb(80/255, 220/255, 240/255),
+        'death':   color.rgb(255/255, 80/255, 80/255),
+        'perrito': color.rgb(80/255, 240/255, 255/255),
     }
     dim_col = color.rgb(50/255, 50/255, 60/255)
     for k, (border_ent, btn_ent) in card_buttons.items():
         if k == char_key:
             border_ent.color = highlight_cols[k]
-            border_ent.scale = (0.135, 0.395)
-            btn_ent.scale    = (0.112, 0.36)
+            border_ent.scale = (0.188, 0.148)
+            btn_ent.scale    = (0.165, 0.125)
         else:
             border_ent.color = dim_col
-            border_ent.scale = (0.125, 0.38)
-            btn_ent.scale    = (0.112, 0.36)
+            border_ent.scale = (0.178, 0.138)
+            btn_ent.scale    = (0.165, 0.125)
 
 
 def confirm_and_start_game():
@@ -843,14 +1009,16 @@ def confirm_and_start_game():
 # =============================================================================
 
 CAMERA_CONFIG = {
-    'puss':  {'pivot_height': 1.05, 'cam_pos': Vec3(0, 0.35, -4.5), 'cam_rot': Vec3(4, 0, 0), 'fov': 50},
-    'kitty': {'pivot_height': 0.90, 'cam_pos': Vec3(0, 0.30, -4.2), 'cam_rot': Vec3(3, 0, 0), 'fov': 50},
-    'death': {'pivot_height': 2.10, 'cam_pos': Vec3(0, 1.00, -8.2), 'cam_rot': Vec3(5, 0, 0), 'fov': 55},
+    'puss':    {'pivot_height': 1.05, 'cam_pos': Vec3(0, 0.35, -4.5), 'cam_rot': Vec3(4, 0, 0), 'fov': 50},
+    'kitty':   {'pivot_height': 0.90, 'cam_pos': Vec3(0, 0.30, -4.2), 'cam_rot': Vec3(3, 0, 0), 'fov': 50},
+    'death':   {'pivot_height': 2.10, 'cam_pos': Vec3(0, 1.00, -8.2), 'cam_rot': Vec3(5, 0, 0), 'fov': 55},
+    'perrito': {'pivot_height': 0.65, 'cam_pos': Vec3(0, 0.40, -3.8), 'cam_rot': Vec3(6, 0, 0), 'fov': 52},
 }
 current_pivot_height = 1.05
 
 def start_game(char_key):
     global player, weapon_arm, arm_left, leg_left, leg_right, body_entity, weapon_entity
+    global leg_back_l, leg_back_r, tail_entity
     global game_state, selected_char, camera_pivot, current_pivot_height
     global BASE_SPEED, player_damage, player_hp, kills_count, active_bots
     global preview_pivot, preview_model
@@ -863,26 +1031,29 @@ def start_game(char_key):
     player_hp = 100.0
     kills_count = 0
     if selected_char == 'death':
-        BASE_SPEED    = 8.0    # 2 times faster!
+        BASE_SPEED    = 12.0   # Fast, menacing pace
         player_damage = 15.0   # 15% damage per hit
+    elif selected_char == 'perrito':
+        BASE_SPEED    = 9.5    # Fast, nimble dog trot
+        player_damage = 7.0    # 7% damage per stick strike
     else:
-        BASE_SPEED    = 4.0
+        BASE_SPEED    = 7.0    # Puss / Kitty snappy agile pace
         player_damage = 5.0    # 5% damage per hit
 
-    # Destroy menu UI & preview turntable
+    # Destroy menu UI & preview turntable cleanly (removes all shapes)
     for elem in selection_ui:
-        destroy(elem)
+        deep_destroy(elem)
     selection_ui.clear()
 
     if preview_model:
-        destroy(preview_model)
+        deep_destroy(preview_model)
         preview_model = None
     if preview_pivot:
-        destroy(preview_pivot)
+        deep_destroy(preview_pivot)
         preview_pivot = None
 
-    # Build chosen champion in world
-    builders = {'puss': build_puss, 'kitty': build_kitty, 'death': build_death}
+    # Build ONLY the chosen champion in world (no other character shapes exist!)
+    builders = {'puss': build_puss, 'kitty': build_kitty, 'death': build_death, 'perrito': build_perrito}
     result    = builders[char_key]()
 
     player        = result['root']
@@ -890,6 +1061,9 @@ def start_game(char_key):
     arm_left      = result['left_arm']
     leg_left      = result['leg_l']
     leg_right     = result['leg_r']
+    leg_back_l    = result.get('leg_bl', None)
+    leg_back_r    = result.get('leg_br', None)
+    tail_entity   = result.get('tail', None)
     body_entity   = result['body']
     weapon_entity = result['weapon']
 
@@ -907,7 +1081,7 @@ def start_game(char_key):
 
     # Clear any leftover bots and spawn up to MAX_BOTS
     for bot in active_bots:
-        destroy(bot.root)
+        deep_destroy(bot.root)
     active_bots.clear()
 
     for _ in range(MAX_BOTS):
@@ -934,7 +1108,12 @@ def build_hud():
     global hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text, hud_dash_text
     global hud_kills_text, hud_special_perk, hud_controls, block_indicator, autoblock_banner
 
-    names = {'puss': 'Puss in Boots', 'kitty': 'Kitty Softpaws', 'death': 'Death (The Wolf)'}
+    names = {
+        'puss':    'Puss in Boots',
+        'kitty':   'Kitty Softpaws',
+        'death':   'Death (The Wolf)',
+        'perrito': 'Perrito (The Therapy Dog)',
+    }
 
     # Character Name Header
     hud_char_name = Text(
@@ -995,16 +1174,7 @@ def build_hud():
         color  = color.rgb(255/255, 140/255, 40/255),
     )
 
-    # Death Special Perk Banner in gameplay HUD
-    if selected_char == 'death':
-        hud_special_perk = Text(
-            text   = "★ DEATH PERKS: 2x Speed | 15% Dmg | 50% Auto-Block Active!",
-            origin = (-0.5, 0.5),
-            scale  = 1.0,
-            x      = -0.85,
-            y      = 0.31,
-            color  = color.rgb(255/255, 80/255, 80/255),
-        )
+    # (Perk text banner removed per request)
 
     hud_controls = Text(
         text   = "WASD: Move | Space: Jump | Ctrl: Sprint | Shift: Dash | RMB: Block | LMB: Attack",
@@ -1133,6 +1303,32 @@ def trigger_game_over():
     )
 
 
+def respawn_player():
+    """Instantly respawn player back onto the platform center after falling off the edge."""
+    global y_velocity, is_grounded, is_blocking, is_attacking
+    if player is None or game_state != 'playing':
+        return
+    player.position = Vec3(0, 0.1, 0)
+    player.rotation = Vec3(0, 0, 0)
+    y_velocity = 0.0
+    is_grounded = True
+    is_blocking = False
+    is_attacking = False
+    if camera_pivot:
+        camera_pivot.position = player.position + Vec3(0, current_pivot_height, 0)
+
+    # Clean instant respawn notification banner
+    respawn_txt = Text(
+        text     = "RESPAWNED!",
+        origin   = (0, 0),
+        scale    = 2.2,
+        y        = 0.2,
+        color    = color.rgb(80/255, 230/255, 120/255),
+    )
+    respawn_txt.fade_out(duration=0.5)
+    destroy(respawn_txt, delay=0.55)
+
+
 # =============================================================================
 # PLAYER ATTACK & HIT DETECTION
 # =============================================================================
@@ -1152,14 +1348,20 @@ def trigger_attack():
         if weapon_arm:
             weapon_arm.animate_rotation(Vec3(-35, -30, 20), duration=0.09, curve=curve.linear)
             weapon_arm.animate_position(Vec3(0.70, 1.82, 0.45), duration=0.09, curve=curve.linear)
+    elif selected_char == 'perrito':
+        # Perrito swings his wooden stick sword in his mouth with a snappy horizontal bite-slash!
+        if weapon_arm:
+            weapon_arm.animate_rotation(Vec3(0, -60, 12), duration=0.07, curve=curve.linear)
+        if arm_left: # Head turns with the swing
+            arm_left.animate_rotation(Vec3(4, -40, 8), duration=0.07, curve=curve.linear)
     else:
         # Puss / Kitty single rapier/sword thrust
         if weapon_arm:
             weapon_arm.animate_rotation(Vec3(-25, -20, 10), duration=0.09, curve=curve.linear)
             weapon_arm.animate_position(Vec3(weapon_arm.x, weapon_arm.y, 0.35), duration=0.09, curve=curve.linear)
 
-    invoke(check_player_attack_hits, delay=0.09)
-    invoke(reset_attack_arm, delay=0.16)
+    invoke(check_player_attack_hits, delay=0.08)
+    invoke(reset_attack_arm, delay=0.15)
 
 
 def reset_attack_arm():
@@ -1171,6 +1373,11 @@ def reset_attack_arm():
         if weapon_arm:
             weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.12, curve=curve.linear)
             weapon_arm.animate_position(Vec3(0.70, 1.82, 0.0), duration=0.12, curve=curve.linear)
+    elif selected_char == 'perrito':
+        if weapon_arm:
+            weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.10, curve=curve.linear)
+        if arm_left:
+            arm_left.animate_rotation(Vec3(0, 0, 0), duration=0.10, curve=curve.linear)
     else:
         if weapon_arm:
             weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.12, curve=curve.linear)
@@ -1183,7 +1390,7 @@ def check_player_attack_hits():
     if player is None or game_state != 'playing':
         return
 
-    hit_range = 4.2 if selected_char == 'death' else 2.8
+    hit_range = 4.2 if selected_char == 'death' else (3.3 if selected_char == 'perrito' else 2.8)
 
     for bot in list(active_bots):
         if bot.is_dead:
@@ -1205,18 +1412,236 @@ def check_player_attack_hits():
 
 
 # =============================================================================
+# PAUSE MENU SYSTEM (Modern Colors, Crisp Outlines, Full /255 Fix)
+# =============================================================================
+
+def show_pause_menu():
+    """Freeze the game and show the modern outlined 3-button pause overlay."""
+    global is_paused, pause_ui_elems
+
+    if is_paused:
+        return
+    is_paused = True
+    application.paused = True
+    mouse.locked  = False
+    mouse.visible = True
+
+    # ── Semi-transparent dark backdrop ───────────────────────────────────────
+    overlay = Entity(
+        parent        = camera.ui,
+        model         = 'quad',
+        color         = color.rgba(12/255, 12/255, 18/255, 200/255),
+        scale         = (3, 3),
+        z             = 0.05,
+        ignore_paused = True,
+    )
+
+    # ── Outer Panel Glow & Inner Card ─────────────────────────────────────────
+    border = Entity(
+        parent        = camera.ui,
+        model         = 'quad',
+        color         = color.rgb(220/255, 45/255, 55/255),
+        scale         = (0.43, 0.55),
+        position      = (0, 0),
+        z             = 0.04,
+        ignore_paused = True,
+    )
+    panel = Entity(
+        parent        = camera.ui,
+        model         = 'quad',
+        color         = color.rgb(18/255, 18/255, 24/255),
+        scale         = (0.41, 0.53),
+        position      = (0, 0),
+        z             = 0.03,
+        ignore_paused = True,
+    )
+
+    # ── Title & Subtitle ─────────────────────────────────────────────────────
+    title = Text(
+        text          = 'PAUSED',
+        origin        = (0, 0),
+        position      = (0, 0.18),
+        scale         = 2.8,
+        color         = color.rgb(255/255, 215/255, 60/255),
+        ignore_paused = True,
+    )
+    sub = Text(
+        text          = 'Game Paused',
+        origin        = (0, 0),
+        position      = (0, 0.12),
+        scale         = 1.1,
+        color         = color.rgb(160/255, 165/255, 180/255),
+        ignore_paused = True,
+    )
+
+    # ── Modern Outlined Buttons Helper ───────────────────────────────────────
+    def make_pause_btn(label, ypos, fill_col, border_col, hover_col, on_click_fn):
+        bdr = Entity(
+            parent        = camera.ui,
+            model         = 'quad',
+            color         = border_col,
+            scale         = (0.33, 0.076),
+            position      = (0, ypos),
+            z             = 0.02,
+            ignore_paused = True,
+        )
+        btn = Button(
+            text            = label,
+            color           = fill_col,
+            highlight_color = hover_col,
+            text_color      = color.white,
+            scale           = (0.316, 0.064),
+            position        = (0, ypos),
+            z               = 0.01,
+            text_size       = 1.1,
+            ignore_paused   = True,
+        )
+        btn.on_click = on_click_fn
+        pause_ui_elems.extend([bdr, btn])
+        return btn
+
+    # Modern Emerald Green Resume
+    make_pause_btn(
+        'RESUME', 0.03,
+        color.rgb(25/255, 130/255, 70/255),
+        color.rgb(50/255, 220/255, 115/255),
+        color.rgb(45/255, 175/255, 95/255),
+        hide_pause_menu
+    )
+
+    # Modern Sapphire Blue Change Character
+    make_pause_btn(
+        'CHANGE CHARACTER', -0.07,
+        color.rgb(30/255, 85/255, 170/255),
+        color.rgb(75/255, 170/255, 255/255),
+        color.rgb(50/255, 120/255, 215/255),
+        go_to_character_select
+    )
+
+    # Modern Crimson Red Quit
+    make_pause_btn(
+        'QUIT', -0.17,
+        color.rgb(165/255, 28/255, 38/255),
+        color.rgb(250/255, 70/255, 80/255),
+        color.rgb(210/255, 45/255, 55/255),
+        application.quit
+    )
+
+    pause_ui_elems.extend([overlay, border, panel, title, sub])
+
+
+def hide_pause_menu():
+    """Resume gameplay and cleanly destroy all pause overlay entities."""
+    global is_paused, pause_ui_elems
+
+    for elem in pause_ui_elems:
+        deep_destroy(elem)
+    pause_ui_elems.clear()
+
+    is_paused = False
+    application.paused = False
+    mouse.locked  = True
+    mouse.visible = False
+
+
+def go_to_character_select():
+    """
+    Tear down the current gameplay session completely and return to the
+    3-panel character selection screen. Recursively cleans all shapes to eliminate lag.
+    """
+    global player, weapon_arm, arm_left, leg_left, leg_right, body_entity
+    global leg_back_l, leg_back_r, tail_entity
+    global weapon_entity, camera_pivot, game_state, active_bots, is_paused
+    global pause_ui_elems, is_blocking, is_attacking, walk_time
+    global hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text
+    global hud_dash_text, hud_kills_text, hud_special_perk, hud_controls
+    global block_indicator, autoblock_banner
+
+    # 1. Clear pause overlay
+    for elem in pause_ui_elems:
+        deep_destroy(elem)
+    pause_ui_elems.clear()
+    is_paused = False
+    application.paused = False
+
+    # 2. Destroy all active bots and their shapes
+    for bot in list(active_bots):
+        if hasattr(bot, 'root') and bot.root:
+            deep_destroy(bot.root)
+    active_bots.clear()
+
+    # 3. Destroy active player model and all attached parts
+    if player:
+        deep_destroy(player)
+        player = None
+
+    weapon_arm  = None
+    arm_left    = None
+    leg_left    = None
+    leg_right   = None
+    leg_back_l  = None
+    leg_back_r  = None
+    tail_entity = None
+    body_entity = None
+    weapon_entity = None
+
+    # 4. Destroy camera pivot
+    if camera_pivot:
+        deep_destroy(camera_pivot)
+        camera_pivot = None
+
+    # 5. Destroy HUD elements
+    for hud_elem in [hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text,
+                     hud_dash_text, hud_kills_text, hud_controls,
+                     block_indicator, autoblock_banner]:
+        if hud_elem:
+            deep_destroy(hud_elem)
+
+    hud_char_name = hud_hp_bar_bg = hud_hp_bar_fill = hud_hp_text = None
+    hud_dash_text = hud_kills_text = hud_controls = None
+    block_indicator = autoblock_banner = None
+
+    # 6. Reset combat state
+    is_blocking  = False
+    is_attacking = False
+    walk_time    = 0.0
+
+    # 7. Reset camera to menu position
+    camera.parent   = scene
+    camera.position = (0, 1.2, -6.0)
+    camera.rotation = (0, 0, 0)
+    mouse.locked    = False
+    mouse.visible   = True
+
+    # 8. Re-show the selection screen
+    game_state = 'selection'
+    setup_selection_menu()
+
+
+# =============================================================================
 # INPUT HANDLER
 # =============================================================================
 
 def input(key):
     global is_blocking, game_state, y_velocity, is_grounded
 
+    # ── Restart after game-over ───────────────────────────────────────────────
     if game_state == 'game_over' and key == 'r':
         import sys, os
         os.execv(sys.executable, ['python'] + sys.argv)
         return
 
-    if game_state != 'playing':
+    # ── ESC: toggle pause in gameplay, ignore in other states ─────────────────
+    if key == 'escape':
+        if game_state == 'playing':
+            if is_paused:
+                hide_pause_menu()
+            else:
+                show_pause_menu()
+        return          # don't fall through to gameplay keys
+
+    # ── While paused or not in gameplay, ignore everything else ───────────────
+    if game_state != 'playing' or is_paused:
         return
 
     # --- Block (hold RMB) ---
@@ -1231,6 +1656,11 @@ def input(key):
             if weapon_arm:
                 weapon_arm.animate_rotation(Vec3(25, -45, 20), duration=0.1)
                 weapon_arm.animate_position(Vec3(0.42, 1.82, 0.40), duration=0.1)
+        elif selected_char == 'perrito':
+            if weapon_arm:
+                weapon_arm.animate_rotation(Vec3(10, -45, 30), duration=0.1)
+            if arm_left:
+                arm_left.animate_rotation(Vec3(-10, 0, 0), duration=0.1)
         else:
             if weapon_arm:
                 weapon_arm.animate_rotation(Vec3(25, -45, 20), duration=0.1)
@@ -1248,6 +1678,11 @@ def input(key):
             if weapon_arm:
                 weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.1)
                 weapon_arm.animate_position(Vec3(0.70, 1.82, 0.0), duration=0.1)
+        elif selected_char == 'perrito':
+            if weapon_arm:
+                weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.1)
+            if arm_left:
+                arm_left.animate_rotation(Vec3(0, 0, 0), duration=0.1)
         else:
             if weapon_arm:
                 weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.1)
@@ -1266,10 +1701,6 @@ def input(key):
     if key == 'space' and is_grounded and not is_blocking:
         y_velocity = JUMP_FORCE
         is_grounded = False
-
-    # --- ESC → toggle mouse lock ---
-    if key == 'escape':
-        mouse.locked = not mouse.locked
 
 
 # =============================================================================
@@ -1327,16 +1758,29 @@ def update():
                 hud_dash_text.color = color.orange
 
     # -------------------------------------------------------
-    # JUMP & GRAVITY PHYSICS
+    # JUMP & GRAVITY PHYSICS & PLATFORM FALL-OFF DETECTION
     # -------------------------------------------------------
-    if not is_grounded or player.y > 0 or y_velocity != 0:
+    on_platform = (abs(player.x) <= PLATFORM_HALF and abs(player.z) <= PLATFORM_HALF)
+
+    if on_platform and player.y >= -0.3:
+        # On the solid platform: regular jumping & grounded physics
+        if not is_grounded or player.y > 0 or y_velocity != 0:
+            y_velocity -= GRAVITY * dt
+            player.y += y_velocity * dt
+
+        if player.y <= 0:
+            player.y = 0
+            y_velocity = 0.0
+            is_grounded = True
+    else:
+        # OFF THE EDGE! Falling down into the abyss from the platform!
+        is_grounded = False
         y_velocity -= GRAVITY * dt
         player.y += y_velocity * dt
 
-    if player.y <= 0:
-        player.y = 0
-        y_velocity = 0.0
-        is_grounded = True
+        # Instantly respawn back on the platform center after falling below!
+        if player.y < -12.0:
+            respawn_player()
 
     # -------------------------------------------------------
     # BOT SPAWNING & AI LOOP (Maintain up to 4 bots)
@@ -1358,8 +1802,10 @@ def update():
     # BLOCK — disable horizontal movement
     # -------------------------------------------------------
     if is_blocking:
-        if leg_left: leg_left.rotation_x = 0
-        if leg_right: leg_right.rotation_x = 0
+        if leg_left:   leg_left.rotation_x = 0
+        if leg_right:  leg_right.rotation_x = 0
+        if leg_back_l: leg_back_l.rotation_x = 0
+        if leg_back_r: leg_back_r.rotation_x = 0
         return
 
     # -------------------------------------------------------
@@ -1409,33 +1855,63 @@ def update():
         angle_diff = (target_rot_y - player.rotation_y + 180) % 360 - 180
         player.rotation_y += angle_diff * min(1.0, 15.0 * dt)
 
-        anim_speed = 14.0 if is_sprinting else 8.0
-        walk_time += dt * anim_speed
-        swing_amp = 38.0 if is_sprinting else 22.0
+        if selected_char == 'perrito':
+            # Quadruped natural dog trot: diagonal pairs swing together!
+            dog_freq = 24.0 if is_sprinting else 15.0
+            dog_amp  = 32.0 if is_sprinting else 22.0
+            walk_time += dt * dog_freq
 
-        if leg_left:  leg_left.rotation_x = math.sin(walk_time) * swing_amp
-        if leg_right: leg_right.rotation_x = -math.sin(walk_time) * swing_amp
+            if leg_left:   leg_left.rotation_x = math.sin(walk_time) * dog_amp
+            if leg_back_r: leg_back_r.rotation_x = math.sin(walk_time) * dog_amp
+            if leg_right:  leg_right.rotation_x = -math.sin(walk_time) * dog_amp
+            if leg_back_l: leg_back_l.rotation_x = -math.sin(walk_time) * dog_amp
 
-        if not is_attacking and not is_blocking:
-            if selected_char == 'death':
-                if is_sprinting:
-                    if arm_left:   arm_left.rotation = Vec3(35, 20, -15)
-                    if weapon_arm: weapon_arm.rotation = Vec3(35, -20, 15)
+            # Happy wagging tail while trotting
+            if tail_entity:
+                tail_entity.rotation_y = math.sin(walk_time * 2.2) * 35.0
+            # Head bobbing
+            if arm_left:
+                arm_left.rotation_x = math.sin(walk_time * 2.0) * 8.0
+        else:
+            anim_speed = 20.0 if is_sprinting else 12.0
+            walk_time += dt * anim_speed
+            swing_amp = 38.0 if is_sprinting else 22.0
+
+            if leg_left:  leg_left.rotation_x = math.sin(walk_time) * swing_amp
+            if leg_right: leg_right.rotation_x = -math.sin(walk_time) * swing_amp
+
+            if not is_attacking and not is_blocking:
+                if selected_char == 'death':
+                    if is_sprinting:
+                        if arm_left:   arm_left.rotation = Vec3(35, 20, -15)
+                        if weapon_arm: weapon_arm.rotation = Vec3(35, -20, 15)
+                    else:
+                        arm_swing = math.sin(walk_time) * 14.0
+                        if arm_left:   arm_left.rotation_x = arm_swing
+                        if weapon_arm: weapon_arm.rotation_x = -arm_swing
                 else:
-                    arm_swing = math.sin(walk_time) * 14.0
+                    arm_swing = math.sin(walk_time) * (26.0 if is_sprinting else 16.0)
                     if arm_left:   arm_left.rotation_x = arm_swing
-                    if weapon_arm: weapon_arm.rotation_x = -arm_swing
-            else:
-                arm_swing = math.sin(walk_time) * (26.0 if is_sprinting else 16.0)
-                if arm_left:   arm_left.rotation_x = arm_swing
-                if weapon_arm: weapon_arm.rotation_x = -arm_swing * 0.4
+                    if weapon_arm: weapon_arm.rotation_x = -arm_swing * 0.4
     else:
-        if leg_left:  leg_left.rotation_x = lerp(leg_left.rotation_x, 0, dt * 10)
-        if leg_right: leg_right.rotation_x = lerp(leg_right.rotation_x, 0, dt * 10)
+        if selected_char == 'perrito':
+            if leg_left:   leg_left.rotation_x = lerp(leg_left.rotation_x, 0, dt * 10)
+            if leg_right:  leg_right.rotation_x = lerp(leg_right.rotation_x, 0, dt * 10)
+            if leg_back_l: leg_back_l.rotation_x = lerp(leg_back_l.rotation_x, 0, dt * 10)
+            if leg_back_r: leg_back_r.rotation_x = lerp(leg_back_r.rotation_x, 0, dt * 10)
+            if tail_entity:
+                tail_entity.rotation_y = math.sin(time.time() * 5.0) * 20.0
+            if arm_left:
+                arm_left.rotation = Vec3(0, 0, 0)
+            if weapon_arm and not is_attacking and not is_blocking:
+                weapon_arm.rotation = Vec3(0, 0, 0)
+        else:
+            if leg_left:  leg_left.rotation_x = lerp(leg_left.rotation_x, 0, dt * 10)
+            if leg_right: leg_right.rotation_x = lerp(leg_right.rotation_x, 0, dt * 10)
 
-        if not is_attacking and not is_blocking:
-            if arm_left:   arm_left.rotation = Vec3(0, 0, 0)
-            if weapon_arm: weapon_arm.rotation = Vec3(0, 0, 0)
+            if not is_attacking and not is_blocking:
+                if arm_left:   arm_left.rotation = Vec3(0, 0, 0)
+                if weapon_arm: weapon_arm.rotation = Vec3(0, 0, 0)
 
 
 # Initialize 3-Panel Selection Screen

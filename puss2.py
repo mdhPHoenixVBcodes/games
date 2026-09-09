@@ -237,9 +237,14 @@ def build_goldi_visuals(parent_ent):
     body = Entity(parent=root)
     Entity(parent=body, model='sphere', color=C_TEAL_SWEATER, scale=(0.55, 0.75, 0.45), y=0.85)
 
-    for i in range(8):
-        Entity(parent=body, model='sphere', color=C_LIGHT_GRAY, scale=0.15, position=(-0.4 + i*0.11, 0.3 - i*0.08, -0.45 + i*0.03))
-        Entity(parent=body, model='sphere', color=C_LIGHT_GRAY, scale=0.15, position=(-0.4 + i*0.11, 0.3 - i*0.08, 0.45 - i*0.03))
+    # Fixed chain around Goldi's neck (y = 1.18)
+    for i in range(12):
+        angle = (i / 12) * math.pi * 2
+        nx = math.cos(angle) * 0.28
+        nz = math.sin(angle) * 0.22
+        ny = 1.18 + math.sin(angle) * 0.04
+        Entity(parent=body, model='sphere', color=C_LIGHT_GRAY, scale=0.08, position=(nx, ny, nz))
+
     body.combine(auto_destroy=True)
 
     legs = []
@@ -660,6 +665,9 @@ class PussBot(Entity):
 # 4. GAME SYSTEM & UI
 # ==========================================
 app = Ursina()
+
+# Added Sky Blue environment
+Sky(color=color.azure)
 
 window.fps_counter.enabled = False
 window.entity_counter.enabled = False
