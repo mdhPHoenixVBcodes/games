@@ -36,7 +36,30 @@ selected_class = None
 current_preview = None
 
 # ==========================================
-# 1. OPTIMIZED VISUAL BUILDERS (COMBINED MESHES)
+# FLOATING DAMAGE INDICATOR (FORTNITE STYLE)
+# ==========================================
+def spawn_damage_text(pos, amount, is_crit=False):
+    spawn_pos = pos + Vec3(random.uniform(-0.3, 0.3), random.uniform(1.4, 1.8), random.uniform(-0.3, 0.3))
+    dmg_entity = Entity(position=spawn_pos, billboard=True)
+    
+    txt_color = C_RED if is_crit else C_WHITE
+    txt_scale = 14 if is_crit else 8
+
+    txt = Text(
+        parent=dmg_entity,
+        text=str(int(amount)),
+        color=txt_color,
+        scale=txt_scale,
+        origin=(0, 0)
+    )
+
+    dmg_entity.animate_position(spawn_pos + Vec3(0, 1.2, 0), duration=1.0, curve=curve.out_quad)
+    txt.animate_color(color.rgba(0, 0, 0, 0), duration=0.3, delay=0.7)
+    destroy(dmg_entity, delay=1.0)
+
+
+# ==========================================
+# 1. OPTIMIZED VISUAL BUILDERS
 # ==========================================
 def build_puss_visuals(parent_ent):
     body = Entity(parent=parent_ent)
@@ -80,27 +103,30 @@ def build_kitty_visuals(parent_ent):
         Entity(parent=body, model='sphere', color=C_WHITE, scale=(0.2, 0.12, 0.25), y=0.06, x=x_off, z=0.05)
     body.combine(auto_destroy=True)
 
-    head = Entity(parent=parent_ent, position=(0, 1.45, 0))
-    Entity(parent=head, model='sphere', color=C_BLACK, scale=0.55)
-    Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.48, 0.32, 0.35), position=(0, -0.08, 0.35))
-    Entity(parent=head, model='cube', color=C_BLACK, scale=(0.08, 0.06, 0.08), position=(0, -0.02, 0.54))
+    head = Entity(parent=parent_ent, position=(0, 1.30, 0))
+    try:
+        Entity(parent=head, model='kittyface.glb', scale=0.60) 
+    except:
+        Entity(parent=head, model='sphere', color=C_BLACK, scale=0.55)
 
-    for x_off in (-0.14, 0.14):
-        Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.16, 0.22, 0.1), position=(x_off, 0.1, 0.44))
-        Entity(parent=head, model='sphere', color=C_CYAN, scale=(0.1, 0.15, 0.08), position=(x_off, 0.1, 0.48))
-        Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.05, 0.11, 0.07), position=(x_off, 0.1, 0.51))
-
-    for x_off, rot in ((-0.22, 20), (0.22, -20)):
-        Entity(parent=head, model='cube', color=C_BLACK, scale=(0.14, 0.32, 0.08), position=(x_off, 0.48, 0), rotation_z=rot)
-        Entity(parent=head, model='cube', color=C_WHITE, scale=(0.08, 0.24, 0.06), position=(x_off, 0.48, 0.02), rotation_z=rot)
-    head.combine(auto_destroy=True)
-
+    # --- RIGHT ARM (1 Dagger) ---
     arm_r = Entity(parent=parent_ent, position=(0.32, 0.85, 0.1))
-    Entity(parent=arm_r, model='sphere', color=C_WHITE, scale=0.13)
-    Entity(parent=arm_r, model='cube', color=C_BROWN, scale=(0.04, 0.25, 0.04), rotation_x=90)
-    Entity(parent=arm_r, model='cube', color=C_GRAY, scale=(0.25, 0.04, 0.06), z=0.12)
-    Entity(parent=arm_r, model='cube', color=C_LIGHT_GRAY, scale=(0.06, 0.02, 0.9), position=(0, 0, 0.58))
+    Entity(parent=arm_r, model='sphere', color=C_BLACK, scale=0.13)
+    Entity(parent=arm_r, model='cube', color=C_BLACK, scale=(0.05, 0.3, 0.05), rotation_x=90)
+    Entity(parent=arm_r, model='sphere', color=C_WHITE, scale=0.13, z=0.15)
+    
+    # Dagger
+    Entity(parent=arm_r, model='cube', color=C_BROWN, scale=(0.04, 0.25, 0.04), z=0.15, rotation_x=90)
+    Entity(parent=arm_r, model='cube', color=C_GRAY, scale=(0.25, 0.04, 0.06), z=0.25)
+    Entity(parent=arm_r, model='cube', color=C_LIGHT_GRAY, scale=(0.06, 0.02, 0.9), position=(0, 0, 0.7))
     arm_r.combine(auto_destroy=True)
+
+    # --- LEFT ARM (Empty Hand) ---
+    arm_l = Entity(parent=parent_ent, position=(-0.32, 0.85, 0.1))
+    Entity(parent=arm_l, model='sphere', color=C_BLACK, scale=0.13)
+    Entity(parent=arm_l, model='cube', color=C_BLACK, scale=(0.05, 0.3, 0.05), position=(0, -0.1, 0))
+    Entity(parent=arm_l, model='sphere', color=C_WHITE, scale=0.13, position=(0, -0.22, 0))
+    arm_l.combine(auto_destroy=True)
 
     return [arm_r]
 
@@ -164,21 +190,23 @@ def build_perrito_visuals(parent_ent):
     parent_ent.legs = legs
 
     head = Entity(parent=parent_ent, position=(0, 0.72, 0.38))
-    Entity(parent=head, model='sphere', color=C_TAN, scale=0.45)
-    Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.35, 0.25, 0.35), position=(0, -0.06, 0.35))
-    Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.1, 0.08, 0.1), position=(0, -0.02, 0.52))
+    try:
+        Entity(parent=head, model='perritoface.glb', scale=0.60)
+    except:
+        Entity(parent=head, model='sphere', color=C_TAN, scale=0.45)
+        Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.35, 0.25, 0.35), position=(0, -0.06, 0.35))
+        Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.1, 0.08, 0.1), position=(0, -0.02, 0.52))
 
-    for x_off in (-0.13, 0.13):
-        Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.15, 0.18, 0.1), position=(x_off, 0.08, 0.42))
-        Entity(parent=head, model='sphere', color=C_DARK_BROWN, scale=(0.1, 0.14, 0.08), position=(x_off, 0.08, 0.46))
+        for x_off in (-0.13, 0.13):
+            Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.15, 0.18, 0.1), position=(x_off, 0.08, 0.42))
+            Entity(parent=head, model='sphere', color=C_DARK_BROWN, scale=(0.1, 0.14, 0.08), position=(x_off, 0.08, 0.46))
 
-    for x_off, rot in ((-0.48, 25), (0.48, -25)):
-        Entity(parent=head, model='cube', color=C_DARK_BROWN, scale=(0.22, 0.5, 0.2), position=(x_off, 0.1, -0.05), rotation_z=rot, rotation_x=15)
-    head.combine(auto_destroy=True)
+        for x_off, rot in ((-0.24, 25), (0.24, -25)):
+            Entity(parent=head, model='cube', color=C_DARK_BROWN, scale=(0.15, 0.4, 0.15), position=(x_off, 0.05, 0), rotation_z=rot, rotation_x=15)
+    # head.combine(auto_destroy=True) -> REMOVED TO PREVENT GLB VERTEX CRASH
 
-    stick_pivot = Entity(parent=parent_ent, position=(0, 0.64, 0.83))
-    Entity(parent=stick_pivot, model='cube', color=C_BROWN, scale=(0.05, 0.05, 0.9), position=(0.15, 0, 0.3), rotation_y=35)
-    Entity(parent=stick_pivot, model='cube', color=C_DARK_BROWN, scale=(0.07, 0.07, 0.15), position=(0.3, 0, 0.68), rotation_y=35)
+    stick_pivot = Entity(parent=parent_ent, position=(0, 0.62, 0.73)) 
+    Entity(parent=stick_pivot, model='cube', color=C_BROWN, scale=(0.8, 0.06, 0.06), position=(0, 0, 0), rotation_y=20, rotation_z=15)
     stick_pivot.combine(auto_destroy=True)
 
     return [stick_pivot]
@@ -237,7 +265,6 @@ def build_goldi_visuals(parent_ent):
     body = Entity(parent=root)
     Entity(parent=body, model='sphere', color=C_TEAL_SWEATER, scale=(0.55, 0.75, 0.45), y=0.85)
 
-    # Fixed chain around Goldi's neck (y = 1.18)
     for i in range(12):
         angle = (i / 12) * math.pi * 2
         nx = math.cos(angle) * 0.28
@@ -286,6 +313,53 @@ def build_goldi_visuals(parent_ent):
     arm_r.combine(auto_destroy=True)
 
     return [arm_r, arm_l]
+
+def build_baby_bear_visuals(parent_ent):
+    root = Entity(parent=parent_ent, scale=1.3)
+
+    body = Entity(parent=root, position=(0, 0.5, 0))
+    Entity(parent=body, model='sphere', color=C_DARK_BROWN, scale=(0.7, 0.6, 1.1)) 
+    Entity(parent=body, model='sphere', color=C_TAN, scale=(0.5, 0.45, 0.9), position=(0, -0.05, 0.05)) 
+    body.combine(auto_destroy=True)
+
+    tail = Entity(parent=root, position=(0, 0.6, -0.5))
+    Entity(parent=tail, model='sphere', color=C_DARK_BROWN, scale=0.18)
+    
+    back_legs = []
+    for x_off in (-0.25, 0.25):
+        leg = Entity(parent=root, position=(x_off, 0.4, -0.35))
+        Entity(parent=leg, model='cube', color=C_DARK_BROWN, scale=(0.18, 0.45, 0.18), y=-0.18)
+        for c_x in (-0.06, 0, 0.06):
+            Entity(parent=leg, model='cube', color=C_LIGHT_GRAY, scale=(0.02, 0.08, 0.05), position=(c_x, -0.4, 0.09), rotation_x=20)
+        leg.combine(auto_destroy=True)
+        back_legs.append(leg)
+    parent_ent.back_legs = back_legs
+
+    head = Entity(parent=root, position=(0, 0.75, 0.55))
+    Entity(parent=head, model='sphere', color=C_DARK_BROWN, scale=0.55)
+    Entity(parent=head, model='sphere', color=C_TAN, scale=(0.35, 0.25, 0.35), position=(0, -0.08, 0.22))
+    Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.12, 0.08, 0.1), position=(0, 0.02, 0.38))
+    
+    for x_off in (-0.14, 0.14):
+        Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.12, 0.14, 0.1), position=(x_off, 0.12, 0.24))
+        Entity(parent=head, model='sphere', color=C_AZURE, scale=(0.08, 0.1, 0.08), position=(x_off, 0.12, 0.26)) 
+        Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.04, 0.06, 0.04), position=(x_off, 0.12, 0.29)) 
+    
+    for x_off, rot in ((-0.2, 25), (0.2, -25)):
+        Entity(parent=head, model='sphere', color=C_DARK_BROWN, scale=(0.18, 0.18, 0.08), position=(x_off, 0.22, 0), rotation_z=rot)
+
+    head.combine(auto_destroy=True)
+
+    front_legs = []
+    for x_off in (-0.25, 0.25):
+        leg_pivot = Entity(parent=root, position=(x_off, 0.45, 0.35))
+        Entity(parent=leg_pivot, model='cube', color=C_DARK_BROWN, scale=(0.18, 0.5, 0.18), y=-0.2)
+        for c_x in (-0.06, 0, 0.06):
+            Entity(parent=leg_pivot, model='cube', color=C_LIGHT_GRAY, scale=(0.03, 0.12, 0.05), position=(c_x, -0.45, 0.09), rotation_x=20)
+        leg_pivot.combine(auto_destroy=True)
+        front_legs.append(leg_pivot)
+
+    return front_legs
 
 
 # ==========================================
@@ -373,9 +447,13 @@ class BaseCharacter(Entity):
             self.position += move_dir * current_speed * time.dt
 
     def perform_attack(self):
+        is_crit = not self.is_grounded
+        multiplier = 2.0 if is_crit else 1.0
+        actual_damage = round(self.attack_damage * multiplier)
+
         for bot in list(active_bots):
             if bot.enabled and (bot.position - self.position).length() <= 3.2:
-                bot.take_damage(self.attack_damage)
+                bot.take_damage(actual_damage, is_crit=is_crit)
 
     def input(self, key):
         if key == 'space' and self.is_grounded and not self.is_blocking:
@@ -400,7 +478,6 @@ class BaseCharacter(Entity):
                     self.is_attacking = False
             invoke(reset_attack, delay=0.12)
 
-
 class Puss(BaseCharacter):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -412,6 +489,8 @@ class Kitty(BaseCharacter):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.cam_offset_y = 1.1
+        self.base_speed = 8.0
+        self.attack_damage = 8
         self.weapon_arms = build_kitty_visuals(self)
         self.setup_arms()
 
@@ -605,6 +684,62 @@ class Goldi(BaseCharacter):
         else:
             super().input(key)
 
+class BabyBear(BaseCharacter):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.hp = 125
+        self.max_hp = 125
+        self.base_speed = 7.5
+        self.attack_damage = 11
+        self.cam_offset_y = 1.0
+        self.weapon_arms = build_baby_bear_visuals(self)
+        self.setup_arms()
+
+    def apply_block_pose(self):
+        self.weapon_arms[0].rotation = self.default_arm_rots[0] + Vec3(-70, 0, 35)
+        self.weapon_arms[1].rotation = self.default_arm_rots[1] + Vec3(-70, 0, -35)
+
+    def update(self):
+        super().update()
+        if self.hp <= 0: return
+
+        cam_forward = Vec3(self.camera_pivot.forward.x, 0, self.camera_pivot.forward.z).normalized()
+        cam_right = Vec3(self.camera_pivot.right.x, 0, self.camera_pivot.right.z).normalized()
+        move_dir = (cam_forward * (held_keys['w'] - held_keys['s']) + cam_right * (held_keys['d'] - held_keys['a']))
+        is_moving = move_dir.length_squared() > 0
+
+        if is_moving and self.is_grounded and not self.is_blocking and not self.is_attacking:
+            freq = 15
+            amp = 20
+            t = time.time() * freq
+            
+            self.weapon_arms[0].rotation_x = math.sin(t) * amp
+            self.weapon_arms[1].rotation_x = -math.sin(t) * amp
+            if hasattr(self, 'back_legs'):
+                self.back_legs[0].rotation_x = -math.sin(t) * amp
+                self.back_legs[1].rotation_x = math.sin(t) * amp
+                
+        elif not self.is_blocking and not self.is_attacking:
+            if hasattr(self, 'back_legs'):
+                self.back_legs[0].rotation_x = 0
+                self.back_legs[1].rotation_x = 0
+
+    def input(self, key):
+        if key == 'left mouse down' and not self.is_blocking and not self.is_attacking:
+            self.is_attacking = True
+            self.weapon_arms[0].animate_rotation(self.default_arm_rots[0] + Vec3(-60, 45, 0), duration=0.08)
+            self.weapon_arms[1].animate_rotation(self.default_arm_rots[1] + Vec3(-60, -45, 0), duration=0.08)
+            self.perform_attack()
+
+            def reset_attack():
+                if self and self.hp > 0:
+                    for i, arm in enumerate(self.weapon_arms):
+                        arm.animate_rotation(self.default_arm_rots[i], duration=0.15)
+                    self.is_attacking = False
+            invoke(reset_attack, delay=0.15)
+        else:
+            super().input(key)
+
 
 # ==========================================
 # 3. ENEMY AI
@@ -623,8 +758,10 @@ class PussBot(Entity):
         self.hp_bar_bg = Entity(parent=self.hp_container, model='quad', color=C_DARK_GRAY, scale=(1.0, 0.14))
         self.hp_bar = Entity(parent=self.hp_container, model='quad', color=C_RED, scale=(1.0, 0.12), position=(-0.5, 0, -0.01), origin=(-0.5, 0))
 
-    def take_damage(self, amount):
+    def take_damage(self, amount, is_crit=False):
         self.hp -= amount
+        spawn_damage_text(self.position, amount, is_crit)
+
         if self.hp <= 0:
             if self in active_bots:
                 active_bots.remove(self)
@@ -666,7 +803,6 @@ class PussBot(Entity):
 # ==========================================
 app = Ursina()
 
-# Added Sky Blue environment
 Sky(color=color.azure)
 
 window.fps_counter.enabled = False
@@ -714,14 +850,17 @@ def set_character(char_cls):
         build_jack_visuals(current_preview)
     elif char_cls == Goldi:
         build_goldi_visuals(current_preview)
+    elif char_cls == BabyBear:
+        build_baby_bear_visuals(current_preview)
 
 make_outlined_button('puss in\nboots', position=(-0.25, 0.2), scale=(0.18, 0.13), border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Puss))
 make_outlined_button('kitty\nsoftpaws', position=(0.0, 0.2), scale=(0.18, 0.13), border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Kitty))
 make_outlined_button('death', position=(0.25, 0.2), scale=(0.18, 0.13), border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Death))
 
-make_outlined_button('perrito', position=(-0.25, 0.02), scale=(0.18, 0.13), text_color=C_BLACK, border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Perrito))
-make_outlined_button('big jack', position=(0.0, 0.02), scale=(0.18, 0.13), text_color=C_BLACK, border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Jack))
-make_outlined_button('goldi', position=(0.25, 0.02), scale=(0.18, 0.13), text_color=C_BLACK, border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Goldi))
+make_outlined_button('perrito', position=(-0.3, 0.02), scale=(0.16, 0.13), text_color=C_BLACK, border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Perrito))
+make_outlined_button('big jack', position=(-0.1, 0.02), scale=(0.16, 0.13), text_color=C_BLACK, border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Jack))
+make_outlined_button('goldi', position=(0.1, 0.02), scale=(0.16, 0.13), text_color=C_BLACK, border_color=C_LIGHT_GRAY, on_click=lambda: set_character(Goldi))
+make_outlined_button('baby\nbear', position=(0.3, 0.02), scale=(0.16, 0.13), text_color=C_BLACK, border_color=C_LIGHT_GRAY, on_click=lambda: set_character(BabyBear))
 
 def start_game():
     global player, game_started, current_preview
