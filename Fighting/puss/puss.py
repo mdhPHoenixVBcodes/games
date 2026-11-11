@@ -14,13 +14,10 @@ import random
 # =============================================================================
 # APP INITIALIZATION
 # =============================================================================
-# Check if GLB models exist in current folder or in parent ('games') folder
+# GLBs are in the same folder as puss.py
 current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-parent_dir = current_dir.parent
-if (parent_dir / 'pussface.glb').exists():
-    application.asset_folder = parent_dir
-else:
-    application.asset_folder = current_dir
+application.asset_folder = current_dir
+_glb_dir = current_dir
 
 app = Ursina(title="Puss in Boots - 3D Adventure", borderless=False, vsync=True)
 
@@ -1587,6 +1584,36 @@ def go_to_character_select():
 
 
 # =============================================================================
+# DEATH'S WHISTLE ABILITY
+# =============================================================================
+_whistle_cooldown = 0.0
+_WHISTLE_COOLDOWN = 15.0          # seconds between whistles
+_whistle_label    = None          # on-screen flash text
+_whistle_remaining = 0.0          # time left in the whistle animation
+
+# Load whistle with Ursina's audio system
+_whistle_audio = Audio('whistle.mp3', loop=False, autoplay=False)
+
+
+def play_death_whistle():
+    """Play the whistle MP3 sound + show a flash label (Death only, F key)."""
+    global _whistle_cooldown, _whistle_label, _whistle_remaining
+    if _whistle_cooldown > 0 or _whistle_remaining > 0:
+        return
+    _whistle_cooldown = _WHISTLE_COOLDOWN
+    _whistle_remaining = max(0.1, getattr(_whistle_audio, 'length', 3.0))
+
+    # Play audio when triggered with F
+    _whistle_audio.stop()
+    _whistle_audio.play()
+    # Death keeps both hands lowered while whistling.
+    if arm_left:
+        arm_left.animate_rotation(Vec3(0, 0, 0), duration=0.15)
+    if weapon_arm:
+        weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.15)
+
+
+# =============================================================================
 # INPUT HANDLER
 # =============================================================================
 
@@ -1669,6 +1696,10 @@ def input(key):
         y_velocity = JUMP_FORCE
         is_grounded = False
 
+    # --- Death's Whistle (F) ---
+    if key == 'f' and selected_char == 'death':
+        play_death_whistle()
+
 
 # =============================================================================
 # DASH MECHANIC
@@ -1692,9 +1723,15 @@ camera_pitch = 3.0
 
 def update():
     global dash_cooldown, camera_yaw, camera_pitch, y_velocity, is_grounded, walk_time
-    global bot_respawn_timer
+    global bot_respawn_timer, _whistle_cooldown, _whistle_remaining
 
     dt = time.dt
+
+    # Tick whistle cooldown
+    if _whistle_cooldown > 0:
+        _whistle_cooldown = max(0.0, _whistle_cooldown - dt)
+    if _whistle_remaining > 0:
+        _whistle_remaining = max(0.0, _whistle_remaining - dt)
 
     # 3D Turntable continuous rotation in selection menu
     if game_state == 'selection' and preview_pivot:
@@ -1795,6 +1832,8 @@ def update():
     is_sprinting = held_keys['control'] or held_keys['left control']
     if is_sprinting:
         speed *= SPRINT_MULT
+    if selected_char == 'death' and _whistle_remaining > 0:
+        speed *= 0.25
 
     cam_forward = camera_pivot.forward
     cam_forward.y = 0
@@ -1848,7 +1887,7 @@ def update():
             if leg_left:  leg_left.rotation_x = math.sin(walk_time) * swing_amp
             if leg_right: leg_right.rotation_x = -math.sin(walk_time) * swing_amp
 
-            if not is_attacking and not is_blocking:
+            if not is_attacking and not is_blocking and _whistle_remaining <= 0:
                 if selected_char == 'death':
                     if is_sprinting:
                         if arm_left:   arm_left.rotation = Vec3(35, 20, -15)
@@ -1877,7 +1916,7 @@ def update():
             if leg_left:  leg_left.rotation_x = lerp(leg_left.rotation_x, 0, dt * 10)
             if leg_right: leg_right.rotation_x = lerp(leg_right.rotation_x, 0, dt * 10)
 
-            if not is_attacking and not is_blocking:
+            if not is_attacking and not is_blocking and _whistle_remaining <= 0:
                 if arm_left:   arm_left.rotation = Vec3(0, 0, 0)
                 if weapon_arm: weapon_arm.rotation = Vec3(0, 0, 0)
 
