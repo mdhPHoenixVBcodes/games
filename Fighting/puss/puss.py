@@ -10,6 +10,11 @@ from pathlib import Path
 from ursina import *
 import math
 import random
+import json
+import queue
+import socket
+import threading
+import time as system_time
 
 # =============================================================================
 # APP INITIALIZATION
@@ -34,7 +39,8 @@ camera.clip_plane_near = 0.2
 # =============================================================================
 # GLOBAL GAME STATE & STATS
 # =============================================================================
-game_state          = 'selection'   # 'selection' | 'playing' | 'game_over'
+game_state          = 'main_menu'
+game_mode           = 'pve'
 game_over_ui_elems  = []            # Game over UI tracking for clean reset
 player              = None          # Active player entity (root pivot)
 weapon_arm          = None          # Right arm entity / pivot (or mouth stick pivot)
@@ -85,6 +91,65 @@ selected_char       = 'puss'
 is_paused           = False
 pause_ui_elems      = []        # holds every entity/text in the pause overlay
 kills_count         = 0
+menu_ui             = []
+menu_camera_pivot   = None
+menu_status_text    = None
+menu_join_address   = ''
+mouse_sensitivity   = 40
+CONTROL_DEFAULTS = {
+    'forward': 'w',
+    'backward': 's',
+    'left': 'a',
+    'right': 'd',
+    'sprint': 'left control',
+    'jump': 'space',
+    'attack': 'left mouse down',
+    'block': 'right mouse down',
+    'dash': 'shift',
+    'ability': 'f',
+}
+controls = CONTROL_DEFAULTS.copy()
+control_capture_action = None
+control_button_refs = {}
+cheat_panel_open = False
+cheat_code_input = ''
+cheat_panel_status = ''
+cheat_input_focused = False
+cheat_panel_ui = []
+cheat_panel_input_entity = None
+cheat_panel_status_entity = None
+cheat_panel_submit_callback = None
+pending_cheats = set()
+match_cheats = set()
+training_dummy      = None
+network_status_label = None
+remote_player       = None
+host_start_button   = None
+network_role        = None
+network_connected   = False
+network_server_socket = None
+network_connection_socket = None
+network_events      = queue.Queue()
+network_running     = threading.Event()
+network_generation  = 0
+network_snapshot_lock = threading.Lock()
+network_local_snapshot = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0, 'attack_seq': 0}
+network_remote_snapshot = None
+network_attack_sequence = 0
+remote_attack_sequence = 0
+join_address_label = None
+NETWORK_PORT        = 50007
+
+# Hidden easter egg state
+EASTER_EGG_SEQUENCE  = 'nukeyes'
+easter_egg_progress  = 0
+easter_egg_active    = False
+easter_egg_escape_used = False
+easter_egg_mouse_unlocked = False
+easter_egg_map_ui    = []
+easter_egg_player_marker = None
+easter_egg_bot_markers = []
+easter_egg_cursor    = None
 
 # Bot Spawning
 MAX_BOTS            = 4
@@ -143,7 +208,7 @@ def build_puss(is_enemy=False):
                   scale=(0.7, 0.85, 0.55), position=(0, 0.9, 0))
     Entity(parent=root, model='sphere', color=color.white if not is_enemy else color.rgb(210/255, 210/255, 210/255),
            scale=(0.38, 0.48, 0.22), position=(0, 0.95, 0.22))
-    Entity(parent=root, model='cylinder', color=color.black,
+    Entity(parent=root, model=Cylinder(), color=color.black,
            scale=(0.72, 0.08, 0.55), position=(0, 0.72, 0))
 
     # --- Head (3D Face Model only — Centered & Straightened) ---
@@ -210,7 +275,7 @@ def build_kitty():
                   scale=(0.65, 0.8, 0.52), position=(0, 0.9, 0))
     Entity(parent=root, model='sphere', color=color.white,
            scale=(0.32, 0.45, 0.20), position=(0, 0.96, 0.22))
-    Entity(parent=root, model='cylinder', color=color.rgb(120/255, 80/255, 40/255),
+    Entity(parent=root, model=Cylinder(), color=color.rgb(120/255, 80/255, 40/255),
            scale=(0.67, 0.07, 0.52), position=(0, 0.72, 0))
 
     # --- Head (3D Face Model only) ---
@@ -277,7 +342,7 @@ def build_death():
     abdomen = Entity(parent=root, model='sphere', color=color.rgb(180/255, 180/255, 188/255),
                      scale=(0.86, 0.54, 0.58), position=(0, 1.28, 0))
     # Belt & Buckle
-    Entity(parent=root, model='cylinder', color=color.rgb(55/255, 42/255, 32/255),
+    Entity(parent=root, model=Cylinder(), color=color.rgb(55/255, 42/255, 32/255),
            scale=(0.88, 0.16, 0.58), position=(0, 1.08, 0))
     Entity(parent=root, model='cube', color=color.rgb(210/255, 175/255, 60/255),
            scale=(0.22, 0.18, 0.10), position=(0, 1.08, 0.29))
@@ -311,7 +376,7 @@ def build_death():
 
     # Head (3D Face Model only — larger and straightened)
     face = Entity(parent=root, model='deathface.glb',
-                  scale=1.30, position=(-0.06, 2.54, 0.06), rotation=(0, 0, -4))
+                  scale=1.30, position=(-0.06, 2.49, 0.06), rotation=(0, -30, 0))
 
     # Wolf Ears
     Entity(parent=root, model='cube', color=color.rgb(220/255, 220/255, 228/255),
@@ -468,7 +533,7 @@ def build_perrito():
     # White collar at front of sweater
     Entity(parent=body, model='sphere', color=C_WHITE, scale=(0.40, 0.38, 0.16), position=(0, 0.08, 0.32))
     # Sweater ribbing hem
-    Entity(parent=body, model='cylinder', color=color.rgb(45/255, 120/255, 130/255), scale=(0.46, 0.05, 0.70), position=(0, -0.02, 0))
+    Entity(parent=body, model=Cylinder(), color=color.rgb(45/255, 120/255, 130/255), scale=(0.46, 0.05, 0.70), position=(0, -0.02, 0))
 
     # --- Tail (Happy Wagging Tail at rear) ---
     tail_pivot = Entity(parent=root, position=(0, 0.52, -0.36), rotation=(35, 0, 0))
@@ -538,7 +603,7 @@ def build_perrito():
 # =============================================================================
 
 class PussBot:
-    def __init__(self, position):
+    def __init__(self, position, training_dummy=False):
         self.data       = build_puss(is_enemy=True)
         self.root       = self.data['root']
         self.weapon_arm = self.data['weapon_arm']
@@ -555,6 +620,7 @@ class PussBot:
         self.is_attacking = False
         self.walk_time  = random.uniform(0.0, 3.0)
         self.is_dead    = False
+        self.training_dummy = training_dummy
 
         # Floating 3D Health Bar
         self.hp_bar_bg = Entity(parent=self.root, model='cube', color=color.black,
@@ -563,7 +629,7 @@ class PussBot:
                                   scale=(0.96, 0.7, 1.0), position=(0, 0, -0.05))
 
     def update_ai(self, dt, target_pos):
-        if self.is_dead or not self.root:
+        if self.is_dead or not self.root or self.training_dummy:
             return
 
         # Fall-off platform detection for bots!
@@ -631,6 +697,11 @@ class PussBot:
     def take_damage(self, amount, is_crit=False):
         if self.is_dead or not self.root:
             return
+        if self.training_dummy:
+            for child in self.root.children:
+                if hasattr(child, 'color'):
+                    child.blink(color.yellow, duration=0.12)
+            return
         self.hp -= amount
 
         # Flash red on hit
@@ -697,6 +768,631 @@ def spawn_bot():
 
 
 # =============================================================================
+# MAIN MENU & MULTIPLAYER
+# =============================================================================
+
+def clear_menu_ui():
+    global menu_status_text, join_address_label
+    for elem in menu_ui:
+        deep_destroy(elem)
+    menu_ui.clear()
+    menu_status_text = None
+    join_address_label = None
+
+
+def _begin_menu_page(title, subtitle):
+    global menu_camera_pivot
+    clear_menu_ui()
+    camera.parent = scene
+    if menu_camera_pivot:
+        deep_destroy(menu_camera_pivot)
+    menu_camera_pivot = Entity(position=(0, 0, 0))
+    camera.clip_plane_far = 200
+    camera.fov = 55
+    camera.parent = menu_camera_pivot
+    camera.position = (0, 56, -100)
+    camera.rotation = (math.degrees(math.atan2(56, 100)), 0, 0)
+    mouse.locked = False
+    mouse.visible = True
+    title_text = Text(
+        parent=camera.ui, text=title, origin=(0, 0), scale=2.3,
+        position=(0, 0.34), color=color.rgb(255/255, 205/255, 75/255),
+    )
+    subtitle_text = Text(
+        parent=camera.ui, text=subtitle, origin=(0, 0), scale=0.95,
+        position=(0, 0.27), color=color.rgb(220/255, 220/255, 230/255),
+    )
+    menu_ui.extend([title_text, subtitle_text])
+
+
+def _menu_button(label, y_pos, callback, fill=None):
+    btn = Button(
+        parent=camera.ui, text=label,
+        color=fill or color.rgb(105/255, 35/255, 38/255),
+        highlight_color=color.rgb(190/255, 75/255, 55/255),
+        text_color=color.white, scale=(0.34, 0.075), position=(0, y_pos),
+        text_size=1.1,
+    )
+    btn.on_click = callback
+    menu_ui.append(btn)
+    return btn
+
+
+def show_main_menu():
+    global game_state
+    game_state = 'main_menu'
+    _clear_cheat_panel()
+    _begin_menu_page('PUSS IN BOOTS', '3D BATTLE ARENA')
+    _menu_button('PLAY', 0.10, show_play_menu, color.rgb(125/255, 42/255, 38/255))
+    _menu_button('SETTINGS', -0.01, show_settings_menu, color.rgb(55/255, 72/255, 100/255))
+    _menu_button('QUIT', -0.12, application.quit, color.rgb(75/255, 35/255, 40/255))
+    secret_button = Button(
+        parent=camera.ui, text='', color=color.rgb(0/255, 70/255, 25/255),
+        highlight_color=color.rgb(0/255, 90/255, 30/255),
+        scale=(0.045, 0.045), position=(0.82, -0.44),
+    )
+    secret_button.on_click = show_cheat_panel
+    menu_ui.append(secret_button)
+
+
+def show_play_menu():
+    global game_state
+    game_state = 'play_menu'
+    _begin_menu_page('PLAY', 'Choose how you want to play')
+    _menu_button('SINGLEPLAYER', 0.10, show_singleplayer_menu)
+    _menu_button('MULTIPLAYER', -0.02, show_multiplayer_menu, color.rgb(45/255, 85/255, 115/255))
+    _menu_button('BACK', -0.17, show_main_menu, color.rgb(55/255, 55/255, 65/255))
+
+
+def show_singleplayer_menu():
+    global game_state
+    game_state = 'singleplayer_menu'
+    _begin_menu_page('SINGLEPLAYER', 'Choose a game mode')
+    _menu_button('TRAINING GROUNDS', 0.10, lambda: begin_character_selection('training'))
+    _menu_button('PVE - FIGHT ENEMIES', -0.02, lambda: begin_character_selection('pve'))
+    _menu_button('BACK', -0.17, show_play_menu, color.rgb(55/255, 55/255, 65/255))
+
+
+def show_multiplayer_menu():
+    global game_state
+    game_state = 'multiplayer_menu'
+    _begin_menu_page('MULTIPLAYER', 'Play over a local network (TCP port 50007)')
+    _menu_button('HOST GAME', 0.10, show_host_menu)
+    _menu_button('JOIN GAME', -0.02, show_join_menu, color.rgb(45/255, 85/255, 115/255))
+    _menu_button('BACK', -0.17, show_play_menu, color.rgb(55/255, 55/255, 65/255))
+
+
+def show_settings_menu():
+    global game_state, control_capture_action, control_button_refs
+    game_state = 'settings_menu'
+    control_capture_action = None
+    control_button_refs = {}
+    _begin_menu_page('SETTINGS', 'Adjust mouse look and review controls')
+    sensitivity_text = Text(
+        parent=camera.ui, text='', origin=(0, 0), scale=1.0,
+        position=(0, 0.12), color=color.white,
+    )
+    menu_ui.append(sensitivity_text)
+
+    def refresh_sensitivity():
+        sensitivity_text.text = f'Mouse sensitivity: {mouse_sensitivity}'
+
+    def adjust_sensitivity(amount):
+        global mouse_sensitivity
+        mouse_sensitivity = clamp(mouse_sensitivity + amount, 10, 100)
+        refresh_sensitivity()
+
+    lower = _menu_button('-', -0.01, lambda: adjust_sensitivity(-5), color.rgb(55/255, 72/255, 100/255))
+    higher = _menu_button('+', -0.01, lambda: adjust_sensitivity(5), color.rgb(55/255, 72/255, 100/255))
+    lower.x = -0.12
+    higher.x = 0.12
+    lower.scale = (0.12, 0.07)
+    higher.scale = (0.12, 0.07)
+    controls_hint = Text(
+        parent=camera.ui, text='Click a binding, press a key (Esc cancels). Resets when game closes.',
+        origin=(0, 0), scale=0.7, position=(0, -0.075),
+        color=color.rgb(210/255, 210/255, 220/255),
+    )
+    menu_ui.append(controls_hint)
+    control_rows = (
+        ('forward', 'Move forward'), ('backward', 'Move backward'),
+        ('left', 'Move left'), ('right', 'Move right'),
+        ('sprint', 'Sprint'), ('jump', 'Jump'), ('attack', 'Attack'),
+        ('block', 'Block'), ('dash', 'Dash'), ('ability', 'Special / ultimate'),
+    )
+    for index, (action, label) in enumerate(control_rows):
+        y_pos = -0.14 - index * 0.051
+        action_label = Text(
+            parent=camera.ui, text=label, origin=(-0.5, 0), scale=0.65,
+            position=(-0.29, y_pos), color=color.white,
+        )
+        menu_ui.append(action_label)
+        binding_btn = Button(
+            parent=camera.ui, text='', color=color.rgb(55/255, 72/255, 100/255),
+            highlight_color=color.rgb(90/255, 115/255, 150/255),
+            text_color=color.white, scale=(0.22, 0.043), position=(0.24, y_pos),
+            text_size=0.75,
+        )
+        binding_btn.on_click = lambda action=action: _begin_control_remap(action)
+        control_button_refs[action] = binding_btn
+        menu_ui.append(binding_btn)
+    _refresh_control_buttons()
+    refresh_sensitivity()
+    back_button = _menu_button('BACK', 0.43, show_main_menu, color.rgb(55/255, 55/255, 65/255))
+    back_button.x = 0.79
+    back_button.scale = (0.18, 0.06)
+
+
+def _format_control_binding(binding):
+    return {
+        'left mouse down': 'Mouse 1',
+        'right mouse down': 'Mouse 2',
+        'left control': 'Left Ctrl',
+        'right control': 'Right Ctrl',
+        'left shift': 'Left Shift',
+        'right shift': 'Right Shift',
+    }.get(binding, binding.upper())
+
+
+def _refresh_control_buttons():
+    for action, button in control_button_refs.items():
+        if action == control_capture_action:
+            button.text = 'PRESS A KEY...'
+        else:
+            button.text = _format_control_binding(controls[action])
+
+
+def _begin_control_remap(action):
+    global control_capture_action
+    control_capture_action = action
+    _refresh_control_buttons()
+
+
+def _finish_control_remap(key):
+    global control_capture_action
+    if key == 'escape':
+        control_capture_action = None
+        _refresh_control_buttons()
+        return
+    if key.endswith(' up'):
+        return
+    binding = key.lower()
+    if binding in controls.values():
+        other_action = next(
+            (action for action, value in controls.items()
+             if value == binding and action != control_capture_action),
+            None,
+        )
+        if other_action:
+            controls[other_action] = controls[control_capture_action]
+    controls[control_capture_action] = binding
+    control_capture_action = None
+    _refresh_control_buttons()
+
+
+def _clear_cheat_panel():
+    global cheat_panel_open, cheat_panel_input_entity, cheat_panel_status_entity
+    global cheat_panel_submit_callback, cheat_input_focused
+    was_open = cheat_panel_open
+    for elem in cheat_panel_ui:
+        deep_destroy(elem)
+    cheat_panel_ui.clear()
+    cheat_panel_open = False
+    cheat_panel_input_entity = None
+    cheat_panel_status_entity = None
+    cheat_panel_submit_callback = None
+    cheat_input_focused = False
+    if was_open:
+        show_main_menu()
+
+
+def show_cheat_panel():
+    global cheat_panel_open, cheat_code_input, cheat_panel_status
+    global cheat_panel_input_entity, cheat_panel_status_entity
+    global cheat_panel_submit_callback, cheat_input_focused
+    if cheat_panel_open or game_state != 'main_menu':
+        return
+    cheat_panel_open = True
+    clear_menu_ui()
+    cheat_code_input = ''
+    cheat_input_focused = False
+    cheat_panel_status = 'Cheats apply to your next match.'
+
+    backdrop = Entity(
+        parent=camera.ui, model='quad', color=color.rgba(0, 0, 0, 190/255),
+        scale=(2, 2), z=0.08,
+    )
+    panel = Entity(
+        parent=camera.ui, model='quad',
+        color=color.rgb(20/255, 24/255, 32/255),
+        scale=(0.62, 0.46), position=(0, 0), z=0.07,
+    )
+    title = Text(
+        parent=camera.ui, text='ADMIN PANEL', origin=(0, 0), scale=1.5,
+        position=(0, 0.14), color=color.rgb(255/255, 205/255, 75/255), z=-0.1,
+    )
+    entry_hint = Text(
+        parent=camera.ui, text='Enter access code', origin=(0, 0), scale=0.72,
+        position=(0, 0.055), color=color.rgb(190/255, 195/255, 205/255), z=-0.1,
+    )
+    input_box = Button(
+        parent=camera.ui, text='', color=color.rgb(45/255, 52/255, 65/255),
+        highlight_color=color.rgb(60/255, 70/255, 88/255),
+        text_color=color.white,
+        scale=(0.48, 0.075), position=(0, -0.025), z=0.06,
+    )
+    input_box.on_click = focus_cheat_input
+    input_text = Text(
+        parent=camera.ui, text='', origin=(-0.5, 0), scale=0.85,
+        position=(-0.22, -0.025), color=color.white, z=-0.1,
+    )
+    status_text = Text(
+        parent=camera.ui, text=cheat_panel_status, origin=(0, 0), scale=0.68,
+        position=(0, -0.105), color=color.rgb(130/255, 220/255, 150/255), z=-0.1,
+    )
+    cheat_panel_input_entity = input_text
+    cheat_panel_status_entity = status_text
+
+    def submit_cheat():
+        global cheat_panel_status
+        code = cheat_code_input.strip().lower()
+        cheat_names = {
+            'fearmeifudare': 'damage',
+            'seehastalamurite': 'ultimate',
+            'overrideactivatedsonicspeed': 'speed',
+            'immoratility': 'immortal',
+        }
+        effect = cheat_names.get(code)
+        if not effect:
+            cheat_panel_status = 'Unknown cheat code.'
+            status_text.color = color.rgb(255/255, 120/255, 100/255)
+        elif effect == 'ultimate':
+            pending_cheats.add(effect)
+            cheat_panel_status = 'Saved for the future ultimate ability.'
+        else:
+            pending_cheats.add(effect)
+            cheat_panel_status = 'Cheat activated for your next match.'
+        input_text.text = ''
+        status_text.text = cheat_panel_status
+        cheat_panel_status_entity.color = (
+            color.rgb(255/255, 120/255, 100/255)
+            if not effect else color.rgb(130/255, 220/255, 150/255)
+        )
+
+    cheat_code_input = ''
+
+    submit_button = Button(
+        parent=camera.ui, text='ACTIVATE', color=color.rgb(115/255, 45/255, 40/255),
+        highlight_color=color.rgb(175/255, 70/255, 55/255),
+        text_color=color.white, scale=(0.19, 0.065), position=(-0.13, -0.19), z=0.05,
+    )
+    submit_button.on_click = submit_cheat
+    cheat_panel_submit_callback = submit_cheat
+    close_button = Button(
+        parent=camera.ui, text='CLOSE', color=color.rgb(55/255, 65/255, 80/255),
+        highlight_color=color.rgb(85/255, 100/255, 125/255),
+        text_color=color.white, scale=(0.19, 0.065), position=(0.13, -0.19), z=0.05,
+    )
+    close_button.on_click = _clear_cheat_panel
+    cheat_panel_ui.extend([
+        backdrop, panel, title, entry_hint, input_box, input_text, status_text,
+        submit_button, close_button,
+    ])
+    input_text.text = cheat_code_input + '_'
+
+
+def focus_cheat_input():
+    global cheat_input_focused
+    cheat_input_focused = True
+    if cheat_panel_input_entity:
+        cheat_panel_input_entity.text = cheat_code_input + '_'
+
+
+def show_host_menu():
+    global game_state, menu_status_text, host_start_button
+    game_state = 'host_menu'
+    _begin_menu_page('HOST GAME', 'Host a game for another player on your network')
+    menu_status_text = Text(
+        parent=camera.ui, text='Select Start Hosting to open a game on port 50007.',
+        origin=(0, 0), scale=0.8, position=(0, 0.12), color=color.white,
+    )
+    menu_ui.append(menu_status_text)
+    host_start_button = _menu_button('START HOSTING', -0.01, start_host_session)
+    _menu_button('BACK', -0.17, leave_host_menu, color.rgb(55/255, 55/255, 65/255))
+
+
+def show_join_menu():
+    global game_state, menu_status_text, join_address_label, menu_join_address
+    game_state = 'join_menu'
+    _begin_menu_page('JOIN GAME', 'Enter the host computer IP address, then press Join')
+    join_address_label = Text(
+        parent=camera.ui, text='', origin=(0, 0), scale=1.05,
+        position=(0, 0.12), color=color.rgb(255/255, 220/255, 120/255),
+    )
+    menu_ui.append(join_address_label)
+    menu_status_text = Text(
+        parent=camera.ui, text='For internet play, the host may need port forwarding.',
+        origin=(0, 0), scale=0.72, position=(0, 0.055), color=color.white,
+    )
+    menu_ui.append(menu_status_text)
+    _menu_button('JOIN', -0.04, connect_to_host, color.rgb(45/255, 85/255, 115/255))
+    _menu_button('BACK', -0.17, leave_join_menu, color.rgb(55/255, 55/255, 65/255))
+    _refresh_join_address()
+
+
+def leave_host_menu():
+    stop_network_session()
+    show_multiplayer_menu()
+
+
+def leave_join_menu():
+    stop_network_session()
+    show_multiplayer_menu()
+
+
+def _refresh_join_address():
+    if join_address_label:
+        join_address_label.text = f'Host IP: {menu_join_address}_'
+
+
+def begin_character_selection(mode):
+    global game_mode, game_state
+    game_mode = mode
+    clear_menu_ui()
+    game_state = 'selection'
+    setup_selection_menu()
+
+
+def _local_ip_address():
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(('8.8.8.8', 80))
+        return probe.getsockname()[0]
+    except OSError:
+        return '127.0.0.1'
+    finally:
+        probe.close()
+
+
+def stop_network_session():
+    global network_server_socket, network_connection_socket
+    global network_role, network_connected, network_remote_snapshot
+    global network_attack_sequence, remote_attack_sequence, network_generation
+    network_running.clear()
+    network_generation += 1
+    for active_socket in (network_connection_socket, network_server_socket):
+        if active_socket:
+            try:
+                active_socket.close()
+            except OSError:
+                pass
+    network_connection_socket = None
+    network_server_socket = None
+    network_role = None
+    network_connected = False
+    network_remote_snapshot = None
+    network_attack_sequence = 0
+    remote_attack_sequence = 0
+    while True:
+        try:
+            network_events.get_nowait()
+        except queue.Empty:
+            break
+
+
+def start_host_session():
+    global network_server_socket, network_role, game_mode, menu_status_text
+    stop_network_session()
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        server.bind(('0.0.0.0', NETWORK_PORT))
+        server.listen(1)
+        server.settimeout(0.5)
+    except OSError as error:
+        server.close()
+        if menu_status_text:
+            menu_status_text.text = f'Could not host: {error}'
+        return
+
+    network_server_socket = server
+    network_role = 'host'
+    game_mode = 'multiplayer'
+    network_running.set()
+    generation = network_generation
+    threading.Thread(
+        target=_host_network_worker, args=(server, generation), daemon=True,
+    ).start()
+    if menu_status_text:
+        menu_status_text.text = (
+            f'Share {_local_ip_address()}:{NETWORK_PORT} with your friend.\n'
+            'Choose character to enter the arena.'
+        )
+    if host_start_button:
+        host_start_button.text = 'CHOOSE CHARACTER'
+        host_start_button.on_click = lambda: begin_character_selection('multiplayer')
+
+
+def connect_to_host():
+    global network_role, game_mode, menu_status_text
+    address = menu_join_address.strip()
+    if not address or any(char.isspace() for char in address):
+        if menu_status_text:
+            menu_status_text.text = 'Enter a valid host IP address.'
+        return
+    stop_network_session()
+    network_role = 'client'
+    game_mode = 'multiplayer'
+    network_running.set()
+    generation = network_generation
+    if menu_status_text:
+        menu_status_text.text = f'Connecting to {address}:{NETWORK_PORT}...'
+    threading.Thread(
+        target=_client_network_worker, args=(address, generation), daemon=True,
+    ).start()
+
+
+def _network_session_active(generation):
+    return network_running.is_set() and generation == network_generation
+
+
+def _host_network_worker(server, generation):
+    global network_connection_socket
+    while _network_session_active(generation):
+        try:
+            connection, address = server.accept()
+        except socket.timeout:
+            continue
+        except OSError as error:
+            if _network_session_active(generation):
+                network_events.put(('error', str(error)))
+            return
+        if not _network_session_active(generation):
+            connection.close()
+            return
+        network_connection_socket = connection
+        network_events.put(('connected', address[0]))
+        _network_exchange(connection, generation)
+
+
+def _client_network_worker(address, generation):
+    try:
+        connection = socket.create_connection((address, NETWORK_PORT), timeout=5.0)
+    except OSError as error:
+        if _network_session_active(generation):
+            network_events.put(('error', str(error)))
+        return
+    if not _network_session_active(generation):
+        connection.close()
+        return
+    network_events.put(('connected', address))
+    _network_exchange(connection, generation)
+
+
+def _network_exchange(connection, generation):
+    global network_connection_socket
+    buffer = ''
+    last_send = 0.0
+    network_connection_socket = connection
+    try:
+        connection.settimeout(0.02)
+        while _network_session_active(generation):
+            now = system_time.monotonic()
+            if now - last_send >= 0.05:
+                with network_snapshot_lock:
+                    snapshot = network_local_snapshot.copy()
+                connection.sendall((json.dumps(snapshot) + '\n').encode('utf-8'))
+                last_send = now
+            try:
+                chunk = connection.recv(4096)
+            except socket.timeout:
+                continue
+            if not chunk:
+                break
+            buffer += chunk.decode('utf-8')
+            while '\n' in buffer:
+                line, buffer = buffer.split('\n', 1)
+                packet = json.loads(line)
+                required = ('x', 'y', 'z', 'yaw', 'attack_seq')
+                if (
+                    not isinstance(packet, dict)
+                    or any(type(packet.get(key)) not in (int, float) for key in required[:4])
+                    or type(packet.get('attack_seq')) is not int
+                    or not all(math.isfinite(packet[key]) for key in required[:4])
+                ):
+                    if _network_session_active(generation):
+                        network_events.put(('error', 'Received an invalid player update.'))
+                    return
+                if not _network_session_active(generation):
+                    return
+                network_events.put(('snapshot', packet))
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        if _network_session_active(generation):
+            network_events.put(('error', str(error)))
+    finally:
+        connection.close()
+        if network_connection_socket is connection:
+            network_connection_socket = None
+        if _network_session_active(generation):
+            network_events.put(('disconnected', 'The other player disconnected.'))
+
+
+def process_network_events():
+    global network_connected, network_remote_snapshot, network_status_label
+    global remote_player, remote_attack_sequence
+    while True:
+        try:
+            event, payload = network_events.get_nowait()
+        except queue.Empty:
+            break
+        if event == 'connected':
+            network_connected = True
+            if game_state == 'join_menu':
+                begin_character_selection('multiplayer')
+            elif game_state == 'playing':
+                _create_remote_player()
+            if menu_status_text:
+                menu_status_text.text = f'Connected to {payload}.'
+            if network_status_label:
+                network_status_label.text = 'PLAYER CONNECTED'
+        elif event == 'snapshot':
+            network_remote_snapshot = payload
+            if payload['attack_seq'] != remote_attack_sequence:
+                remote_attack_sequence = payload['attack_seq']
+                _check_remote_attack(payload)
+        elif event == 'disconnected':
+            network_connected = False
+            network_remote_snapshot = None
+            if remote_player:
+                deep_destroy(remote_player)
+                remote_player = None
+            if menu_status_text:
+                menu_status_text.text = payload
+            if network_status_label:
+                network_status_label.text = 'PLAYER DISCONNECTED'
+        elif event == 'error':
+            if menu_status_text:
+                menu_status_text.text = f'Network error: {payload}'
+            if network_status_label:
+                network_status_label.text = f'NETWORK ERROR: {payload}'
+
+
+def _create_remote_player():
+    global remote_player
+    if remote_player or not network_connected:
+        return
+    remote_player = build_puss(is_enemy=True)['root']
+    remote_player.scale = 0.72
+    if network_remote_snapshot:
+        _apply_remote_snapshot(1.0)
+
+
+def _apply_remote_snapshot(dt):
+    if not remote_player or not network_remote_snapshot:
+        return
+    snapshot = network_remote_snapshot
+    target = Vec3(snapshot['x'], snapshot['y'], snapshot['z'])
+    remote_player.position = lerp(remote_player.position, target, min(1.0, dt * 12.0))
+    angle_diff = (snapshot['yaw'] - remote_player.rotation_y + 180) % 360 - 180
+    remote_player.rotation_y += angle_diff * min(1.0, dt * 12.0)
+
+
+def _check_remote_attack(snapshot):
+    if not player or game_state != 'playing' or is_paused:
+        return
+    remote_pos = Vec3(snapshot['x'], snapshot['y'], snapshot['z'])
+    direction = Vec3(
+        math.sin(math.radians(snapshot['yaw'])), 0,
+        math.cos(math.radians(snapshot['yaw'])),
+    )
+    offset = player.position - remote_pos
+    offset.y = 0
+    if offset.length() <= 3.0 and offset.length() > 0.01:
+        if direction.dot(offset.normalized()) > 0.15:
+            apply_damage_to_player(5.0)
+
+
+# =============================================================================
 # 3-PANEL CHARACTER SELECTION UI (Players | Selection | Preview)
 # =============================================================================
 
@@ -709,8 +1405,16 @@ preview_model       = None
 
 def setup_selection_menu():
     global player1_char_text, preview_char_name, preview_pivot
+    global game_state, menu_camera_pivot
 
+    game_state = 'selection'
     # Set selection camera
+    camera.parent = scene
+    if menu_camera_pivot:
+        deep_destroy(menu_camera_pivot)
+        menu_camera_pivot = None
+    camera.clip_plane_far = 75.0
+    camera.fov = 50
     camera.position = (0, 1.2, -6.0)
     camera.rotation = (0, 0, 0)
 
@@ -852,6 +1556,15 @@ def setup_selection_menu():
     btn_choose.on_click = confirm_and_start_game
     selection_ui.extend([choose_border, btn_choose])
 
+    btn_back = Button(
+        text='BACK', color=color.rgb(55/255, 55/255, 65/255),
+        highlight_color=color.rgb(90/255, 90/255, 105/255),
+        text_color=color.white, scale=(0.20, 0.06),
+        position=(0.0, -0.34), text_size=0.9,
+    )
+    btn_back.on_click = return_from_character_selection
+    selection_ui.append(btn_back)
+
     # =========================================================================
     # RIGHT PANEL: CHARACTER PREVIEW  (Red Border Outline ONLY - No Opaque Fill)
     # =========================================================================
@@ -952,6 +1665,24 @@ def confirm_and_start_game():
     start_game(selected_preview_key)
 
 
+def return_from_character_selection():
+    global preview_model, preview_pivot
+    for elem in selection_ui:
+        deep_destroy(elem)
+    selection_ui.clear()
+    if preview_model:
+        deep_destroy(preview_model)
+        preview_model = None
+    if preview_pivot:
+        deep_destroy(preview_pivot)
+        preview_pivot = None
+    if game_mode == 'multiplayer':
+        stop_network_session()
+        show_multiplayer_menu()
+    else:
+        show_singleplayer_menu()
+
+
 # =============================================================================
 # GAME START
 # =============================================================================
@@ -970,11 +1701,22 @@ def start_game(char_key):
     global game_state, selected_char, camera_pivot, current_pivot_height
     global BASE_SPEED, player_damage, player_hp, kills_count, active_bots
     global preview_pivot, preview_model, camera_yaw, camera_pitch
+    global training_dummy, network_status_label, remote_player
+    global match_cheats
+    global easter_egg_progress, easter_egg_active, easter_egg_escape_used
+    global easter_egg_mouse_unlocked
 
     camera_yaw   = 0.0
     camera_pitch = 3.0
+    easter_egg_progress = 0
+    easter_egg_active = False
+    easter_egg_escape_used = False
+    easter_egg_mouse_unlocked = False
 
     selected_char = char_key
+    match_cheats = pending_cheats.copy()
+    pending_cheats.clear()
+    camera.clip_plane_far = 75.0
     cam_cfg = CAMERA_CONFIG.get(char_key, CAMERA_CONFIG['puss'])
     current_pivot_height = cam_cfg['pivot_height']
 
@@ -1018,7 +1760,13 @@ def start_game(char_key):
     body_entity   = result['body']
     weapon_entity = result['weapon']
 
-    player.position = Vec3(0, 0, 0)
+    if game_mode == 'training':
+        player.position = Vec3(0, 0, -8)
+    elif game_mode == 'multiplayer':
+        player.position = Vec3(0, 0, -6 if network_role == 'host' else 6)
+        player.rotation_y = 0 if network_role == 'host' else 180
+    else:
+        player.position = Vec3(0, 0, 0)
 
     # Attach TPP Camera with character-specific pivot height, distance, and field of view
     camera_pivot = Entity(position=player.position + Vec3(0, current_pivot_height, 0))
@@ -1035,10 +1783,30 @@ def start_game(char_key):
         deep_destroy(bot.root)
     active_bots.clear()
 
-    for _ in range(MAX_BOTS):
-        spawn_bot()
+    training_dummy = None
+    if game_mode == 'pve':
+        for _ in range(MAX_BOTS):
+            spawn_bot()
+    elif game_mode == 'training':
+        training_dummy = PussBot(Vec3(0, 0, 0), training_dummy=True)
+        active_bots.append(training_dummy)
 
     build_hud()
+    if game_mode == 'training':
+        network_status_label = Text(
+            parent=camera.ui, text='TRAINING DUMMY: IMMORTAL',
+            origin=(0, 0), scale=1.0, position=(0, 0.43),
+            color=color.rgb(255/255, 220/255, 90/255),
+        )
+    elif game_mode == 'multiplayer':
+        network_status_label = Text(
+            parent=camera.ui,
+            text='PLAYER CONNECTED' if network_connected else 'WAITING FOR PLAYER',
+            origin=(0, 0), scale=0.85, position=(0, 0.43),
+            color=color.rgb(130/255, 230/255, 150/255),
+        )
+        if network_connected:
+            _create_remote_player()
 
 
 # =============================================================================
@@ -1054,7 +1822,12 @@ hud_special_perk    = None
 hud_controls        = None
 hud_whistle_icon    = None
 hud_whistle_cooldown = None
-WHISTLE_ICON_SIZE   = 0.13
+WHISTLE_ICON_SIZE   = 0.17
+HUD_FONT = next(
+    (font_name for font_name in ('GoogleSansPro-Regular.ttf', 'GoogleSans-Regular.ttf')
+     if (current_dir / font_name).is_file()),
+    'OpenSans-Regular.ttf',
+)
 block_indicator     = None
 autoblock_banner    = None
 
@@ -1111,7 +1884,7 @@ def build_hud():
 
     # Dash Status
     hud_dash_text = Text(
-        text   = "DASH [Shift]: Ready",
+        text   = f"DASH [{_format_control_binding(controls['dash'])}]: Ready",
         origin = (-0.5, 0.5),
         scale  = 1.05,
         x      = -0.85,
@@ -1132,16 +1905,30 @@ def build_hud():
     # (Perk text banner removed per request)
 
     hud_controls = Text(
-        text   = "WASD: Move | Space: Jump | Ctrl: Sprint | Shift: Dash | RMB: Block | LMB: Attack"
-                 + (" | F: Whistle" if selected_char == 'death' else ""),
+        text   = (
+            f"{_format_control_binding(controls['forward'])}/"
+            f"{_format_control_binding(controls['backward'])}/"
+            f"{_format_control_binding(controls['left'])}/"
+            f"{_format_control_binding(controls['right'])}: Move | "
+            f"{_format_control_binding(controls['jump'])}: Jump | "
+            f"{_format_control_binding(controls['sprint'])}: Sprint | "
+            f"{_format_control_binding(controls['dash'])}: Dash | "
+            f"{_format_control_binding(controls['block'])}: Block | "
+            f"{_format_control_binding(controls['attack'])}: Attack"
+            + (
+                f" | {_format_control_binding(controls['ability'])}: Whistle"
+                if selected_char == 'death' else ''
+            )
+        ),
         origin = (0, -0.5),
         scale  = 0.85,
         y      = -0.47,
         color  = color.rgb(200/255, 200/255, 200/255),
+        font   = HUD_FONT,
     )
 
     if selected_char == 'death':
-        icon_x, icon_y = 0.84, -0.34
+        icon_x, icon_y = 0.70, -0.36
         hud_whistle_icon = Entity(
             parent   = camera.ui,
             model    = 'quad',
@@ -1163,23 +1950,151 @@ def build_hud():
         )
         update_whistle_hud()
 
-    block_indicator = Text(
-        text   = "[ SHIELD BLOCKING ]",
-        origin = (0, 0),
-        scale  = 2.2,
-        y      = 0.15,
-        color  = color.azure,
-        visible= False,
-    )
 
-    autoblock_banner = Text(
-        text   = "[ ★ 50% AUTO-BLOCKED! ★ ]",
-        origin = (0, 0),
-        scale  = 2.2,
-        y      = 0.22,
-        color  = color.rgb(255/255, 220/255, 50/255),
-        visible= False,
+def activate_easter_egg():
+    """Create the radar and cursor effects after the hidden key sequence."""
+    global easter_egg_active, easter_egg_map_ui
+    global easter_egg_player_marker, easter_egg_bot_markers
+    global easter_egg_cursor
+
+    easter_egg_active = True
+    radar_border = Entity(
+        parent=camera.ui, model='quad',
+        color=color.rgb(35/255, 190/255, 210/255),
+        scale=(0.35, 0.35), position=(-0.78, 0.69, 0.03),
     )
+    radar_panel = Entity(
+        parent=camera.ui, model='quad',
+        color=color.rgba(8/255, 15/255, 24/255, 225/255),
+        scale=(0.34, 0.34), position=(-0.78, 0.69, 0.02),
+    )
+    arena_field = Entity(
+        parent=camera.ui, model='quad',
+        color=color.rgba(25/255, 55/255, 58/255, 220/255),
+        scale=(0.27, 0.20), position=(-0.78, 0.675, 0.01),
+    )
+    radar_title = Text(
+        parent=camera.ui, text='NUKEYES // RADAR',
+        origin=(0, 0), scale=0.72, color=color.cyan,
+        position=(-0.78, 0.815, -0.03),
+    )
+    horizontal_grid = Entity(
+        parent=camera.ui, model='quad',
+        color=color.rgba(110/255, 160/255, 160/255, 100/255),
+        scale=(0.25, 0.002), position=(-0.78, 0.675, 0),
+    )
+    vertical_grid = Entity(
+        parent=camera.ui, model='quad',
+        color=color.rgba(110/255, 160/255, 160/255, 100/255),
+        scale=(0.002, 0.18), position=(-0.78, 0.675, 0),
+    )
+    mode_banner = Entity(
+        parent=camera.ui, model='quad',
+        color=color.rgba(8/255, 15/255, 24/255, 230/255),
+        scale=(0.62, 0.13), position=(0, 0.85, 0.03),
+    )
+    mode_title = Text(
+        parent=camera.ui, text='NUKE MODE ACTIVATED',
+        origin=(0, 0), scale=1.25, color=color.lime,
+        position=(0, 0.87, -0.03),
+    )
+    mode_instructions = Text(
+        parent=camera.ui, text='ESC: UNLOCK MOUSE  |  CLICK: DETONATE',
+        origin=(0, 0), scale=0.72, color=color.white,
+        position=(0, 0.81, -0.03),
+    )
+    easter_egg_map_ui = [
+        radar_border, radar_panel, arena_field, radar_title,
+        horizontal_grid, vertical_grid, mode_banner, mode_title,
+        mode_instructions,
+    ]
+
+    easter_egg_player_marker = Entity(
+        parent=camera.ui, model='circle',
+        color=color.lime, scale=(0.022, 0.022), z=-0.02,
+    )
+    easter_egg_map_ui.append(easter_egg_player_marker)
+    easter_egg_bot_markers = []
+    for _ in range(MAX_BOTS):
+        marker = Entity(
+            parent=camera.ui, model='circle',
+            color=color.rgb(255/255, 75/255, 55/255),
+            scale=(0.016, 0.016), visible=False, z=-0.02,
+        )
+        easter_egg_bot_markers.append(marker)
+        easter_egg_map_ui.append(marker)
+
+    easter_egg_cursor = Entity(
+        parent=camera.ui, model='circle',
+        color=color.rgba(255/255, 75/255, 35/255, 90/255),
+        scale=(0.22, 0.22), position=(0, 0, -0.08), visible=False,
+    )
+    update_easter_egg_map()
+
+
+def update_easter_egg_map():
+    if not easter_egg_active or not easter_egg_player_marker or not player:
+        return
+
+    map_x, map_y = -0.78, 0.675
+
+    def marker_position(world_x, world_z):
+        x = map_x + clamp(world_x / PLATFORM_HALF, -1, 1) * 0.12
+        y = map_y + clamp(world_z / PLATFORM_HALF, -1, 1) * 0.085
+        return (x, y, 0.01)
+
+    easter_egg_player_marker.position = marker_position(player.x, player.z)
+
+    living_bots = [bot for bot in active_bots if not bot.is_dead and bot.root]
+    for marker, bot in zip(easter_egg_bot_markers, living_bots):
+        marker.position = marker_position(bot.root.x, bot.root.z)
+        marker.visible = True
+
+    for marker in easter_egg_bot_markers[len(living_bots):]:
+        marker.visible = False
+
+
+def advance_easter_egg_sequence(key):
+    global easter_egg_progress
+
+    if not isinstance(key, str) or easter_egg_active or len(key) != 1 or not key.isalpha():
+        return
+
+    key = key.lower()
+    if key == EASTER_EGG_SEQUENCE[easter_egg_progress]:
+        easter_egg_progress += 1
+        if easter_egg_progress == len(EASTER_EGG_SEQUENCE):
+            easter_egg_progress = 0
+            activate_easter_egg()
+    else:
+        easter_egg_progress = int(key == EASTER_EGG_SEQUENCE[0])
+
+
+def trigger_easter_egg_blast():
+    """Explode every living bot while leaving the player unharmed."""
+    if not easter_egg_active or game_state != 'playing':
+        return
+
+    blast_flash = Entity(
+        parent=camera.ui, model='circle',
+        color=color.rgba(255/255, 85/255, 25/255, 150/255),
+        scale=(0.08, 0.08), position=(mouse.position[0], mouse.position[1], -0.08),
+    )
+    blast_flash.animate_scale((0.42, 0.42), duration=0.22, curve=curve.out_quad)
+    blast_flash.fade_out(duration=0.22)
+    destroy(blast_flash, delay=0.24)
+
+    for bot in list(active_bots):
+        if bot.is_dead or not bot.root:
+            continue
+        explosion = Entity(
+            model='sphere', color=color.orange, unlit=True,
+            scale=0.15, position=bot.root.position + Vec3(0, 1, 0),
+        )
+        explosion.animate_scale(Vec3(4, 4, 4), duration=0.3, curve=curve.out_quad)
+        explosion.fade_out(duration=0.3)
+        destroy(explosion, delay=0.32)
+        bot.die()
 
 
 def update_hud():
@@ -1207,7 +2122,7 @@ def apply_damage_to_player(amount):
     """Handle damage taken by the player, checking manual block and Death's 50% autoblock."""
     global player_hp, game_state
 
-    if game_state != 'playing' or player_hp <= 0:
+    if game_state != 'playing' or player_hp <= 0 or 'immortal' in match_cheats:
         return
 
     # 1. Manual Block Check (RMB held)
@@ -1267,6 +2182,8 @@ def trigger_game_over():
     game_state = 'game_over'
     mouse.locked  = False
     mouse.visible = True
+    if easter_egg_cursor:
+        easter_egg_cursor.visible = False
 
     t1 = Text(
         text   = "YOU FELL IN BATTLE!",
@@ -1317,10 +2234,11 @@ def respawn_player():
 
 def trigger_attack():
     """Animate weapons and detect melee hits against active Puss Bots."""
-    global is_attacking
+    global is_attacking, network_attack_sequence
     if is_attacking:
         return
     is_attacking = True
+    network_attack_sequence += 1
 
     if selected_char == 'death':
         # Death's dual scissor cleave with BOTH arms
@@ -1390,7 +2308,8 @@ def check_player_attack_hits():
             if facing_dot > 0.15:  # within forward strike cone
                 # Critical hit system: 30% random crit chance OR direct bullseye facing_dot > 0.90
                 is_crit = (random.random() < 0.30) or (facing_dot > 0.90)
-                final_damage = player_damage * 1.8 if is_crit else player_damage
+                damage = player_damage * (1.1 if 'damage' in match_cheats else 1.0)
+                final_damage = damage * 1.8 if is_crit else damage
                 bot.take_damage(final_damage, is_crit=is_crit)
                 if dist > 0.01:
                     bot.root.position += diff.normalized() * (0.75 if is_crit else 0.5)
@@ -1410,6 +2329,8 @@ def show_pause_menu():
     application.paused = True
     mouse.locked  = False
     mouse.visible = True
+    if easter_egg_cursor:
+        easter_egg_cursor.visible = False
 
     # ── Semi-transparent dark backdrop ───────────────────────────────────────
     overlay = Entity(
@@ -1496,7 +2417,7 @@ def show_pause_menu():
 
     # Modern Sapphire Blue Change Character
     make_pause_btn(
-        'CHANGE CHARACTER', -0.07,
+        'MAIN MENU', -0.07,
         color.rgb(30/255, 85/255, 170/255),
         color.rgb(75/255, 170/255, 255/255),
         color.rgb(50/255, 120/255, 215/255),
@@ -1525,14 +2446,15 @@ def hide_pause_menu():
 
     is_paused = False
     application.paused = False
-    mouse.locked  = True
-    mouse.visible = False
+    mouse.locked  = not (easter_egg_active and easter_egg_mouse_unlocked)
+    mouse.visible = not mouse.locked
+    if easter_egg_cursor:
+        easter_egg_cursor.visible = easter_egg_mouse_unlocked
 
 
 def go_to_character_select():
     """
-    Tear down the current gameplay session completely and return to the
-    3-panel character selection screen. Recursively cleans all shapes to eliminate lag.
+    Tear down the current gameplay session and return to the main menu.
     """
     global player, weapon_arm, arm_left, leg_left, leg_right, body_entity
     global leg_back_l, leg_back_r, tail_entity
@@ -1543,6 +2465,10 @@ def go_to_character_select():
     global hud_whistle_icon, hud_whistle_cooldown
     global block_indicator, autoblock_banner, game_over_ui_elems
     global camera_yaw, camera_pitch
+    global easter_egg_progress, easter_egg_active, easter_egg_escape_used
+    global easter_egg_mouse_unlocked, easter_egg_map_ui
+    global easter_egg_player_marker, easter_egg_bot_markers, easter_egg_cursor
+    global training_dummy, network_status_label, remote_player
 
     # 1. Clear game over overlay if present
     for elem in game_over_ui_elems:
@@ -1561,6 +2487,12 @@ def go_to_character_select():
         if hasattr(bot, 'root') and bot.root:
             deep_destroy(bot.root)
     active_bots.clear()
+    training_dummy = None
+
+    if remote_player:
+        deep_destroy(remote_player)
+        remote_player = None
+    stop_network_session()
 
     # 4. Destroy active player model and all attached parts
     if player:
@@ -1594,6 +2526,23 @@ def go_to_character_select():
     hud_dash_text = hud_kills_text = hud_controls = None
     hud_whistle_icon = hud_whistle_cooldown = None
     block_indicator = autoblock_banner = None
+    if network_status_label:
+        deep_destroy(network_status_label)
+        network_status_label = None
+
+    for egg_elem in easter_egg_map_ui:
+        if egg_elem:
+            deep_destroy(egg_elem)
+    easter_egg_map_ui.clear()
+    if easter_egg_cursor:
+        deep_destroy(easter_egg_cursor)
+    easter_egg_player_marker = None
+    easter_egg_bot_markers = []
+    easter_egg_cursor = None
+    easter_egg_progress = 0
+    easter_egg_active = False
+    easter_egg_escape_used = False
+    easter_egg_mouse_unlocked = False
 
     # 7. Reset combat state and camera rotation
     is_blocking  = False
@@ -1609,9 +2558,8 @@ def go_to_character_select():
     mouse.locked    = False
     mouse.visible   = True
 
-    # 9. Re-show the selection screen
-    game_state = 'selection'
-    setup_selection_menu()
+    # 9. Return to the main menu
+    show_main_menu()
 
 
 # =============================================================================
@@ -1660,6 +2608,30 @@ def update_whistle_hud():
 
 def input(key):
     global is_blocking, game_state, y_velocity, is_grounded
+    global easter_egg_escape_used, easter_egg_mouse_unlocked, easter_egg_cursor
+
+    if control_capture_action:
+        _finish_control_remap(key)
+        return
+
+    if cheat_panel_open:
+        global cheat_code_input
+        if key == 'escape':
+            _clear_cheat_panel()
+        elif not cheat_input_focused:
+            return
+        elif key == 'backspace':
+            cheat_code_input = cheat_code_input[:-1]
+            if cheat_panel_input_entity:
+                cheat_panel_input_entity.text = cheat_code_input + '_'
+        elif key in ('enter', 'return'):
+            if cheat_panel_submit_callback:
+                cheat_panel_submit_callback()
+        elif len(key) == 1 and (key.isalnum() or key in '-_'):
+            cheat_code_input += key.lower()
+            if cheat_panel_input_entity:
+                cheat_panel_input_entity.text = cheat_code_input + '_'
+        return
 
     # ── Restart after game-over ───────────────────────────────────────────────
     if game_state == 'game_over' and key == 'r':
@@ -1669,18 +2641,60 @@ def input(key):
     # ── ESC: toggle pause in gameplay, ignore in other states ─────────────────
     if key == 'escape':
         if game_state == 'playing':
+            if easter_egg_active and not easter_egg_escape_used:
+                easter_egg_escape_used = True
+                easter_egg_mouse_unlocked = True
+                mouse.locked = False
+                mouse.visible = True
+                if easter_egg_cursor:
+                    easter_egg_cursor.visible = True
+                return
             if is_paused:
                 hide_pause_menu()
             else:
                 show_pause_menu()
+        elif game_state == 'join_menu':
+            stop_network_session()
+            show_multiplayer_menu()
+        elif game_state == 'host_menu':
+            stop_network_session()
+            show_multiplayer_menu()
+        elif game_state == 'settings_menu':
+            show_main_menu()
+        elif game_state == 'singleplayer_menu':
+            show_play_menu()
+        elif game_state == 'multiplayer_menu':
+            show_play_menu()
+        elif game_state == 'play_menu':
+            show_main_menu()
+        elif game_state == 'selection':
+            return_from_character_selection()
         return          # don't fall through to gameplay keys
+
+    if game_state == 'join_menu':
+        global menu_join_address
+        if key == 'backspace':
+            menu_join_address = menu_join_address[:-1]
+            _refresh_join_address()
+        elif key in ('enter', 'return'):
+            connect_to_host()
+        elif len(key) == 1 and (key.isalnum() or key in '.-:'):
+            menu_join_address += key
+            _refresh_join_address()
+        return
 
     # ── While paused or not in gameplay, ignore everything else ───────────────
     if game_state != 'playing' or is_paused:
         return
 
+    if easter_egg_active and easter_egg_mouse_unlocked and key == 'left mouse down':
+        trigger_easter_egg_blast()
+        return
+
+    advance_easter_egg_sequence(key)
+
     # --- Block (hold RMB) ---
-    if key == 'right mouse down':
+    if key == controls['block']:
         is_blocking = True
         if player:
             player.animate_rotation(Vec3(-6, player.rotation_y, player.rotation_z), duration=0.1)
@@ -1702,7 +2716,12 @@ def input(key):
         if block_indicator:
             block_indicator.visible = True
 
-    if key == 'right mouse up':
+    block_release = (
+        controls['block'][:-4] + 'up'
+        if controls['block'].endswith('down')
+        else f"{controls['block']} up"
+    )
+    if key == block_release:
         is_blocking = False
         if player:
             player.animate_rotation(Vec3(0, player.rotation_y, player.rotation_z), duration=0.1)
@@ -1725,20 +2744,20 @@ def input(key):
             block_indicator.visible = False
 
     # --- Attack (LMB) ---
-    if key == 'left mouse down' and not is_blocking:
+    if key == controls['attack'] and not is_blocking:
         trigger_attack()
 
     # --- Dash (Shift) ---
-    if key == 'shift' and not is_blocking:
+    if key == controls['dash'] and not is_blocking:
         do_dash()
 
     # --- Jump (Space) ---
-    if key == 'space' and is_grounded and not is_blocking:
+    if key == controls['jump'] and is_grounded and not is_blocking:
         y_velocity = JUMP_FORCE
         is_grounded = False
 
     # --- Death's Whistle (F) ---
-    if key == 'f' and selected_char == 'death':
+    if key == controls['ability'] and selected_char == 'death':
         play_death_whistle()
 
 
@@ -1753,7 +2772,8 @@ def do_dash():
 
     dash_cooldown = DASH_COOLDOWN
     forward = player.forward
-    player.position += forward * DASH_FORCE
+    dash_multiplier = 1.3 if 'speed' in match_cheats else 1.0
+    player.position += forward * DASH_FORCE * dash_multiplier
 
 
 # =============================================================================
@@ -1765,8 +2785,26 @@ camera_pitch = 3.0
 def update():
     global dash_cooldown, camera_yaw, camera_pitch, y_velocity, is_grounded, walk_time
     global bot_respawn_timer, _whistle_cooldown, _whistle_remaining
+    global network_local_snapshot
 
     dt = time.dt
+    process_network_events()
+
+    if network_role and player:
+        with network_snapshot_lock:
+            network_local_snapshot = {
+                'x': float(player.x), 'y': float(player.y), 'z': float(player.z),
+                'yaw': float(player.rotation_y), 'attack_seq': network_attack_sequence,
+            }
+
+    if game_state in (
+        'main_menu', 'play_menu', 'singleplayer_menu', 'multiplayer_menu',
+        'settings_menu', 'host_menu', 'join_menu',
+    ):
+        panorama_angle = (time.time() * 0.035) % (2 * math.pi)
+        if menu_camera_pivot:
+            menu_camera_pivot.rotation_y = -math.degrees(panorama_angle)
+        return
 
     # Tick whistle cooldown
     if _whistle_cooldown > 0:
@@ -1783,10 +2821,30 @@ def update():
     if game_state != 'playing' or player is None:
         return
 
+    if network_connected:
+        if not remote_player:
+            _create_remote_player()
+        _apply_remote_snapshot(dt)
+
     # -------------------------------------------------------
     # CAMERA PIVOT FOLLOWS PLAYER
     # -------------------------------------------------------
     camera_pivot.position = player.position + Vec3(0, current_pivot_height, 0)
+    update_easter_egg_map()
+    if easter_egg_mouse_unlocked and easter_egg_cursor:
+        easter_egg_cursor.position = (mouse.position[0], mouse.position[1], -0.08)
+
+    # -------------------------------------------------------
+    # CAMERA ORBIT — mouse look remains available while blocking
+    # -------------------------------------------------------
+    if mouse.locked and camera_pivot:
+        sensitivity  = mouse_sensitivity
+        camera_yaw  += mouse.velocity[0] * sensitivity
+        camera_pitch -= mouse.velocity[1] * sensitivity
+        camera_pitch  = clamp(camera_pitch, -20, 50)
+
+        camera_pivot.rotation_y = camera_yaw
+        camera_pivot.rotation_x = camera_pitch
 
     # -------------------------------------------------------
     # DASH COOLDOWN TIMER
@@ -1796,7 +2854,7 @@ def update():
         if dash_cooldown <= 0:
             dash_cooldown = 0
             if hud_dash_text:
-                hud_dash_text.text  = "DASH [Shift]: Ready"
+                hud_dash_text.text  = f"DASH [{_format_control_binding(controls['dash'])}]: Ready"
                 hud_dash_text.color = color.cyan
         else:
             if hud_dash_text:
@@ -1835,7 +2893,7 @@ def update():
         if bot.is_dead and bot.root not in scene.entities:
             active_bots.remove(bot)
 
-    if len(active_bots) < MAX_BOTS:
+    if game_mode == 'pve' and len(active_bots) < MAX_BOTS:
         bot_respawn_timer -= dt
         if bot_respawn_timer <= 0:
             spawn_bot()
@@ -1856,22 +2914,11 @@ def update():
         return
 
     # -------------------------------------------------------
-    # CAMERA ORBIT — mouse look
-    # -------------------------------------------------------
-    if mouse.locked and camera_pivot:
-        sensitivity  = 40
-        camera_yaw  += mouse.velocity[0] * sensitivity
-        camera_pitch -= mouse.velocity[1] * sensitivity
-        camera_pitch  = clamp(camera_pitch, -20, 50)
-
-        camera_pivot.rotation_y = camera_yaw
-        camera_pivot.rotation_x = camera_pitch
-
-    # -------------------------------------------------------
     # MOVEMENT & INPUT
     # -------------------------------------------------------
-    speed = BASE_SPEED
-    is_sprinting = held_keys['control'] or held_keys['left control']
+    speed = BASE_SPEED * (1.3 if 'speed' in match_cheats else 1.0)
+    sprint_binding = controls['sprint']
+    is_sprinting = held_keys[sprint_binding]
     if is_sprinting:
         speed *= SPRINT_MULT
     if selected_char == 'death' and _whistle_remaining > 0:
@@ -1888,10 +2935,10 @@ def update():
         cam_right = cam_right.normalized()
 
     move_dir = Vec3(0, 0, 0)
-    if held_keys['w']: move_dir += cam_forward
-    if held_keys['s']: move_dir -= cam_forward
-    if held_keys['a']: move_dir -= cam_right
-    if held_keys['d']: move_dir += cam_right
+    if held_keys[controls['forward']]: move_dir += cam_forward
+    if held_keys[controls['backward']]: move_dir -= cam_forward
+    if held_keys[controls['left']]: move_dir -= cam_right
+    if held_keys[controls['right']]: move_dir += cam_right
 
     move_dir.y = 0
     is_moving = move_dir.length() > 0
@@ -1964,8 +3011,8 @@ def update():
 
 
 if __name__ == '__main__':
-    # Initialize 3-Panel Selection Screen
-    setup_selection_menu()
+    # Initialize the main menu and its slowly orbiting arena panorama.
+    show_main_menu()
 
     # =============================================================================
     # RUN
