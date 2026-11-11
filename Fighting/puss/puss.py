@@ -1052,12 +1052,16 @@ hud_dash_text       = None
 hud_kills_text      = None
 hud_special_perk    = None
 hud_controls        = None
+hud_whistle_icon    = None
+hud_whistle_cooldown = None
+WHISTLE_ICON_SIZE   = 0.13
 block_indicator     = None
 autoblock_banner    = None
 
 def build_hud():
     global hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text, hud_dash_text
     global hud_kills_text, hud_special_perk, hud_controls, block_indicator, autoblock_banner
+    global hud_whistle_icon, hud_whistle_cooldown
 
     names = {
         'puss':    'Puss in Boots',
@@ -1128,12 +1132,36 @@ def build_hud():
     # (Perk text banner removed per request)
 
     hud_controls = Text(
-        text   = "WASD: Move | Space: Jump | Ctrl: Sprint | Shift: Dash | RMB: Block | LMB: Attack",
+        text   = "WASD: Move | Space: Jump | Ctrl: Sprint | Shift: Dash | RMB: Block | LMB: Attack"
+                 + (" | F: Whistle" if selected_char == 'death' else ""),
         origin = (0, -0.5),
         scale  = 0.85,
         y      = -0.47,
         color  = color.rgb(200/255, 200/255, 200/255),
     )
+
+    if selected_char == 'death':
+        icon_x, icon_y = 0.84, -0.34
+        hud_whistle_icon = Entity(
+            parent   = camera.ui,
+            model    = 'quad',
+            texture  = 'whistle.png',
+            color    = color.white,
+            scale    = (WHISTLE_ICON_SIZE, WHISTLE_ICON_SIZE),
+            position = (icon_x, icon_y),
+            z        = 0,
+        )
+        hud_whistle_cooldown = Entity(
+            parent   = camera.ui,
+            model    = 'quad',
+            color    = color.black,
+            scale    = (WHISTLE_ICON_SIZE, 0.001),
+            origin   = (0, 0.5),
+            position = (icon_x, icon_y + WHISTLE_ICON_SIZE / 2),
+            z        = -0.01,
+            visible  = False,
+        )
+        update_whistle_hud()
 
     block_indicator = Text(
         text   = "[ SHIELD BLOCKING ]",
@@ -1512,6 +1540,7 @@ def go_to_character_select():
     global pause_ui_elems, is_blocking, is_attacking, walk_time
     global hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text
     global hud_dash_text, hud_kills_text, hud_special_perk, hud_controls
+    global hud_whistle_icon, hud_whistle_cooldown
     global block_indicator, autoblock_banner, game_over_ui_elems
     global camera_yaw, camera_pitch
 
@@ -1556,12 +1585,14 @@ def go_to_character_select():
     # 6. Destroy HUD elements
     for hud_elem in [hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text,
                      hud_dash_text, hud_kills_text, hud_controls,
+                     hud_whistle_icon, hud_whistle_cooldown,
                      block_indicator, autoblock_banner]:
         if hud_elem:
             deep_destroy(hud_elem)
 
     hud_char_name = hud_hp_bar_bg = hud_hp_bar_fill = hud_hp_text = None
     hud_dash_text = hud_kills_text = hud_controls = None
+    hud_whistle_icon = hud_whistle_cooldown = None
     block_indicator = autoblock_banner = None
 
     # 7. Reset combat state and camera rotation
@@ -1611,6 +1642,16 @@ def play_death_whistle():
         arm_left.animate_rotation(Vec3(0, 0, 0), duration=0.15)
     if weapon_arm:
         weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.15)
+    update_whistle_hud()
+
+
+def update_whistle_hud():
+    if not hud_whistle_icon or not hud_whistle_cooldown:
+        return
+
+    cooldown_ratio = clamp(_whistle_cooldown / _WHISTLE_COOLDOWN, 0.0, 1.0)
+    hud_whistle_cooldown.visible = cooldown_ratio > 0
+    hud_whistle_cooldown.scale_y = max(0.001, WHISTLE_ICON_SIZE * cooldown_ratio)
 
 
 # =============================================================================
@@ -1730,6 +1771,7 @@ def update():
     # Tick whistle cooldown
     if _whistle_cooldown > 0:
         _whistle_cooldown = max(0.0, _whistle_cooldown - dt)
+        update_whistle_hud()
     if _whistle_remaining > 0:
         _whistle_remaining = max(0.0, _whistle_remaining - dt)
 
