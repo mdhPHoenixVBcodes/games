@@ -4,6 +4,9 @@
 #  3-Panel Character Selection UI with Live 3D Rotating Preview
 # =============================================================================
 
+import os
+import sys
+from pathlib import Path
 from ursina import *
 import math
 import random
@@ -11,22 +14,31 @@ import random
 # =============================================================================
 # APP INITIALIZATION
 # =============================================================================
-app = Ursina(title="Puss in Boots - 3D Adventure", borderless=False)
+# Check if GLB models exist in current folder or in parent ('games') folder
+current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+parent_dir = current_dir.parent
+if (parent_dir / 'pussface.glb').exists():
+    application.asset_folder = parent_dir
+else:
+    application.asset_folder = current_dir
 
-# Hide debug & entity counters from top-right
+app = Ursina(title="Puss in Boots - 3D Adventure", borderless=False, vsync=True)
+
+# Performance & Render Optimizations
 window.fps_counter.enabled      = False
 window.entity_counter.enabled   = False
 window.collider_counter.enabled = False
 window.exit_button.visible      = True
 
-# Camera optimization: Set render distance / far clip plane for weak laptops
-camera.clip_plane_far  = 90.0
-camera.clip_plane_near = 0.1
+# Camera optimization: Tight clip plane for maximum framerate & zero rendering waste
+camera.clip_plane_far  = 75.0
+camera.clip_plane_near = 0.2
 
 # =============================================================================
 # GLOBAL GAME STATE & STATS
 # =============================================================================
 game_state          = 'selection'   # 'selection' | 'playing' | 'game_over'
+game_over_ui_elems  = []            # Game over UI tracking for clean reset
 player              = None          # Active player entity (root pivot)
 weapon_arm          = None          # Right arm entity / pivot (or mouth stick pivot)
 arm_left            = None          # Left arm entity / pivot (or head pivot)
@@ -129,39 +141,19 @@ def build_puss(is_enemy=False):
     hat_col    = color.black if not is_enemy else color.rgb(45/255, 30/255, 30/255)
     feather_col= color.red if not is_enemy else color.rgb(220/255, 180/255, 20/255)
 
-    # --- Body ---
-    body = Entity(parent=root, model='cube', color=body_col,
-                  scale=(0.7, 0.85, 0.5), position=(0, 0.9, 0))
-    Entity(parent=root, model='cube', color=color.white if not is_enemy else color.rgb(210/255, 210/255, 210/255),
-           scale=(0.35, 0.45, 0.1), position=(0, 0.95, 0.26))
-    Entity(parent=root, model='cube', color=color.black,
-           scale=(0.72, 0.08, 0.52), position=(0, 0.72, 0))
+    # --- Body (Torso & Chest Spheres) ---
+    body = Entity(parent=root, model='sphere', color=body_col,
+                  scale=(0.7, 0.85, 0.55), position=(0, 0.9, 0))
+    Entity(parent=root, model='sphere', color=color.white if not is_enemy else color.rgb(210/255, 210/255, 210/255),
+           scale=(0.38, 0.48, 0.22), position=(0, 0.95, 0.22))
+    Entity(parent=root, model='cylinder', color=color.black,
+           scale=(0.72, 0.08, 0.55), position=(0, 0.72, 0))
 
-    # --- Head ---
-    head = Entity(parent=root, model='sphere', color=body_col,
-                  scale=(0.6, 0.6, 0.6), position=(0, 1.65, 0))
-    Entity(parent=root, model='sphere', color=eye_col,
-           scale=(0.1, 0.1, 0.05), position=(-0.12, 1.68, 0.3))
-    Entity(parent=root, model='sphere', color=eye_col,
-           scale=(0.1, 0.1, 0.05), position=(0.12, 1.68, 0.3))
-    Entity(parent=root, model='sphere', color=color.rgb(240/255, 180/255, 120/255),
-           scale=(0.22, 0.14, 0.12), position=(0, 1.58, 0.32))
-    Entity(parent=root, model='sphere', color=color.rgb(255/255, 100/255, 120/255),
-           scale=(0.07, 0.05, 0.05), position=(0, 1.62, 0.36))
-
-    # --- Ears ---
-    Entity(parent=root, model='cube', color=body_col,
-           scale=(0.12, 0.18, 0.05), position=(-0.2, 1.93, 0), rotation=(0, 0, -20))
-    Entity(parent=root, model='cube', color=body_col,
-           scale=(0.12, 0.18, 0.05), position=(0.2, 1.93, 0), rotation=(0, 0, 20))
-
-    # --- Hat ---
-    Entity(parent=root, model='cube', color=hat_col,
-           scale=(0.8, 0.05, 0.8), position=(0, 1.98, 0))
-    Entity(parent=root, model='cube', color=hat_col,
-           scale=(0.45, 0.3, 0.45), position=(0, 2.12, 0))
-    Entity(parent=root, model='cube', color=feather_col,
-           scale=(0.04, 0.25, 0.04), position=(0.2, 2.32, 0), rotation=(0, 0, -30))
+    # --- Head (3D Face Model only — Centered & Straightened) ---
+    face = Entity(parent=root, model='pussface.glb',
+                  scale=1.15, position=(0.17, 1.65, 0.05), rotation=(0, 0, -10))
+    if is_enemy:
+        face.color = color.rgb(210/255, 110/255, 60/255)
 
     # --- Left Leg ---
     leg_l = Entity(parent=root, position=(-0.22, 0.7, 0))
@@ -216,47 +208,17 @@ def build_kitty():
     """Procedurally build Kitty Softpaws from primitives."""
     root = Entity()
 
-    # --- Body ---
-    body = Entity(parent=root, model='cube', color=color.black,
-                  scale=(0.65, 0.8, 0.48), position=(0, 0.9, 0))
-    Entity(parent=root, model='cube', color=color.white,
-           scale=(0.28, 0.42, 0.08), position=(0, 0.96, 0.25))
-    Entity(parent=root, model='cube', color=color.rgb(120/255, 80/255, 40/255),
-           scale=(0.67, 0.07, 0.5), position=(0, 0.72, 0))
+    # --- Body (Torso & Chest Spheres) ---
+    body = Entity(parent=root, model='sphere', color=color.black,
+                  scale=(0.65, 0.8, 0.52), position=(0, 0.9, 0))
+    Entity(parent=root, model='sphere', color=color.white,
+           scale=(0.32, 0.45, 0.20), position=(0, 0.96, 0.22))
+    Entity(parent=root, model='cylinder', color=color.rgb(120/255, 80/255, 40/255),
+           scale=(0.67, 0.07, 0.52), position=(0, 0.72, 0))
 
-    # --- Head ---
-    head = Entity(parent=root, model='sphere', color=color.black,
-                  scale=(0.55, 0.55, 0.55), position=(0, 1.6, 0))
-    Entity(parent=root, model='sphere', color=color.white,
-           scale=(0.22, 0.14, 0.14), position=(0, 1.51, 0.22))
-    Entity(parent=root, model='sphere', color=color.rgb(255/255, 120/255, 150/255),
-           scale=(0.06, 0.05, 0.05), position=(0, 1.56, 0.28))
-    Entity(parent=root, model='sphere', color=color.white,
-           scale=(0.07, 0.12, 0.04), position=(0, 1.76, 0.24))
-    Entity(parent=root, model='sphere', color=color.white,
-           scale=(0.07, 0.06, 0.04), position=(-0.16, 1.54, 0.21))
-    Entity(parent=root, model='sphere', color=color.white,
-           scale=(0.07, 0.06, 0.04), position=(0.16, 1.54, 0.21))
-
-    # --- Eyes ---
-    Entity(parent=root, model='sphere', color=color.rgb(30/255, 210/255, 110/255),
-           scale=(0.11, 0.11, 0.06), position=(-0.11, 1.65, 0.24))
-    Entity(parent=root, model='sphere', color=color.black,
-           scale=(0.04, 0.08, 0.04), position=(-0.11, 1.65, 0.27))
-    Entity(parent=root, model='sphere', color=color.rgb(30/255, 210/255, 110/255),
-           scale=(0.11, 0.11, 0.06), position=(0.11, 1.65, 0.24))
-    Entity(parent=root, model='sphere', color=color.black,
-           scale=(0.04, 0.08, 0.04), position=(0.11, 1.65, 0.27))
-
-    # --- Ears ---
-    Entity(parent=root, model='cube', color=color.black,
-           scale=(0.11, 0.16, 0.04), position=(-0.18, 1.88, 0), rotation=(0, 0, -15))
-    Entity(parent=root, model='cube', color=color.rgb(255/255, 160/255, 180/255),
-           scale=(0.06, 0.1, 0.03), position=(-0.18, 1.88, 0.02), rotation=(0, 0, -15))
-    Entity(parent=root, model='cube', color=color.black,
-           scale=(0.11, 0.16, 0.04), position=(0.18, 1.88, 0), rotation=(0, 0, 15))
-    Entity(parent=root, model='cube', color=color.rgb(255/255, 160/255, 180/255),
-           scale=(0.06, 0.1, 0.03), position=(0.18, 1.88, 0.02), rotation=(0, 0, 15))
+    # --- Head (3D Face Model only) ---
+    face = Entity(parent=root, model='kittyface.glb',
+                  scale=0.62, position=(0, 1.44, 0.04))
 
     # --- Tail ---
     Entity(parent=root, model='cube', color=color.dark_gray,
@@ -312,28 +274,28 @@ def build_death():
     root = Entity()
 
     # =========================================================================
-    # TORSO: ABDOMEN & CHEST
+    # TORSO: ABDOMEN & CHEST (Spherical Anatomy)
     # =========================================================================
-    # --- Abdomen (Lower Torso) ---
-    abdomen = Entity(parent=root, model='cube', color=color.rgb(180/255, 180/255, 188/255),
-                     scale=(0.82, 0.46, 0.54), position=(0, 1.28, 0))
+    # --- Abdomen (Lower Torso Sphere) ---
+    abdomen = Entity(parent=root, model='sphere', color=color.rgb(180/255, 180/255, 188/255),
+                     scale=(0.86, 0.54, 0.58), position=(0, 1.28, 0))
     # Belt & Buckle
-    Entity(parent=root, model='cube', color=color.rgb(55/255, 42/255, 32/255),
+    Entity(parent=root, model='cylinder', color=color.rgb(55/255, 42/255, 32/255),
            scale=(0.88, 0.16, 0.58), position=(0, 1.08, 0))
     Entity(parent=root, model='cube', color=color.rgb(210/255, 175/255, 60/255),
            scale=(0.22, 0.18, 0.10), position=(0, 1.08, 0.29))
 
-    # --- Chest (Upper Torso - Muscular & Broad) ---
-    chest = Entity(parent=root, model='cube', color=color.rgb(215/255, 215/255, 222/255),
-                   scale=(1.08, 0.68, 0.66), position=(0, 1.74, 0.02))
+    # --- Chest (Upper Torso - Muscular & Broad Spheres) ---
+    chest = Entity(parent=root, model='sphere', color=color.rgb(215/255, 215/255, 222/255),
+                   scale=(1.12, 0.76, 0.70), position=(0, 1.74, 0.02))
     # Pectorals & Sternum Plate
-    Entity(parent=root, model='cube', color=color.rgb(235/255, 235/255, 242/255),
-           scale=(0.78, 0.50, 0.14), position=(0, 1.74, 0.34))
+    Entity(parent=root, model='sphere', color=color.rgb(235/255, 235/255, 242/255),
+           scale=(0.82, 0.54, 0.25), position=(0, 1.74, 0.30))
     # Side Rib Definition
-    Entity(parent=root, model='cube', color=color.rgb(175/255, 175/255, 182/255),
-           scale=(0.12, 0.52, 0.60), position=(-0.52, 1.72, 0.02))
-    Entity(parent=root, model='cube', color=color.rgb(175/255, 175/255, 182/255),
-           scale=(0.12, 0.52, 0.60), position=(0.52, 1.72, 0.02))
+    Entity(parent=root, model='sphere', color=color.rgb(175/255, 175/255, 182/255),
+           scale=(0.35, 0.56, 0.60), position=(-0.46, 1.72, 0.02))
+    Entity(parent=root, model='sphere', color=color.rgb(175/255, 175/255, 182/255),
+           scale=(0.35, 0.56, 0.60), position=(0.46, 1.72, 0.02))
 
     # --- Tattered Shroud / Cloak ---
     Entity(parent=root, model='cube', color=color.rgb(26/255, 26/255, 32/255),
@@ -347,24 +309,12 @@ def build_death():
     # HEAD, SNOUT & HOOD
     # =========================================================================
     # Muscular Wolf Neck
-    Entity(parent=root, model='cube', color=color.rgb(205/255, 205/255, 212/255),
-           scale=(0.50, 0.38, 0.50), position=(0, 2.18, 0))
+    Entity(parent=root, model='sphere', color=color.rgb(205/255, 205/255, 212/255),
+           scale=(0.54, 0.42, 0.54), position=(0, 2.18, 0))
 
-    # Head
-    head = Entity(parent=root, model='sphere', color=color.rgb(228/255, 228/255, 235/255),
-                  scale=(0.76, 0.82, 0.76), position=(0, 2.54, 0))
-    # Snout / Muzzle
-    Entity(parent=root, model='cube', color=color.rgb(200/255, 200/255, 208/255),
-           scale=(0.36, 0.26, 0.52), position=(0, 2.44, 0.48))
-    # Black Nose
-    Entity(parent=root, model='sphere', color=color.black,
-           scale=(0.13, 0.11, 0.11), position=(0, 2.49, 0.74))
-
-    # Glowing Red Eyes
-    Entity(parent=root, model='sphere', color=color.red,
-           scale=(0.16, 0.16, 0.10), position=(-0.16, 2.62, 0.38))
-    Entity(parent=root, model='sphere', color=color.red,
-           scale=(0.16, 0.16, 0.10), position=(0.16, 2.62, 0.38))
+    # Head (3D Face Model only — larger and straightened)
+    face = Entity(parent=root, model='deathface.glb',
+                  scale=1.30, position=(-0.06, 2.54, 0.06), rotation=(0, 0, -4))
 
     # Wolf Ears
     Entity(parent=root, model='cube', color=color.rgb(220/255, 220/255, 228/255),
@@ -516,12 +466,12 @@ def build_perrito():
 
     # --- Torso (Quadruped Dog Body with Hand-Knit Sweater) ---
     body = Entity(parent=root, position=(0, 0.45, 0))
-    # Sweater body (horizontal rounded oval)
+    # Sweater body (horizontal rounded oval sphere)
     Entity(parent=body, model='sphere', color=C_TEAL_SWEATER, scale=(0.44, 0.40, 0.72))
     # White collar at front of sweater
     Entity(parent=body, model='sphere', color=C_WHITE, scale=(0.40, 0.38, 0.16), position=(0, 0.08, 0.32))
     # Sweater ribbing hem
-    Entity(parent=body, model='cube', color=color.rgb(45/255, 120/255, 130/255), scale=(0.46, 0.05, 0.70), position=(0, -0.02, 0))
+    Entity(parent=body, model='cylinder', color=color.rgb(45/255, 120/255, 130/255), scale=(0.46, 0.05, 0.70), position=(0, -0.02, 0))
 
     # --- Tail (Happy Wagging Tail at rear) ---
     tail_pivot = Entity(parent=root, position=(0, 0.52, -0.36), rotation=(35, 0, 0))
@@ -551,27 +501,10 @@ def build_perrito():
     Entity(parent=leg_br, model='cube', color=C_TAN, scale=(0.11, 0.28, 0.11), position=(0, -0.14, 0))
     Entity(parent=leg_br, model='sphere', color=C_WHITE, scale=(0.12, 0.08, 0.14), position=(0, -0.28, 0.03))
 
-    # --- Head & Floppy Ears ---
-    head = Entity(parent=root, position=(0, 0.74, 0.40))
-    Entity(parent=head, model='sphere', color=C_TAN, scale=(0.48, 0.44, 0.46))
-    # White muzzle
-    Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.34, 0.24, 0.36), position=(0, -0.07, 0.28))
-    # Black button nose
-    Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.11, 0.09, 0.10), position=(0, -0.01, 0.46))
-    # Pink tongue peek
-    Entity(parent=head, model='cube', color=color.rgb(240/255, 110/255, 130/255), scale=(0.08, 0.03, 0.10), position=(0, -0.14, 0.40))
-
-    # Big Expressive Eyes
-    for sx in (-0.13, 0.13):
-        Entity(parent=head, model='sphere', color=C_WHITE, scale=(0.15, 0.17, 0.10), position=(sx, 0.08, 0.32))
-        Entity(parent=head, model='sphere', color=C_DARK_BROWN, scale=(0.11, 0.13, 0.08), position=(sx, 0.08, 0.36))
-        Entity(parent=head, model='sphere', color=C_BLACK, scale=(0.07, 0.09, 0.06), position=(sx, 0.08, 0.38))
-        Entity(parent=head, model='sphere', color=color.white, scale=(0.03, 0.04, 0.03), position=(sx + 0.02, 0.11, 0.40))
-
-    # Long Floppy Brown Ears (drooping down like the movie)
-    for sx, rot_z in ((-0.25, 18), (0.25, -18)):
-        ear = Entity(parent=head, position=(sx, 0.10, -0.05), rotation=(15, 0, rot_z))
-        Entity(parent=ear, model='cube', color=C_DARK_BROWN, scale=(0.14, 0.38, 0.10), position=(0, -0.14, 0))
+    # --- Head (3D Face Model only) & Floppy Ears ---
+    head = Entity(parent=root, position=(0, 0.65, 0.28))
+    face = Entity(parent=head, model='perritoface.glb',
+                  scale=0.62, position=(0.08, 0, 0.04), rotation=(0, 0, -5))
 
     # --- Wooden Stick Sword Held Horizontally Across Muzzle ---
     # Clamped crosswise in teeth across his muzzle (left-to-right along X-axis), NOT sticking out forward!
@@ -633,7 +566,7 @@ class PussBot:
                                   scale=(0.96, 0.7, 1.0), position=(0, 0, -0.05))
 
     def update_ai(self, dt, target_pos):
-        if self.is_dead:
+        if self.is_dead or not self.root:
             return
 
         # Fall-off platform detection for bots!
@@ -675,7 +608,7 @@ class PussBot:
         self.is_attacking = True
         self.cooldown_timer = self.attack_cooldown
 
-        if self.weapon_arm:
+        if self.weapon_arm and self.root:
             self.weapon_arm.animate_rotation(Vec3(-35, -20, 10), duration=0.1, curve=curve.linear)
             self.weapon_arm.animate_position(Vec3(self.weapon_arm.x, self.weapon_arm.y, 0.35), duration=0.1)
 
@@ -683,14 +616,14 @@ class PussBot:
         invoke(self.reset_attack, delay=0.25)
 
     def reset_attack(self):
-        if self.weapon_arm and not self.is_dead:
+        if self.weapon_arm and not self.is_dead and self.root:
             self.weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.12, curve=curve.linear)
             self.weapon_arm.animate_position(Vec3(self.weapon_arm.x, self.weapon_arm.y, 0.0), duration=0.12)
         self.is_attacking = False
 
     def hit_check(self):
         global player_hp
-        if self.is_dead or player is None or game_state != 'playing':
+        if self.is_dead or not self.root or player is None or game_state != 'playing':
             return
 
         diff = player.position - self.root.position
@@ -698,24 +631,41 @@ class PussBot:
         if diff.length() <= (self.attack_range + 0.6):
             apply_damage_to_player(5.0)
 
-    def take_damage(self, amount):
-        if self.is_dead:
+    def take_damage(self, amount, is_crit=False):
+        if self.is_dead or not self.root:
             return
         self.hp -= amount
 
+        # Flash red on hit
         for child in self.root.children:
             if hasattr(child, 'color'):
-                child.blink(color.red, duration=0.15)
+                child.blink(color.red, duration=0.12)
 
         pct = max(0.0, self.hp / self.max_hp)
-        self.hp_bar_fill.scale_x = max(0.01, pct * 0.96)
-        self.hp_bar_fill.x = -(1.0 - pct) * 0.48
+        if hasattr(self, 'hp_bar_fill') and self.hp_bar_fill:
+            self.hp_bar_fill.scale_x = max(0.01, pct * 0.96)
+            self.hp_bar_fill.x = -(1.0 - pct) * 0.48
 
-        dmg_txt = Text(text=f"-{int(amount)}%", position=self.root.position + Vec3(0, 2.7, 0),
-                       color=color.yellow, scale=1.5, billboard=True)
-        dmg_txt.animate_position(dmg_txt.position + Vec3(0, 0.8, 0), duration=0.4)
-        dmg_txt.fade_out(duration=0.4)
-        destroy(dmg_txt, delay=0.45)
+        # Fortnite-style Pop-up Damage Numbers (Yellow for regular, Red with ! for Crits)
+        txt_str = f"{int(amount)}!" if is_crit else f"{int(amount)}"
+        txt_col = color.rgb(255/255, 40/255, 40/255) if is_crit else color.rgb(255/255, 220/255, 30/255)
+        base_scale = 2.4 if is_crit else 1.6
+
+        # Random horizontal jitter so multiple consecutive hits don't overlap
+        offset = Vec3(random.uniform(-0.35, 0.35), 2.2 + random.uniform(0.0, 0.35), random.uniform(-0.35, 0.35))
+        dmg_txt = Text(
+            text=txt_str,
+            position=self.root.position + offset,
+            color=txt_col,
+            scale=base_scale,
+            billboard=True,
+            origin=(0, 0)
+        )
+        # Fortnite floating bounce animation: pop scale then float up and fade out
+        dmg_txt.animate_scale(base_scale * 1.35, duration=0.10, curve=curve.out_back)
+        dmg_txt.animate_position(dmg_txt.position + Vec3(random.uniform(-0.25, 0.25), 0.95, 0), duration=0.45, curve=curve.out_quad)
+        dmg_txt.fade_out(duration=0.35, delay=0.14)
+        destroy(dmg_txt, delay=0.50)
 
         if self.hp <= 0:
             self.die()
@@ -726,25 +676,26 @@ class PussBot:
         kills_count += 1
         update_hud()
 
-        self.root.animate_scale(Vec3(0.01, 0.01, 0.01), duration=0.3, curve=curve.linear)
-        destroy(self.root, delay=0.35)
+        if self.root:
+            self.root.animate_scale(Vec3(0.01, 0.01, 0.01), duration=0.3, curve=curve.linear)
+            destroy(self.root, delay=0.35)
 
 
 def spawn_bot():
-    """Spawn a Puss Bot at a safe perimeter around player strictly within platform bounds."""
+    """Spawn a Puss Bot at a safe perimeter around player strictly within platform bounds at ground height y=0."""
     if player is None:
         return
     for _ in range(12):
         angle = random.uniform(0, math.pi * 2)
         dist  = random.uniform(14.0, 22.0)
-        spawn_pos = player.position + Vec3(math.cos(angle) * dist, 0, math.sin(angle) * dist)
+        spawn_pos = Vec3(player.position.x + math.cos(angle) * dist, 0.0, player.position.z + math.sin(angle) * dist)
         if abs(spawn_pos.x) < (PLATFORM_HALF - 5.0) and abs(spawn_pos.z) < (PLATFORM_HALF - 5.0):
             bot = PussBot(spawn_pos)
             active_bots.append(bot)
             return
     rx = random.uniform(-PLATFORM_HALF + 8.0, PLATFORM_HALF - 8.0)
     rz = random.uniform(-PLATFORM_HALF + 8.0, PLATFORM_HALF - 8.0)
-    bot = PussBot(Vec3(rx, 0, rz))
+    bot = PussBot(Vec3(rx, 0.0, rz))
     active_bots.append(bot)
 
 
@@ -954,7 +905,7 @@ def select_preview_character(char_key):
     preview_model.parent = preview_pivot
     preview_model.position = Vec3(0, 0, 0)
     if char_key == 'death':
-        preview_model.scale = Vec3(0.58, 0.58, 0.58)
+        preview_model.scale = Vec3(0.68, 0.68, 0.68)
     elif char_key == 'perrito':
         preview_model.scale = Vec3(0.85, 0.85, 0.85)
     else:
@@ -1021,7 +972,10 @@ def start_game(char_key):
     global leg_back_l, leg_back_r, tail_entity
     global game_state, selected_char, camera_pivot, current_pivot_height
     global BASE_SPEED, player_damage, player_hp, kills_count, active_bots
-    global preview_pivot, preview_model
+    global preview_pivot, preview_model, camera_yaw, camera_pitch
+
+    camera_yaw   = 0.0
+    camera_pitch = 3.0
 
     selected_char = char_key
     cam_cfg = CAMERA_CONFIG.get(char_key, CAMERA_CONFIG['puss'])
@@ -1264,10 +1218,10 @@ def trigger_autoblock_effect():
 
     if arm_left:
         arm_left.animate_rotation(Vec3(25, 45, -20), duration=0.08)
-        invoke(lambda: arm_left.animate_rotation(Vec3(0, 0, 0), duration=0.1), delay=0.15)
+        invoke(lambda: arm_left.animate_rotation(Vec3(0, 0, 0), duration=0.1) if arm_left else None, delay=0.15)
     if weapon_arm:
         weapon_arm.animate_rotation(Vec3(25, -45, 20), duration=0.08)
-        invoke(lambda: weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.1), delay=0.15)
+        invoke(lambda: weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.1) if weapon_arm else None, delay=0.15)
 
 
 def hide_autoblock_banner():
@@ -1279,28 +1233,31 @@ def show_block_spark():
     """Visual indicator for manual parry."""
     if block_indicator:
         block_indicator.color = color.yellow
-        invoke(lambda: setattr(block_indicator, 'color', color.azure), delay=0.15)
+        invoke(lambda: setattr(block_indicator, 'color', color.azure) if block_indicator else None, delay=0.15)
 
 
 def trigger_game_over():
-    """Display Game Over screen."""
-    global game_state
+    """Display Game Over screen and unlock mouse for clean interaction."""
+    global game_state, game_over_ui_elems
     game_state = 'game_over'
+    mouse.locked  = False
+    mouse.visible = True
 
-    Text(
+    t1 = Text(
         text   = "YOU FELL IN BATTLE!",
         origin = (0, 0),
         scale  = 3,
         y      = 0.1,
         color  = color.red,
     )
-    Text(
+    t2 = Text(
         text   = f"Total Bots Defeated: {kills_count}\nPress [R] to Restart",
         origin = (0, 0),
         scale  = 1.5,
         y      = -0.05,
         color  = color.white,
     )
+    game_over_ui_elems.extend([t1, t2])
 
 
 def respawn_player():
@@ -1406,9 +1363,12 @@ def check_player_attack_hits():
                 facing_dot = 1.0
 
             if facing_dot > 0.15:  # within forward strike cone
-                bot.take_damage(player_damage)
+                # Critical hit system: 30% random crit chance OR direct bullseye facing_dot > 0.90
+                is_crit = (random.random() < 0.30) or (facing_dot > 0.90)
+                final_damage = player_damage * 1.8 if is_crit else player_damage
+                bot.take_damage(final_damage, is_crit=is_crit)
                 if dist > 0.01:
-                    bot.root.position += diff.normalized() * 0.5
+                    bot.root.position += diff.normalized() * (0.75 if is_crit else 0.5)
 
 
 # =============================================================================
@@ -1555,22 +1515,28 @@ def go_to_character_select():
     global pause_ui_elems, is_blocking, is_attacking, walk_time
     global hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text
     global hud_dash_text, hud_kills_text, hud_special_perk, hud_controls
-    global block_indicator, autoblock_banner
+    global block_indicator, autoblock_banner, game_over_ui_elems
+    global camera_yaw, camera_pitch
 
-    # 1. Clear pause overlay
+    # 1. Clear game over overlay if present
+    for elem in game_over_ui_elems:
+        deep_destroy(elem)
+    game_over_ui_elems.clear()
+
+    # 2. Clear pause overlay
     for elem in pause_ui_elems:
         deep_destroy(elem)
     pause_ui_elems.clear()
     is_paused = False
     application.paused = False
 
-    # 2. Destroy all active bots and their shapes
+    # 3. Destroy all active bots and their shapes
     for bot in list(active_bots):
         if hasattr(bot, 'root') and bot.root:
             deep_destroy(bot.root)
     active_bots.clear()
 
-    # 3. Destroy active player model and all attached parts
+    # 4. Destroy active player model and all attached parts
     if player:
         deep_destroy(player)
         player = None
@@ -1585,12 +1551,12 @@ def go_to_character_select():
     body_entity = None
     weapon_entity = None
 
-    # 4. Destroy camera pivot
+    # 5. Destroy camera pivot
     if camera_pivot:
         deep_destroy(camera_pivot)
         camera_pivot = None
 
-    # 5. Destroy HUD elements
+    # 6. Destroy HUD elements
     for hud_elem in [hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text,
                      hud_dash_text, hud_kills_text, hud_controls,
                      block_indicator, autoblock_banner]:
@@ -1601,19 +1567,21 @@ def go_to_character_select():
     hud_dash_text = hud_kills_text = hud_controls = None
     block_indicator = autoblock_banner = None
 
-    # 6. Reset combat state
+    # 7. Reset combat state and camera rotation
     is_blocking  = False
     is_attacking = False
     walk_time    = 0.0
+    camera_yaw   = 0.0
+    camera_pitch = 3.0
 
-    # 7. Reset camera to menu position
+    # 8. Reset camera to menu position
     camera.parent   = scene
     camera.position = (0, 1.2, -6.0)
     camera.rotation = (0, 0, 0)
     mouse.locked    = False
     mouse.visible   = True
 
-    # 8. Re-show the selection screen
+    # 9. Re-show the selection screen
     game_state = 'selection'
     setup_selection_menu()
 
@@ -1627,8 +1595,7 @@ def input(key):
 
     # ── Restart after game-over ───────────────────────────────────────────────
     if game_state == 'game_over' and key == 'r':
-        import sys, os
-        os.execv(sys.executable, ['python'] + sys.argv)
+        go_to_character_select()
         return
 
     # ── ESC: toggle pause in gameplay, ignore in other states ─────────────────
@@ -1795,8 +1762,9 @@ def update():
             spawn_bot()
             bot_respawn_timer = 1.2
 
-    for bot in active_bots:
-        bot.update_ai(dt, player.position)
+    for bot in list(active_bots):
+        if not bot.is_dead and bot.root:
+            bot.update_ai(dt, player.position)
 
     # -------------------------------------------------------
     # BLOCK — disable horizontal movement
@@ -1811,7 +1779,7 @@ def update():
     # -------------------------------------------------------
     # CAMERA ORBIT — mouse look
     # -------------------------------------------------------
-    if mouse.locked:
+    if mouse.locked and camera_pivot:
         sensitivity  = 40
         camera_yaw  += mouse.velocity[0] * sensitivity
         camera_pitch -= mouse.velocity[1] * sensitivity
@@ -1824,7 +1792,7 @@ def update():
     # MOVEMENT & INPUT
     # -------------------------------------------------------
     speed = BASE_SPEED
-    is_sprinting = held_keys['control']
+    is_sprinting = held_keys['control'] or held_keys['left control']
     if is_sprinting:
         speed *= SPRINT_MULT
 
@@ -1914,10 +1882,11 @@ def update():
                 if weapon_arm: weapon_arm.rotation = Vec3(0, 0, 0)
 
 
-# Initialize 3-Panel Selection Screen
-setup_selection_menu()
+if __name__ == '__main__':
+    # Initialize 3-Panel Selection Screen
+    setup_selection_menu()
 
-# =============================================================================
-# RUN
-# =============================================================================
-app.run()
+    # =============================================================================
+    # RUN
+    # =============================================================================
+    app.run()

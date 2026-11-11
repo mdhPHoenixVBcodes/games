@@ -299,15 +299,16 @@ scream_sound7 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
 scream_sound8 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
 scream_sound9 = Audio('sfx/scream.mp3', loop=False, autoplay=False, volume=7.0)
 
-# --- RENDER DISTANCE (OPTIMIZATION) ---
-camera.clip_plane_far = 25 # <--- Reduced to 20 for maximum performance!
+# --- RENDER DISTANCE & ATMOSPHERE (OPTIMIZATION) ---
+camera.clip_plane_far = 40          # hard cutoff: nothing beyond 40 units is drawn
 
-# --- ATMOSPHERE ---
-window.color = color.black
+def set_env(sky):
+    window.color = sky               # background colour = sky colour
+    scene.fog_color = sky            # fog colour matches the sky exactly
+    scene.fog_density = (10, 36)     # linear fog: starts at 10 units, fully opaque at 36
+
+set_env(color.black)
 Sky(color=color.black)
-# Increased fog density so the 20-unit cutoff is hidden by thick mist
-scene.fog_density = 0.15
-scene.fog_color = color.black
 
 # --- THE ENVIRONMENT ---
 ground = Entity(
@@ -455,7 +456,12 @@ def play_land_anim(name):
 
 # --- DENSE FOREST GENERATION ---
 # We will generate hundreds of trees to make it a dense forest
+tree_entities = []
 tree_positions = []
+TREE_RENDER_DIST = 38.0  # Trees further than 38 units are disabled (hidden in fog)
+TREE_RENDER_DIST_SQ = TREE_RENDER_DIST * TREE_RENDER_DIST
+tree_cull_timer = 0.0
+
 for i in range(400):
     tx = random.uniform(-90, 90)
     tz = random.uniform(-90, 90)
@@ -483,7 +489,7 @@ for i in range(400):
     )
     tree_positions.append((tx, tz))
     
-# Dark, shadowy leaves at the top
+    # Dark, shadowy leaves at the top
     leaves = Entity(
         parent=tree,
         model='sphere',
@@ -491,6 +497,7 @@ for i in range(400):
         scale=(3, 0.6, 3), # Scale is relative to the parent trunk
         y=0.4 # Positioned near the top
     )
+    tree_entities.append(tree)
 
 # Pathfinding grid settings.
 GRID_SIZE = 4
@@ -1555,10 +1562,20 @@ def update():
     global monster_path, path_repath_timer, monster_run_phase, stamina_rest_timer, stamina_flash_timer, spawn_protection_timer
     global player_stamina, player_health, player_attack_cooldown, jumpscare_timer, jumpscare_active, jumpscare_armed, remote_player_health, jumpscare_phase
     global monster_search_mode, monster_search_timer, monster_search_repath_timer, monster_search_target, monster_last_seen_pos, monster_search_radius
-    global fly_mode, fly_exit_protection_timer, compass_update_timer, send_jumpscare_trigger
+    global fly_mode, fly_exit_protection_timer, compass_update_timer, send_jumpscare_trigger, tree_cull_timer
 
     if game_over:
         return
+
+    # Dynamic Tree Culling: Hide/destroy trees when out of render distance/in thick fog, and show when closer
+    tree_cull_timer += time.dt
+    if tree_cull_timer >= 0.15:
+        tree_cull_timer = 0.0
+        px = player.x
+        pz = player.z
+        for t in tree_entities:
+            dist_sq = (t.x - px) * (t.x - px) + (t.z - pz) * (t.z - pz)
+            t.enabled = (dist_sq <= TREE_RENDER_DIST_SQ)
 
     # Update compass dial and friend location tracker every 0.5 seconds
     compass_update_timer += time.dt
