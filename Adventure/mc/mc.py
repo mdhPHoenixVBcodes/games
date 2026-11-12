@@ -3344,7 +3344,6 @@ def main():
         world.find_safe_spawn(player)
 
     scroll_x, scroll_y = 0, player.rect.centery - SCREEN_HEIGHT // 2
-    target_mode = 0
     auto_save_timer = 0
     save_msg_timer = 0
     save_msg_text = "Game Saved!"
@@ -3571,7 +3570,6 @@ def main():
                                     update_crafting(player)
                             if moved:
                                 continue
-                    target_mode = (target_mode + 1) % 5
                 if event.key == pygame.K_q: 
                     if save_game(world, player, save_filename):
                         save_msg_timer = 120
@@ -3618,6 +3616,15 @@ def main():
                             slot["count"] -= 1
                             if slot["count"] <= 0:
                                 player.inventory[player.selected_slot] = None
+
+            if (
+                event.type == pygame.MOUSEWHEEL
+                and not player.show_inventory
+                and sleep_anim_timer == 0
+                and sleep_wake_timer == 0
+                and event.y != 0
+            ):
+                player.selected_slot = (player.selected_slot - event.y) % 9
             
             if player.show_inventory:
                 if event.type == pygame.MOUSEBUTTONDOWN:
@@ -3636,42 +3643,40 @@ def main():
 
         if player.show_inventory:
             # Skip world interaction
-            valid_targets = []
+            mining_targets = []
+            mouse_target = None
             m_btns = [False, False, False]
         else:
             px, py = player.rect.centerx // TILE_SIZE, player.rect.centery // TILE_SIZE
-            # Improved targeting logic for multiple targets
-            if target_mode == 0: # Front (Mid)
-                targets = [(px + player.direction, py)]
-            elif target_mode == 1: # Front (Top)
-                targets = [(px + player.direction, player.rect.top // TILE_SIZE)]
-            elif target_mode == 2: # Down (Towering)
-                targets = [(px, (player.rect.bottom + 28) // TILE_SIZE)]
-            elif target_mode == 3: # Up
-                targets = [(px, (player.rect.top - 20) // TILE_SIZE)]
-            else: # Mining (Both Head and Leg)
-                tx = px + player.direction
-                targets = [(tx, player.rect.top // TILE_SIZE), (tx, py)]
-
-            valid_targets = []
-            for tx, ty in targets:
-                tx %= WORLD_WIDTH
-                ty = max(0, min(WORLD_HEIGHT - 1, ty)) # Keep blocks in world bounds
-                valid_targets.append((tx, ty))
-
             m_btns = pygame.mouse.get_pressed()
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            mouse_tile_x = int((scroll_x + mouse_x) // TILE_SIZE) % WORLD_WIDTH
+            mouse_tile_y = int((scroll_y + mouse_y) // TILE_SIZE)
+            player_tile_x = px % WORLD_WIDTH
+            player_tile_y = py
+            horizontal_distance = (
+                mouse_tile_x - player_tile_x + WORLD_WIDTH // 2
+            ) % WORLD_WIDTH - WORLD_WIDTH // 2
+            mouse_target = None
+            if (
+                0 <= mouse_tile_y < WORLD_HEIGHT
+                and abs(horizontal_distance) <= 5
+                and abs(mouse_tile_y - player_tile_y) <= 5
+            ):
+                mouse_target = (mouse_tile_x, mouse_tile_y)
+            mining_targets = (
+                [mouse_target]
+                if mouse_target is not None
+                and mouse_target in world.data
+                and world.data[mouse_target] not in (WATER, BEDROCK)
+                else []
+            )
         now = pygame.time.get_ticks()
-        if m_btns[0] and valid_targets:
+        if m_btns[0] and mining_targets:
             # --- Mining Logic ---
-            # Check if we are still breaking the same set of blocks
-            if player.breaking_block not in valid_targets:
-                # Find the first real block to target
-                player.breaking_block = None
+            if player.breaking_block not in mining_targets:
+                player.breaking_block = mining_targets[0]
                 player.breaking_progress = 0.0
-                for tx, ty in valid_targets:
-                    if (tx, ty) in world.data and world.data[(tx, ty)] not in (WATER, BEDROCK):
-                        player.breaking_block = (tx, ty)
-                        break
             
             if player.breaking_block:
                 tx, ty = player.breaking_block
@@ -3705,8 +3710,7 @@ def main():
                 
                 if player.breaking_progress >= 1.0:
                     player.last_action_time = now
-                    # Break ALL valid targets that exist
-                    for bx, by in valid_targets:
+                    for bx, by in mining_targets:
                         if (bx, by) in world.data and world.data[(bx, by)] not in (WATER, BEDROCK):
                             drop_type = world.data[(bx, by)]
                             to_remove = [(bx, by)]
@@ -3784,6 +3788,9 @@ def main():
                     player.breaking_block = None
                     player.breaking_progress = 0.0
 
+        elif m_btns[0]:
+            player.breaking_block = None
+            player.breaking_progress = 0.0
         elif m_btns[2] and now - player.last_action_time > 120:
             # --- Placing/Interacting Logic ---
             action_taken = False
@@ -3867,7 +3874,7 @@ def main():
                         clicked_camel.tamed = True
                         player.riding_mob = clicked_camel
 
-            for tx, ty in ([] if action_taken else valid_targets):
+            for tx, ty in ([] if action_taken or mouse_target is None else [mouse_target]):
                 if (tx, ty) in world.data and world.data[(tx, ty)] == BOAT:
                     player.rect.centerx = tx * TILE_SIZE + TILE_SIZE // 2
                     player.rect.bottom = ty * TILE_SIZE
@@ -4368,10 +4375,10 @@ def main():
                 break # Highlight only one mob at a time
         
         # --- Targeting Rects ---
-        if not player.show_inventory:
+        if not player.show_inventory and mouse_target:
             for off in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
-                for tx, ty in valid_targets:
-                    pygame.draw.rect(screen, COLOR_WHITE, (tx*TILE_SIZE - int(scroll_x) + off, ty*TILE_SIZE - int(scroll_y), TILE_SIZE, TILE_SIZE), 2)
+                tx, ty = mouse_target
+                pygame.draw.rect(screen, COLOR_WHITE, (tx*TILE_SIZE - int(scroll_x) + off, ty*TILE_SIZE - int(scroll_y), TILE_SIZE, TILE_SIZE), 2)
 
         # --- Draw Player ---
         for offset in [-WORLD_PIXELS, 0, WORLD_PIXELS]:
@@ -4656,10 +4663,6 @@ def main():
                     hx, hy = 20 + i * 18, 80
                     pygame.draw.circle(screen, (0, 190, 255), (hx + 8, hy + 8), 6) # Bubble
                     pygame.draw.circle(screen, (200, 240, 255), (hx + 6, hy + 6), 2) # Highlight
-
-            mode_names = ["FRONT (LEG)", "FRONT (HEAD)", "DOWN (TOWER)", "UP", "MINING (BOTH)"]
-            mode_text = font.render(f"MODE: {mode_names[target_mode]} (F to Cycle)", True, COLOR_WHITE)
-            screen.blit(mode_text, (20, 105))
 
             # --- Draw Coordinates ---
             cx, cy = player.rect.centerx // TILE_SIZE, player.rect.centery // TILE_SIZE
