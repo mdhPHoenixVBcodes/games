@@ -14,7 +14,7 @@ To run these games, you will need **Python 3.x** installed on your system. You w
 
 Pls delete `savegame.json` / `brainrot_save.json` cuz that's technically my data
 
-🎮 Included Projects
+## 🎮 Included Projects
 ### 1. 3D Adventure Dungeon 
 `3dadventure.py`
 This game is still in production so bugs may occur.
