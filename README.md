@@ -150,7 +150,7 @@ Selectable characters (Puss in Boots, Kitty Softpaws, Death, Perrito), direction
 
 `Shift` - Dash forward
 
-`F`- Death's Whistle ability (Death only)
+`E`- Death's Whistle ability 
 
 `Esc` - Pause menu / Unlock mouse
 
