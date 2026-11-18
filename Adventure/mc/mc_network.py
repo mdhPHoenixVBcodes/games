@@ -33,6 +33,15 @@ class GameServer(NetworkManager):
         self.world_ref = None
         self.pending_world_updates = []
         self.pending_world_updates_lock = threading.Lock()
+        self.player_data_lock = threading.Lock()
+
+    def get_player_data_snapshot(self):
+        with self.player_data_lock:
+            return {
+                player_id: data.copy()
+                for player_id, data in self.player_data.items()
+                if isinstance(data, dict)
+            }
 
     def _extract_player_snapshot(self, msg):
         return {
@@ -101,8 +110,8 @@ class GameServer(NetworkManager):
         print(f"[SERVER] Client {client_id} disconnected")
         if conn in self.clients:
             del self.clients[conn]
-        if client_id in self.player_data:
-            del self.player_data[client_id]
+        with self.player_data_lock:
+            self.player_data.pop(client_id, None)
         if self.world_ref is not None and client_id in self.world_ref.remote_players_data:
             del self.world_ref.remote_players_data[client_id]
         self.broadcast({"type": "QUIT", "id": client_id})
@@ -117,9 +126,13 @@ class GameServer(NetworkManager):
             p_id = msg["p_id"]
             print(f"[SERVER] Player {p_id} joined from {sender_conn.getpeername()}")
             self.clients[sender_conn] = p_id
-            self.player_data[p_id] = msg.get("player_data", {})
-            if "name" not in self.player_data[p_id]:
-                self.player_data[p_id]["name"] = msg.get("name", p_id)
+            initial_data = msg.get("player_data", {})
+            if not isinstance(initial_data, dict):
+                initial_data = {}
+            if "name" not in initial_data:
+                initial_data["name"] = msg.get("name", p_id)
+            with self.player_data_lock:
+                self.player_data[p_id] = initial_data
             
             # Now send the INIT packet with their specific data
             p_save = self.world_ref.remote_players_data.get(p_id)
@@ -131,7 +144,11 @@ class GameServer(NetworkManager):
             init_msg = {
                 "type": "INIT",
                 "id": p_id,
-                "world_data": {f"{pos[0]},{pos[1]}": b_type for chunk in self.world_ref.chunks.values() for pos, b_type in chunk.items()},
+                "world_data": {
+                    f"{pos[0]},{pos[1]}": b_type
+                    for chunk in self.world_ref.iter_all_chunks()
+                    for pos, b_type in chunk.items()
+                },
                 "block_meta": {f"{k[0]},{k[1]}": v for k, v in self.world_ref.block_meta.items()},
                 "time": self.world_ref.time,
                 "player_data": p_save # Send back their saved inventory/pos
@@ -141,11 +158,12 @@ class GameServer(NetworkManager):
 
         msg["id"] = client_id 
         if msg_type in ("POS", "SYNC"):
-            if client_id not in self.player_data:
-                self.player_data[client_id] = {}
-            self.player_data[client_id].update(msg)
-            if "name" in msg:
-                self.player_data[client_id]["name"] = msg["name"]
+            with self.player_data_lock:
+                if client_id not in self.player_data:
+                    self.player_data[client_id] = {}
+                self.player_data[client_id].update(msg)
+                if "name" in msg:
+                    self.player_data[client_id]["name"] = msg["name"]
             if self.world_ref is not None:
                 snapshot = self._extract_player_snapshot(msg)
                 if snapshot:
@@ -155,6 +173,8 @@ class GameServer(NetworkManager):
                 self.pending_world_updates.append(msg.copy())
         elif msg_type == "CHAT":
             print(f"[CHAT] {msg.get('name', client_id)}: {msg.get('text', '')}")
+        elif msg_type == "HURT" and msg.get("target_id") == "host":
+            self.messages.append(msg.copy())
         
         # Relay to all OTHER clients
         self.broadcast(msg, exclude_conn=sender_conn)

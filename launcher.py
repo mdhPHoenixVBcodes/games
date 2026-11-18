@@ -25,18 +25,29 @@ PYPI_PACKAGE_MAP = {
     "sklearn": "scikit-learn"
 }
 
+IGNORE_DIRS = {
+    "venv", ".venv", "env", "__pycache__", ".git",
+    "node_modules", "assets", "images", "img", "sounds", "audio", "logo", "icons"
+}
+
+
 class GameLauncher(tk.Tk):
-    def __init__(self, games_dir="."):
+    def __init__(self, games_dir=None):
         super().__init__()
         self.title("🎮 mdhPHoenixVBcodes - Game Hub")
         self.geometry("860x680")
         self.minsize(650, 450)
         self.configure(bg="#1e1e2e")
-        
-        self.games_dir = Path(games_dir).resolve()
+
+        # Always anchor to the folder containing launcher.py unless overridden
+        if games_dir is None:
+            self.games_dir = Path(__file__).resolve().parent
+        else:
+            self.games_dir = Path(games_dir).resolve()
+
         self.running_processes = []
         self.all_games = []
-        
+
         # Performance Caches
         self.icon_cache = {}
         self.dep_cache = {}
@@ -52,12 +63,12 @@ class GameLauncher(tk.Tk):
     def setup_styles(self):
         self.style = ttk.Style()
         self.style.theme_use("clam")
-        
+
         BG_COLOR = "#1e1e2e"
         CARD_BG = "#2b2b3b"
         TEXT_COLOR = "#cdd6f4"
         ACCENT_COLOR = "#89b4fa"
-        
+
         self.style.configure(".", background=BG_COLOR, foreground=TEXT_COLOR)
         self.style.configure("TFrame", background=BG_COLOR)
         self.style.configure("Card.TFrame", background=CARD_BG, relief="flat")
@@ -69,7 +80,7 @@ class GameLauncher(tk.Tk):
         # Header Section
         header_frame = ttk.Frame(self)
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
-        
+
         header_title = ttk.Label(header_frame, text="🕹️ Game Launcher", style="Header.TLabel")
         header_title.pack(side="left")
 
@@ -116,7 +127,7 @@ class GameLauncher(tk.Tk):
 
         self.canvas = tk.Canvas(container, bg="#1e1e2e", highlightthickness=0)
         self.scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
-        
+
         self.scrollable_frame = ttk.Frame(self.canvas)
         self.scrollable_frame.bind(
             "<Configure>",
@@ -128,7 +139,7 @@ class GameLauncher(tk.Tk):
 
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
-        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
     def _on_focus_in(self, event):
         if self.search_entry.get() == self.placeholder_text:
@@ -143,7 +154,7 @@ class GameLauncher(tk.Tk):
     def git_sync(self):
         """Fast non-blocking Git Sync with --autostash --rebase."""
         self.sync_btn.config(text="⏳ Syncing...", state="disabled")
-        
+
         def task():
             try:
                 res = subprocess.run(
@@ -236,7 +247,7 @@ class GameLauncher(tk.Tk):
                 cmd = [sys.executable, "-m", "pip", "install"] + packages
                 proc = subprocess.run(cmd, capture_output=True, text=True)
                 if proc.returncode == 0:
-                    self.dep_cache.clear()  # Force rescanning of dependencies
+                    self.dep_cache.clear()
                     self.after(0, lambda: messagebox.showinfo("Pip Installer", f"Successfully installed: {', '.join(packages)}"))
                     self.after(0, self.scan_and_populate_games)
                 else:
@@ -275,21 +286,49 @@ class GameLauncher(tk.Tk):
         close_btn.pack(pady=(0, 12))
 
     def find_entry_point(self, folder_path):
-        all_py_files = [f for f in folder_path.rglob("*.py") if f.is_file() and not f.name.startswith(("_", "."))]
+        """Finds the actual runnable game script inside a folder and its subfolders."""
+        all_py_files = [
+            f for f in folder_path.rglob("*.py")
+            if f.is_file()
+            and not f.name.startswith(("_", "."))
+            and not any(part.lower() in IGNORE_DIRS for part in f.parts)
+        ]
         if not all_py_files:
             return None
+
+        # Prefer files closer to the top of the game folder
+        all_py_files.sort(key=lambda p: len(p.parts))
 
         priority_names = [
             "racing.py", "main.py", "game.py", "app.py", "run.py", "play.py",
             f"{folder_path.name.lower()}.py"
         ]
-        
+
         for target in priority_names:
             for py_file in all_py_files:
                 if py_file.name.lower() == target:
                     return py_file
 
-        return all_py_files[0]
+        # Score remaining files to find the one with a game loop or __main__ block
+        best_file = all_py_files[0]
+        best_score = -999
+
+        for py_file in all_py_files:
+            score = -len(py_file.relative_to(folder_path).parts)
+            try:
+                content = py_file.read_text(encoding="utf-8", errors="ignore")
+                if "__name__" in content and "__main__" in content:
+                    score += 10
+                if any(kw in content for kw in ("mainloop(", "pygame.init(", "arcade.run(", "ursina", "pyglet.app.run(")):
+                    score += 5
+            except Exception:
+                pass
+
+            if score > best_score:
+                best_score = score
+                best_file = py_file
+
+        return best_file
 
     def find_icon(self, search_dir, base_name):
         extensions = [".ico", ".png", ".jpg", ".jpeg"]
@@ -305,35 +344,63 @@ class GameLauncher(tk.Tk):
                     if icon_path.exists():
                         return icon_path
 
+        # Fallback: grab any image inside the folder if no named icon was matched
+        for d in dirs_to_check:
+            for ext in extensions:
+                matches = list(d.glob(f"*{ext}"))
+                if matches:
+                    return matches[0]
+
         return None
 
     def find_games(self):
+        """Recursively scans root and nested category/game folders."""
         games = []
-        current_script = Path(__file__).resolve() if '__file__' in globals() else None
+        current_script = Path(__file__).resolve() if "__file__" in globals() else None
 
-        for item in sorted(self.games_dir.iterdir()):
-            if item == current_script or item.name.startswith((".", "_")):
-                continue
+        def scan_directory(directory):
+            for item in sorted(directory.iterdir()):
+                if item == current_script or item.name.startswith((".", "_")):
+                    continue
 
-            if item.is_file() and item.suffix == ".py":
-                icon_path = self.find_icon(self.games_dir, item.stem)
-                games.append({
-                    "name": item.stem.replace("_", " ").title(),
-                    "path": item,
-                    "desc": f"Script: {item.name}",
-                    "icon": icon_path
-                })
-            
-            elif item.is_dir():
-                entry_path = self.find_entry_point(item)
-                if entry_path and entry_path.is_file():
-                    icon_path = self.find_icon(item, item.name)
+                if item.is_file() and item.suffix == ".py":
+                    icon_path = self.find_icon(directory, item.stem)
                     games.append({
-                        "name": item.name.replace("_", " ").title(),
-                        "path": entry_path,
-                        "desc": f"Script: {entry_path.relative_to(self.games_dir)}",
+                        "name": item.stem.replace("_", " ").title(),
+                        "path": item,
+                        "desc": f"Script: {item.relative_to(self.games_dir)}",
                         "icon": icon_path
                     })
+
+                elif item.is_dir() and item.name.lower() not in IGNORE_DIRS:
+                    direct_py = [
+                        f for f in item.glob("*.py")
+                        if f.is_file() and not f.name.startswith(("_", "."))
+                    ]
+                    subfolders = [
+                        d for d in item.iterdir()
+                        if d.is_dir() and not d.name.startswith((".", "_")) and d.name.lower() not in IGNORE_DIRS
+                    ]
+
+                    # If a folder has NO direct .py files, check if it's a container holding multiple games
+                    if not direct_py and subfolders:
+                        subfolders_with_py = [d for d in subfolders if any(d.rglob("*.py"))]
+                        if len(subfolders_with_py) > 1:
+                            scan_directory(item)
+                            continue
+
+                    # Otherwise treat `item` as a single game folder (even if the .py is inside a subfolder like src/)
+                    entry_path = self.find_entry_point(item)
+                    if entry_path and entry_path.is_file():
+                        icon_path = self.find_icon(item, item.name) or self.find_icon(entry_path.parent, entry_path.stem)
+                        games.append({
+                            "name": item.name.replace("_", " ").title(),
+                            "path": entry_path,
+                            "desc": f"Script: {entry_path.relative_to(self.games_dir)}",
+                            "icon": icon_path
+                        })
+
+        scan_directory(self.games_dir)
         return games
 
     def scan_and_populate_games(self):
@@ -349,7 +416,7 @@ class GameLauncher(tk.Tk):
             widget.destroy()
 
         filtered_games = [
-            g for g in self.all_games 
+            g for g in self.all_games
             if query in g["name"].lower() or query in g["desc"].lower()
         ]
 
@@ -449,6 +516,7 @@ class GameLauncher(tk.Tk):
             if proc.poll() is None:
                 proc.terminate()
         self.destroy()
+
 
 if __name__ == "__main__":
     app = GameLauncher()

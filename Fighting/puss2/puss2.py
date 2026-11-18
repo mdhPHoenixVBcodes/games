@@ -203,7 +203,6 @@ def build_perrito_visuals(parent_ent):
 
         for x_off, rot in ((-0.24, 25), (0.24, -25)):
             Entity(parent=head, model='cube', color=C_DARK_BROWN, scale=(0.15, 0.4, 0.15), position=(x_off, 0.05, 0), rotation_z=rot, rotation_x=15)
-    # head.combine(auto_destroy=True) -> REMOVED TO PREVENT GLB VERTEX CRASH
 
     stick_pivot = Entity(parent=parent_ent, position=(0, 0.62, 0.73)) 
     Entity(parent=stick_pivot, model='cube', color=C_BROWN, scale=(0.8, 0.06, 0.06), position=(0, 0, 0), rotation_y=20, rotation_z=15)
@@ -502,6 +501,13 @@ class Death(BaseCharacter):
         self.cam_offset_y = 1.8
         self.weapon_arms = build_death_visuals(self)
         self.setup_arms()
+        
+        self.whistle_cooldown = 0.0
+        self.whistle_max_cooldown = 15.0
+        try:
+            self.whistle_sound = Audio('whistle.mp3', autoplay=False, loop=False)
+        except:
+            self.whistle_sound = None
 
     def take_damage(self, amount):
         if random.random() < 0.5:
@@ -522,6 +528,9 @@ class Death(BaseCharacter):
         super().update()
         if self.hp <= 0: return
 
+        if self.whistle_cooldown > 0:
+            self.whistle_cooldown = max(0.0, self.whistle_cooldown - time.dt)
+
         cam_forward = Vec3(self.camera_pivot.forward.x, 0, self.camera_pivot.forward.z).normalized()
         cam_right = Vec3(self.camera_pivot.right.x, 0, self.camera_pivot.right.z).normalized()
         move_dir = (cam_forward * (held_keys['w'] - held_keys['s']) + cam_right * (held_keys['d'] - held_keys['a']))
@@ -539,7 +548,11 @@ class Death(BaseCharacter):
             self.weapon_arms[1].rotation = self.default_arm_rots[1] + Vec3(-50, -25, 20)
 
     def input(self, key):
-        if key == 'left mouse down' and not self.is_blocking and not self.is_attacking:
+        if key == 'e' and self.whistle_cooldown <= 0:
+            self.whistle_cooldown = self.whistle_max_cooldown
+            if self.whistle_sound:
+                self.whistle_sound.play()
+        elif key == 'left mouse down' and not self.is_blocking and not self.is_attacking:
             self.is_attacking = True
             self.weapon_arms[0].animate_rotation(self.default_arm_rots[0] + Vec3(85, -50, -45), duration=0.08)
             self.weapon_arms[1].animate_rotation(self.default_arm_rots[1] + Vec3(85, 50, 45), duration=0.08)
@@ -877,6 +890,7 @@ def start_game():
     mouse.locked = True
     
     player = selected_class(position=(0, 0, 0))
+    whistle_ui.enabled = isinstance(player, Death)
 
 choose_btn_border = Entity(parent=menu_ui, model='quad', color=C_WHITE, position=(0.55, -0.28), scale=(0.335, 0.095), z=-0.01)
 choose_btn = Button(
@@ -899,6 +913,29 @@ hp_bar_bg = Entity(parent=hud_ui, model='quad', color=C_DARK_GRAY, origin=(-0.5,
 hp_bar = Entity(parent=hud_ui, model='quad', color=C_LIME, origin=(-0.5, 0.5), position=(-0.85, 0.45), scale=(0.5, 0.04), z=-0.01)
 hp_text = Text(parent=hud_ui, text="HP: 100%", position=(-0.85, 0.48), scale=1.2, color=C_WHITE)
 
+# WHISTLE COOLDOWN HUD (Bottom Right)
+whistle_ui = Entity(parent=hud_ui, position=(0.76, -0.38), enabled=False)
+whistle_border = Entity(parent=whistle_ui, model='quad', color=C_BLACK, scale=(0.15, 0.15), z=0.02)
+whistle_bg = Entity(parent=whistle_ui, model='quad', color=C_DARK_GRAY, scale=(0.14, 0.14), z=0.01)
+
+# Base bright whistle icon
+try:
+    whistle_icon = Entity(parent=whistle_ui, model='quad', texture='whistle.png', scale=(0.135, 0.135), z=0)
+except:
+    whistle_icon = Entity(parent=whistle_ui, model='quad', color=C_RED, scale=(0.135, 0.135), z=0)
+
+# Cooldown shadow curtain anchored at the top (origin=(0, 0.5)) so shrinking it downward makes the bright icon rise from the bottom
+whistle_cd_overlay = Entity(
+    parent=whistle_ui,
+    model='quad',
+    color=color.rgba(15/255, 15/255, 15/255, 210/255),
+    origin=(0, 0.5),
+    position=(0, 0.0675, -0.01),
+    scale=(0.135, 0.0),
+    z=-0.01
+)
+whistle_cd_text = Text(parent=whistle_ui, text="READY [E]", position=(0, 0.095, -0.02), origin=(0, 0), scale=1.0, color=C_WHITE)
+
 
 # ==========================================
 # 5. PAUSE MENU
@@ -919,9 +956,12 @@ def change_character_action():
     resume_game()
     game_started = False
     hud_ui.enabled = False
+    whistle_ui.enabled = False
     mouse.locked = False
 
     if player:
+        if hasattr(player, 'whistle_sound') and player.whistle_sound:
+            player.whistle_sound.stop()
         destroy(player)
         player = None
 
@@ -966,6 +1006,18 @@ def update():
         hp_pct = max(0, player.hp / player.max_hp)
         hp_bar.scale_x = hp_pct * 0.5
         hp_text.text = f"HP: {int(player.hp)}%"
+
+        # Update Death's Whistle Cooldown UI
+        if isinstance(player, Death):
+            if player.whistle_cooldown > 0:
+                cd_ratio = player.whistle_cooldown / player.whistle_max_cooldown
+                whistle_cd_overlay.scale_y = 0.135 * cd_ratio
+                whistle_cd_text.text = f"{player.whistle_cooldown:.1f}s"
+                whistle_cd_text.color = C_RED
+            else:
+                whistle_cd_overlay.scale_y = 0.0
+                whistle_cd_text.text = "READY [E]"
+                whistle_cd_text.color = C_LIME
         
         if player.hp <= 0:
             hp_text.text = "YOU DIED"

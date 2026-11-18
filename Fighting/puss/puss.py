@@ -37,6 +37,18 @@ camera.clip_plane_far  = 75.0
 camera.clip_plane_near = 0.2
 
 # =============================================================================
+# BACKGROUND BATTLE MUSIC
+# =============================================================================
+bg_music = None
+for _music_name in ['battlesong.mp3', 'battlesong.ogg', 'battlesong.wav']:
+    if (current_dir / _music_name).exists() or (current_dir.parent / _music_name).exists():
+        try:
+            bg_music = Audio(_music_name, loop=True, autoplay=True, volume=0.35, ignore_paused=True)
+            break
+        except Exception as _e:
+            print(f'[audio] Could not load {_music_name}: {_e}')
+
+# =============================================================================
 # GLOBAL GAME STATE & STATS
 # =============================================================================
 game_state          = 'main_menu'
@@ -106,7 +118,8 @@ CONTROL_DEFAULTS = {
     'attack': 'left mouse down',
     'block': 'right mouse down',
     'dash': 'shift',
-    'ability': 'f',
+    'ability': 'e',
+    'ult': 'x',
 }
 controls = CONTROL_DEFAULTS.copy()
 control_capture_action = None
@@ -124,6 +137,12 @@ match_cheats = set()
 training_dummy      = None
 network_status_label = None
 remote_player       = None
+remote_player_data  = None
+remote_player_char  = None
+remote_player_walk_time = 0.0
+remote_hp_bar_fill  = None
+remote_name_tag     = None
+remote_fear_label    = None
 host_start_button   = None
 network_role        = None
 network_connected   = False
@@ -133,7 +152,10 @@ network_events      = queue.Queue()
 network_running     = threading.Event()
 network_generation  = 0
 network_snapshot_lock = threading.Lock()
-network_local_snapshot = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0, 'attack_seq': 0}
+network_local_snapshot = {
+    'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0, 'attack_seq': 0,
+    'char': 'puss', 'moving': False, 'sprinting': False, 'blocking': False, 'hp': 100.0,
+}
 network_remote_snapshot = None
 network_attack_sequence = 0
 remote_attack_sequence = 0
@@ -599,6 +621,31 @@ def build_perrito():
 
 
 # =============================================================================
+# COMBAT FX: FORTNITE-STYLE DAMAGE NUMBERS
+# =============================================================================
+
+def spawn_damage_number(target_pos, amount, is_crit=False):
+    """Fortnite-style Pop-up Damage Numbers (Yellow for regular, Red with ! for Crits)."""
+    txt_str = f"{int(amount)}!" if is_crit else f"{int(amount)}"
+    txt_col = color.rgb(255/255, 40/255, 40/255) if is_crit else color.rgb(255/255, 220/255, 30/255)
+    base_scale = 2.4 if is_crit else 1.6
+
+    offset = Vec3(random.uniform(-0.35, 0.35), 2.2 + random.uniform(0.0, 0.35), random.uniform(-0.35, 0.35))
+    dmg_txt = Text(
+        text=txt_str,
+        position=target_pos + offset,
+        color=txt_col,
+        scale=base_scale,
+        billboard=True,
+        origin=(0, 0)
+    )
+    dmg_txt.animate_scale(base_scale * 1.35, duration=0.10, curve=curve.out_back)
+    dmg_txt.animate_position(dmg_txt.position + Vec3(random.uniform(-0.25, 0.25), 0.95, 0), duration=0.45, curve=curve.out_quad)
+    dmg_txt.fade_out(duration=0.35, delay=0.14)
+    destroy(dmg_txt, delay=0.50)
+
+
+# =============================================================================
 # ENEMY BOT CLASS (Puss Bots)
 # =============================================================================
 
@@ -715,25 +762,7 @@ class PussBot:
             self.hp_bar_fill.x = -(1.0 - pct) * 0.48
 
         # Fortnite-style Pop-up Damage Numbers (Yellow for regular, Red with ! for Crits)
-        txt_str = f"{int(amount)}!" if is_crit else f"{int(amount)}"
-        txt_col = color.rgb(255/255, 40/255, 40/255) if is_crit else color.rgb(255/255, 220/255, 30/255)
-        base_scale = 2.4 if is_crit else 1.6
-
-        # Random horizontal jitter so multiple consecutive hits don't overlap
-        offset = Vec3(random.uniform(-0.35, 0.35), 2.2 + random.uniform(0.0, 0.35), random.uniform(-0.35, 0.35))
-        dmg_txt = Text(
-            text=txt_str,
-            position=self.root.position + offset,
-            color=txt_col,
-            scale=base_scale,
-            billboard=True,
-            origin=(0, 0)
-        )
-        # Fortnite floating bounce animation: pop scale then float up and fade out
-        dmg_txt.animate_scale(base_scale * 1.35, duration=0.10, curve=curve.out_back)
-        dmg_txt.animate_position(dmg_txt.position + Vec3(random.uniform(-0.25, 0.25), 0.95, 0), duration=0.45, curve=curve.out_quad)
-        dmg_txt.fade_out(duration=0.35, delay=0.14)
-        destroy(dmg_txt, delay=0.50)
+        spawn_damage_number(self.root.position, amount, is_crit=is_crit)
 
         if self.hp <= 0:
             self.die()
@@ -898,20 +927,22 @@ def show_settings_menu():
         ('forward', 'Move forward'), ('backward', 'Move backward'),
         ('left', 'Move left'), ('right', 'Move right'),
         ('sprint', 'Sprint'), ('jump', 'Jump'), ('attack', 'Attack'),
-        ('block', 'Block'), ('dash', 'Dash'), ('ability', 'Special / ultimate'),
+        ('block', 'Block'), ('dash', 'Dash'),
+        ('ability', 'Whistle (Death)'),
+        ('ult', 'Ring of Fire Ult (Death)'),
     )
     for index, (action, label) in enumerate(control_rows):
-        y_pos = -0.14 - index * 0.051
+        y_pos = -0.12 - index * 0.040
         action_label = Text(
-            parent=camera.ui, text=label, origin=(-0.5, 0), scale=0.65,
+            parent=camera.ui, text=label, origin=(-0.5, 0), scale=0.58,
             position=(-0.29, y_pos), color=color.white,
         )
         menu_ui.append(action_label)
         binding_btn = Button(
             parent=camera.ui, text='', color=color.rgb(55/255, 72/255, 100/255),
             highlight_color=color.rgb(90/255, 115/255, 150/255),
-            text_color=color.white, scale=(0.22, 0.043), position=(0.24, y_pos),
-            text_size=0.75,
+            text_color=color.white, scale=(0.22, 0.035), position=(0.24, y_pos),
+            text_size=0.70,
         )
         binding_btn.on_click = lambda action=action: _begin_control_remap(action)
         control_button_refs[action] = binding_btn
@@ -1330,7 +1361,7 @@ def process_network_events():
             if game_state == 'join_menu':
                 begin_character_selection('multiplayer')
             elif game_state == 'playing':
-                _create_remote_player()
+                _create_remote_player(network_remote_snapshot.get('char', 'puss') if network_remote_snapshot else 'puss')
             if menu_status_text:
                 menu_status_text.text = f'Connected to {payload}.'
             if network_status_label:
@@ -1339,6 +1370,7 @@ def process_network_events():
             network_remote_snapshot = payload
             if payload['attack_seq'] != remote_attack_sequence:
                 remote_attack_sequence = payload['attack_seq']
+                trigger_remote_player_attack()
                 _check_remote_attack(payload)
         elif event == 'disconnected':
             network_connected = False
@@ -1346,6 +1378,10 @@ def process_network_events():
             if remote_player:
                 deep_destroy(remote_player)
                 remote_player = None
+            remote_player_data = None
+            remote_player_char = None
+            remote_hp_bar_fill = None
+            remote_name_tag = None
             if menu_status_text:
                 menu_status_text.text = payload
             if network_status_label:
@@ -1357,24 +1393,195 @@ def process_network_events():
                 network_status_label.text = f'NETWORK ERROR: {payload}'
 
 
-def _create_remote_player():
-    global remote_player
-    if remote_player or not network_connected:
+def _create_remote_player(char_key='puss'):
+    global remote_player, remote_player_data, remote_player_char
+    global remote_player_walk_time, remote_hp_bar_fill, remote_name_tag
+
+    if not network_connected or game_state != 'playing':
         return
-    remote_player = build_puss(is_enemy=True)['root']
-    remote_player.scale = 0.72
+
+    # If already built with this character, keep it
+    if remote_player and remote_player_char == char_key:
+        return
+
+    # Destroy previous remote model if character changed
+    if remote_player:
+        deep_destroy(remote_player)
+        remote_player = None
+        remote_player_data = None
+        remote_hp_bar_fill = None
+        remote_name_tag = None
+
+    builders = {'puss': build_puss, 'kitty': build_kitty, 'death': build_death, 'perrito': build_perrito}
+    builder = builders.get(char_key, build_puss)
+    if char_key == 'puss':
+        data = builder(is_enemy=True)
+    else:
+        data = builder()
+
+    remote_player_data = data
+    remote_player = data['root']
+    remote_player_char = char_key
+    remote_player_walk_time = 0.0
+
+    # PROPER SCALE: Do NOT shrink to 0.72! Set natural full scale 1.0!
+    if char_key == 'perrito':
+        remote_player.scale = Vec3(0.95, 0.95, 0.95)
+    else:
+        remote_player.scale = Vec3(1.0, 1.0, 1.0)
+
+    # 3D Overhead Floating Health Bar & Name Tag
+    char_display_names = {
+        'puss': 'PUSS (P2)',
+        'kitty': 'KITTY (P2)',
+        'death': 'DEATH (P2)',
+        'perrito': 'PERRITO (P2)',
+    }
+    y_bar = 2.8 if char_key == 'death' else (1.4 if char_key == 'perrito' else 2.3)
+    hp_bg = Entity(parent=remote_player, model='cube', color=color.black,
+                   scale=(1.2, 0.12, 0.04), position=(0, y_bar, 0), billboard=True)
+    remote_hp_bar_fill = Entity(parent=hp_bg, model='cube', color=color.cyan,
+                                scale=(0.96, 0.7, 1.0), position=(0, 0, -0.05))
+    remote_name_tag = Text(
+        parent=remote_player,
+        text=char_display_names.get(char_key, 'PLAYER 2'),
+        position=(0, y_bar + 0.22, 0),
+        origin=(0, 0),
+        scale=1.2,
+        color=color.rgb(255/255, 215/255, 60/255),
+        billboard=True,
+    )
+
     if network_remote_snapshot:
         _apply_remote_snapshot(1.0)
 
 
+def trigger_remote_player_attack():
+    """Animate attack weapon swings on the remote player character."""
+    if not remote_player or not remote_player_data:
+        return
+    remote_player._is_animating_attack = True
+    arm_l = remote_player_data.get('left_arm')
+    arm_r = remote_player_data.get('weapon_arm')
+
+    if remote_player_char == 'death':
+        if arm_l:
+            arm_l.animate_rotation(Vec3(-35, 30, -20), duration=0.09, curve=curve.linear)
+            arm_l.animate_position(Vec3(-0.70, 1.82, 0.45), duration=0.09, curve=curve.linear)
+        if arm_r:
+            arm_r.animate_rotation(Vec3(-35, -30, 20), duration=0.09, curve=curve.linear)
+            arm_r.animate_position(Vec3(0.70, 1.82, 0.45), duration=0.09, curve=curve.linear)
+    elif remote_player_char == 'perrito':
+        if arm_r:
+            arm_r.animate_rotation(Vec3(0, -60, 12), duration=0.07, curve=curve.linear)
+        if arm_l:
+            arm_l.animate_rotation(Vec3(4, -40, 8), duration=0.07, curve=curve.linear)
+    else:
+        if arm_r:
+            arm_r.animate_rotation(Vec3(-25, -20, 10), duration=0.09, curve=curve.linear)
+            arm_r.animate_position(Vec3(arm_r.x, arm_r.y, 0.35), duration=0.09, curve=curve.linear)
+
+    def _reset_remote_attack():
+        if not remote_player or not remote_player_data:
+            return
+        al = remote_player_data.get('left_arm')
+        ar = remote_player_data.get('weapon_arm')
+        if remote_player_char == 'death':
+            if al:
+                al.animate_rotation(Vec3(0, 0, 0), duration=0.12, curve=curve.linear)
+                al.animate_position(Vec3(-0.70, 1.82, 0.0), duration=0.12, curve=curve.linear)
+            if ar:
+                ar.animate_rotation(Vec3(0, 0, 0), duration=0.12, curve=curve.linear)
+                ar.animate_position(Vec3(0.70, 1.82, 0.0), duration=0.12, curve=curve.linear)
+        elif remote_player_char == 'perrito':
+            if ar: ar.animate_rotation(Vec3(0, 0, 0), duration=0.10, curve=curve.linear)
+            if al: al.animate_rotation(Vec3(0, 0, 0), duration=0.10, curve=curve.linear)
+        else:
+            if ar:
+                ar.animate_rotation(Vec3(0, 0, 0), duration=0.12, curve=curve.linear)
+                ar.animate_position(Vec3(ar.x, ar.y, 0.0), duration=0.12, curve=curve.linear)
+        remote_player._is_animating_attack = False
+
+    invoke(_reset_remote_attack, delay=0.18)
+
+
 def _apply_remote_snapshot(dt):
+    global remote_player, remote_player_data, remote_player_char
+    global remote_player_walk_time, remote_hp_bar_fill
+
     if not remote_player or not network_remote_snapshot:
         return
+
     snapshot = network_remote_snapshot
+
+    # Check if remote player changed their character
+    snap_char = snapshot.get('char')
+    if snap_char and snap_char in ('puss', 'kitty', 'death', 'perrito') and snap_char != remote_player_char:
+        _create_remote_player(snap_char)
+        return
+
+    # Position & Rotation interpolation
     target = Vec3(snapshot['x'], snapshot['y'], snapshot['z'])
-    remote_player.position = lerp(remote_player.position, target, min(1.0, dt * 12.0))
+    dist_moved = (target - remote_player.position).length()
+    remote_player.position = lerp(remote_player.position, target, min(1.0, dt * 14.0))
     angle_diff = (snapshot['yaw'] - remote_player.rotation_y + 180) % 360 - 180
-    remote_player.rotation_y += angle_diff * min(1.0, dt * 12.0)
+    remote_player.rotation_y += angle_diff * min(1.0, 14.0 * dt)
+
+    # Health bar update
+    if remote_hp_bar_fill and 'hp' in snapshot:
+        pct = clamp(snapshot['hp'] / 100.0, 0.0, 1.0)
+        remote_hp_bar_fill.scale_x = max(0.01, pct * 0.96)
+        remote_hp_bar_fill.x = -(1.0 - pct) * 0.48
+
+    # Movement and Walk Animations
+    is_moving = snapshot.get('moving', dist_moved > 0.02)
+    is_sprint = snapshot.get('sprinting', False)
+    is_blocking = snapshot.get('blocking', False)
+
+    if remote_player_data:
+        leg_l = remote_player_data.get('leg_l')
+        leg_r = remote_player_data.get('leg_r')
+        leg_bl = remote_player_data.get('leg_bl')
+        leg_br = remote_player_data.get('leg_br')
+        tail = remote_player_data.get('tail')
+        arm_l = remote_player_data.get('left_arm')
+        arm_r = remote_player_data.get('weapon_arm')
+
+        if is_moving:
+            anim_speed = 22.0 if is_sprint else 13.0
+            swing_amp = 36.0 if is_sprint else 22.0
+            remote_player_walk_time += dt * anim_speed
+
+            if remote_player_char == 'perrito':
+                if leg_l: leg_l.rotation_x = math.sin(remote_player_walk_time) * swing_amp
+                if leg_br: leg_br.rotation_x = math.sin(remote_player_walk_time) * swing_amp
+                if leg_r: leg_r.rotation_x = -math.sin(remote_player_walk_time) * swing_amp
+                if leg_bl: leg_bl.rotation_x = -math.sin(remote_player_walk_time) * swing_amp
+                if tail: tail.rotation_y = math.sin(remote_player_walk_time * 2.2) * 35.0
+            else:
+                if leg_l: leg_l.rotation_x = math.sin(remote_player_walk_time) * swing_amp
+                if leg_r: leg_r.rotation_x = -math.sin(remote_player_walk_time) * swing_amp
+                if not getattr(remote_player, '_is_animating_attack', False) and not is_blocking:
+                    if arm_l: arm_l.rotation_x = math.sin(remote_player_walk_time) * 14.0
+                    if arm_r: arm_r.rotation_x = -math.sin(remote_player_walk_time) * 14.0
+        else:
+            if leg_l: leg_l.rotation_x = lerp(leg_l.rotation_x, 0, dt * 10)
+            if leg_r: leg_r.rotation_x = lerp(leg_r.rotation_x, 0, dt * 10)
+            if leg_bl: leg_bl.rotation_x = lerp(leg_bl.rotation_x, 0, dt * 10)
+            if leg_br: leg_br.rotation_x = lerp(leg_br.rotation_x, 0, dt * 10)
+            if not getattr(remote_player, '_is_animating_attack', False) and not is_blocking:
+                if arm_l: arm_l.rotation = Vec3(0, 0, 0)
+                if arm_r: arm_r.rotation = Vec3(0, 0, 0)
+
+        # Defense / Block stance
+        if is_blocking:
+            if remote_player_char == 'death':
+                if arm_l: arm_l.rotation = Vec3(25, 45, -20)
+                if arm_r: arm_r.rotation = Vec3(25, -45, 20)
+            elif remote_player_char == 'perrito':
+                if arm_r: arm_r.rotation = Vec3(10, -45, 30)
+            else:
+                if arm_r: arm_r.rotation = Vec3(25, -45, 20)
 
 
 def _check_remote_attack(snapshot):
@@ -1387,9 +1594,13 @@ def _check_remote_attack(snapshot):
     )
     offset = player.position - remote_pos
     offset.y = 0
-    if offset.length() <= 3.0 and offset.length() > 0.01:
+    r_char = snapshot.get('char', 'puss')
+    hit_range = 4.2 if r_char == 'death' else (3.3 if r_char == 'perrito' else 2.8)
+    if offset.length() <= hit_range and offset.length() > 0.01:
         if direction.dot(offset.normalized()) > 0.15:
-            apply_damage_to_player(5.0)
+            base_dmg = 15.0 if r_char == 'death' else (7.0 if r_char == 'perrito' else 5.0)
+            apply_damage_to_player(base_dmg)
+            spawn_damage_number(player.position, base_dmg, is_crit=False)
 
 
 # =============================================================================
@@ -1405,7 +1616,18 @@ preview_model       = None
 
 def setup_selection_menu():
     global player1_char_text, preview_char_name, preview_pivot
-    global game_state, menu_camera_pivot
+    global game_state, menu_camera_pivot, preview_model
+
+    for elem in list(selection_ui):
+        deep_destroy(elem)
+    selection_ui.clear()
+    card_buttons.clear()
+    if preview_model:
+        deep_destroy(preview_model)
+        preview_model = None
+    if preview_pivot:
+        deep_destroy(preview_pivot)
+        preview_pivot = None
 
     game_state = 'selection'
     # Set selection camera
@@ -1417,6 +1639,8 @@ def setup_selection_menu():
     camera.fov = 50
     camera.position = (0, 1.2, -6.0)
     camera.rotation = (0, 0, 0)
+    mouse.locked  = False
+    mouse.visible = True
 
     # 3D Rotating Turntable Pivot — perfectly centered inside the right preview frame
     preview_pivot = Entity(position=(1.28, 0.60, -2.0), scale=(0.58, 0.58, 0.58))
@@ -1695,6 +1919,12 @@ CAMERA_CONFIG = {
 }
 current_pivot_height = 1.05
 
+# Dynamic Camera Zoom & FOV Scroll State
+cam_base_z     = -4.5
+cam_base_fov   = 50.0
+cam_zoom_delta = 0.0
+cam_fov_delta  = 0.0
+
 def start_game(char_key):
     global player, weapon_arm, arm_left, leg_left, leg_right, body_entity, weapon_entity
     global leg_back_l, leg_back_r, tail_entity
@@ -1705,6 +1935,7 @@ def start_game(char_key):
     global match_cheats
     global easter_egg_progress, easter_egg_active, easter_egg_escape_used
     global easter_egg_mouse_unlocked
+    global cam_base_z, cam_base_fov, cam_zoom_delta, cam_fov_delta
 
     camera_yaw   = 0.0
     camera_pitch = 3.0
@@ -1774,6 +2005,12 @@ def start_game(char_key):
     camera.position = cam_cfg['cam_pos']
     camera.rotation = cam_cfg['cam_rot']
     camera.fov      = cam_cfg.get('fov', 50)
+    cam_base_z     = cam_cfg['cam_pos'].z
+    cam_base_fov   = float(cam_cfg.get('fov', 50))
+    cam_zoom_delta = 0.0
+    cam_fov_delta  = 0.0
+
+    teardown_ring_of_fire()
 
     mouse.locked = True
     game_state = 'playing'
@@ -1806,7 +2043,7 @@ def start_game(char_key):
             color=color.rgb(130/255, 230/255, 150/255),
         )
         if network_connected:
-            _create_remote_player()
+            _create_remote_player(network_remote_snapshot.get('char', 'puss') if network_remote_snapshot else 'puss')
 
 
 # =============================================================================
@@ -1822,7 +2059,10 @@ hud_special_perk    = None
 hud_controls        = None
 hud_whistle_icon    = None
 hud_whistle_cooldown = None
-WHISTLE_ICON_SIZE   = 0.17
+WHISTLE_ICON_SIZE   = 0.15
+hud_ult_icon        = None
+hud_ult_cooldown    = None
+ULT_ICON_SIZE       = 0.16
 HUD_FONT = next(
     (font_name for font_name in ('GoogleSansPro-Regular.ttf', 'GoogleSans-Regular.ttf')
      if (current_dir / font_name).is_file()),
@@ -1834,7 +2074,7 @@ autoblock_banner    = None
 def build_hud():
     global hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text, hud_dash_text
     global hud_kills_text, hud_special_perk, hud_controls, block_indicator, autoblock_banner
-    global hud_whistle_icon, hud_whistle_cooldown
+    global hud_whistle_icon, hud_whistle_cooldown, hud_ult_icon, hud_ult_cooldown
 
     names = {
         'puss':    'Puss in Boots',
@@ -1914,9 +2154,11 @@ def build_hud():
             f"{_format_control_binding(controls['sprint'])}: Sprint | "
             f"{_format_control_binding(controls['dash'])}: Dash | "
             f"{_format_control_binding(controls['block'])}: Block | "
-            f"{_format_control_binding(controls['attack'])}: Attack"
+            f"{_format_control_binding(controls['attack'])}: Attack | "
+            f"Scroll: Zoom/FOV"
             + (
                 f" | {_format_control_binding(controls['ability'])}: Whistle"
+                f" | {_format_control_binding(controls.get('ult', 'x'))}: Ring of Fire"
                 if selected_char == 'death' else ''
             )
         ),
@@ -1928,7 +2170,8 @@ def build_hud():
     )
 
     if selected_char == 'death':
-        icon_x, icon_y = 0.70, -0.36
+        # Whistle Icon (E)
+        icon_x, icon_y = 0.63, -0.36
         hud_whistle_icon = Entity(
             parent   = camera.ui,
             model    = 'quad',
@@ -1949,6 +2192,29 @@ def build_hud():
             visible  = False,
         )
         update_whistle_hud()
+
+        # Ultimate Icon: Ring of Fire (X)
+        ult_x, ult_y = 0.80, -0.36
+        hud_ult_icon = Entity(
+            parent   = camera.ui,
+            model    = 'quad',
+            texture  = 'ringfire.png',
+            color    = color.white,
+            scale    = (ULT_ICON_SIZE, ULT_ICON_SIZE),
+            position = (ult_x, ult_y),
+            z        = 0,
+        )
+        hud_ult_cooldown = Entity(
+            parent   = camera.ui,
+            model    = 'quad',
+            color    = color.black,
+            scale    = (ULT_ICON_SIZE, 0.001),
+            origin   = (0, 0.5),
+            position = (ult_x, ult_y + ULT_ICON_SIZE / 2),
+            z        = -0.01,
+            visible  = False,
+        )
+        update_ult_hud()
 
 
 def activate_easter_egg():
@@ -2178,12 +2444,25 @@ def show_block_spark():
 
 def trigger_game_over():
     """Display Game Over screen and unlock mouse for clean interaction."""
-    global game_state, game_over_ui_elems
+    global game_state, game_over_ui_elems, _whistle_remaining, _whistle_bgm_paused
     game_state = 'game_over'
     mouse.locked  = False
     mouse.visible = True
     if easter_egg_cursor:
         easter_egg_cursor.visible = False
+
+    if _whistle_audio:
+        try:
+            _whistle_audio.stop()
+        except Exception:
+            pass
+    _whistle_remaining = 0.0
+    if bg_music and _whistle_bgm_paused:
+        try:
+            bg_music.resume()
+        except Exception:
+            pass
+        _whistle_bgm_paused = False
 
     t1 = Text(
         text   = "YOU FELL IN BATTLE!",
@@ -2292,6 +2571,9 @@ def check_player_attack_hits():
 
     hit_range = 4.2 if selected_char == 'death' else (3.3 if selected_char == 'perrito' else 2.8)
 
+    # Detect if attack is executed while airborne/jumping for jumping critical strike!
+    is_airborne = (not is_grounded) or (player and player.y > 0.05)
+
     for bot in list(active_bots):
         if bot.is_dead:
             continue
@@ -2306,13 +2588,42 @@ def check_player_attack_hits():
                 facing_dot = 1.0
 
             if facing_dot > 0.15:  # within forward strike cone
-                # Critical hit system: 30% random crit chance OR direct bullseye facing_dot > 0.90
-                is_crit = (random.random() < 0.30) or (facing_dot > 0.90)
+                # Critical hit system: jumping attacks guarantee a crit with +15% extra crit damage!
+                is_crit = is_airborne or (random.random() < 0.30) or (facing_dot > 0.90)
                 damage = player_damage * (1.1 if 'damage' in match_cheats else 1.0)
-                final_damage = damage * 1.8 if is_crit else damage
+                if is_crit:
+                    # +15% extra crit damage on jump attacks
+                    crit_mult = 1.8 * (1.15 if is_airborne else 1.0)
+                    final_damage = damage * crit_mult
+                else:
+                    final_damage = damage
                 bot.take_damage(final_damage, is_crit=is_crit)
                 if dist > 0.01:
-                    bot.root.position += diff.normalized() * (0.75 if is_crit else 0.5)
+                    knockback = 0.95 if is_airborne else (0.75 if is_crit else 0.5)
+                    bot.root.position += diff.normalized() * knockback
+
+    # Hit check against remote player in multiplayer!
+    if remote_player and network_connected:
+        diff = remote_player.position - player.position
+        diff.y = 0
+        dist = diff.length()
+        if dist <= hit_range:
+            facing_dot = player.forward.normalized().dot(diff.normalized()) if dist > 0.01 else 1.0
+            if facing_dot > 0.15:
+                is_crit = is_airborne or (random.random() < 0.30) or (facing_dot > 0.90)
+                damage = player_damage * (1.1 if 'damage' in match_cheats else 1.0)
+                if is_crit:
+                    crit_mult = 1.8 * (1.15 if is_airborne else 1.0)
+                    final_damage = damage * crit_mult
+                else:
+                    final_damage = damage
+                spawn_damage_number(remote_player.position, final_damage, is_crit=is_crit)
+                for child in remote_player.children:
+                    if hasattr(child, 'color'):
+                        child.blink(color.red, duration=0.12)
+                if dist > 0.01:
+                    knockback = 0.95 if is_airborne else (0.75 if is_crit else 0.5)
+                    remote_player.position += diff.normalized() * knockback
 
 
 # =============================================================================
@@ -2347,8 +2658,8 @@ def show_pause_menu():
         parent        = camera.ui,
         model         = 'quad',
         color         = color.rgb(220/255, 45/255, 55/255),
-        scale         = (0.43, 0.55),
-        position      = (0, 0),
+        scale         = (0.45, 0.63),
+        position      = (0, 0.01),
         z             = 0.04,
         ignore_paused = True,
     )
@@ -2356,8 +2667,8 @@ def show_pause_menu():
         parent        = camera.ui,
         model         = 'quad',
         color         = color.rgb(18/255, 18/255, 24/255),
-        scale         = (0.41, 0.53),
-        position      = (0, 0),
+        scale         = (0.43, 0.61),
+        position      = (0, 0.01),
         z             = 0.03,
         ignore_paused = True,
     )
@@ -2366,7 +2677,7 @@ def show_pause_menu():
     title = Text(
         text          = 'PAUSED',
         origin        = (0, 0),
-        position      = (0, 0.18),
+        position      = (0, 0.22),
         scale         = 2.8,
         color         = color.rgb(255/255, 215/255, 60/255),
         ignore_paused = True,
@@ -2374,7 +2685,7 @@ def show_pause_menu():
     sub = Text(
         text          = 'Game Paused',
         origin        = (0, 0),
-        position      = (0, 0.12),
+        position      = (0, 0.165),
         scale         = 1.1,
         color         = color.rgb(160/255, 165/255, 180/255),
         ignore_paused = True,
@@ -2386,7 +2697,7 @@ def show_pause_menu():
             parent        = camera.ui,
             model         = 'quad',
             color         = border_col,
-            scale         = (0.33, 0.076),
+            scale         = (0.34, 0.072),
             position      = (0, ypos),
             z             = 0.02,
             ignore_paused = True,
@@ -2396,10 +2707,10 @@ def show_pause_menu():
             color           = fill_col,
             highlight_color = hover_col,
             text_color      = color.white,
-            scale           = (0.316, 0.064),
+            scale           = (0.326, 0.060),
             position        = (0, ypos),
             z               = 0.01,
-            text_size       = 1.1,
+            text_size       = 1.05,
             ignore_paused   = True,
         )
         btn.on_click = on_click_fn
@@ -2408,25 +2719,34 @@ def show_pause_menu():
 
     # Modern Emerald Green Resume
     make_pause_btn(
-        'RESUME', 0.03,
+        'RESUME', 0.08,
         color.rgb(25/255, 130/255, 70/255),
         color.rgb(50/255, 220/255, 115/255),
         color.rgb(45/255, 175/255, 95/255),
         hide_pause_menu
     )
 
-    # Modern Sapphire Blue Change Character
+    # Modern Amber / Golden Orange Change Character
     make_pause_btn(
-        'MAIN MENU', -0.07,
+        'CHANGE CHARACTER', 0.00,
+        color.rgb(180/255, 90/255, 20/255),
+        color.rgb(255/255, 170/255, 50/255),
+        color.rgb(225/255, 125/255, 30/255),
+        go_to_character_select
+    )
+
+    # Modern Sapphire Blue Main Menu
+    make_pause_btn(
+        'MAIN MENU', -0.08,
         color.rgb(30/255, 85/255, 170/255),
         color.rgb(75/255, 170/255, 255/255),
         color.rgb(50/255, 120/255, 215/255),
-        go_to_character_select
+        go_to_main_menu
     )
 
     # Modern Crimson Red Quit
     make_pause_btn(
-        'QUIT', -0.17,
+        'QUIT', -0.16,
         color.rgb(165/255, 28/255, 38/255),
         color.rgb(250/255, 70/255, 80/255),
         color.rgb(210/255, 45/255, 55/255),
@@ -2452,9 +2772,10 @@ def hide_pause_menu():
         easter_egg_cursor.visible = easter_egg_mouse_unlocked
 
 
-def go_to_character_select():
+def teardown_gameplay():
     """
-    Tear down the current gameplay session and return to the main menu.
+    Tear down the current gameplay session completely and clean up all entities,
+    HUD elements, bots, and overlays.
     """
     global player, weapon_arm, arm_left, leg_left, leg_right, body_entity
     global leg_back_l, leg_back_r, tail_entity
@@ -2462,13 +2783,34 @@ def go_to_character_select():
     global pause_ui_elems, is_blocking, is_attacking, walk_time
     global hud_char_name, hud_hp_bar_bg, hud_hp_bar_fill, hud_hp_text
     global hud_dash_text, hud_kills_text, hud_special_perk, hud_controls
-    global hud_whistle_icon, hud_whistle_cooldown
+    global hud_whistle_icon, hud_whistle_cooldown, hud_ult_icon, hud_ult_cooldown
     global block_indicator, autoblock_banner, game_over_ui_elems
     global camera_yaw, camera_pitch
     global easter_egg_progress, easter_egg_active, easter_egg_escape_used
     global easter_egg_mouse_unlocked, easter_egg_map_ui
     global easter_egg_player_marker, easter_egg_bot_markers, easter_egg_cursor
     global training_dummy, network_status_label, remote_player
+    global remote_player_data, remote_player_char, remote_hp_bar_fill, remote_name_tag
+    global _whistle_remaining, _whistle_bgm_paused
+    global cam_zoom_delta, cam_fov_delta
+
+    cam_zoom_delta = 0.0
+    cam_fov_delta  = 0.0
+
+    teardown_ring_of_fire()
+
+    if _whistle_audio:
+        try:
+            _whistle_audio.stop()
+        except Exception:
+            pass
+    _whistle_remaining = 0.0
+    if bg_music and _whistle_bgm_paused:
+        try:
+            bg_music.resume()
+        except Exception:
+            pass
+        _whistle_bgm_paused = False
 
     # 1. Clear game over overlay if present
     for elem in game_over_ui_elems:
@@ -2492,6 +2834,10 @@ def go_to_character_select():
     if remote_player:
         deep_destroy(remote_player)
         remote_player = None
+    remote_player_data = None
+    remote_player_char = None
+    remote_hp_bar_fill = None
+    remote_name_tag = None
     stop_network_session()
 
     # 4. Destroy active player model and all attached parts
@@ -2558,7 +2904,21 @@ def go_to_character_select():
     mouse.locked    = False
     mouse.visible   = True
 
-    # 9. Return to the main menu
+
+def go_to_character_select():
+    """
+    Tear down gameplay and return directly to the character selection screen.
+    """
+    teardown_gameplay()
+    game_state = 'selection'
+    setup_selection_menu()
+
+
+def go_to_main_menu():
+    """
+    Tear down gameplay and return to the main title menu.
+    """
+    teardown_gameplay()
     show_main_menu()
 
 
@@ -2569,18 +2929,27 @@ _whistle_cooldown = 0.0
 _WHISTLE_COOLDOWN = 15.0          # seconds between whistles
 _whistle_label    = None          # on-screen flash text
 _whistle_remaining = 0.0          # time left in the whistle animation
+_whistle_bgm_paused = False       # whether battlesong is paused for the whistle
 
 # Load whistle with Ursina's audio system
 _whistle_audio = Audio('whistle.mp3', loop=False, autoplay=False)
 
 
 def play_death_whistle():
-    """Play the whistle MP3 sound + show a flash label (Death only, F key)."""
-    global _whistle_cooldown, _whistle_label, _whistle_remaining
+    """Play the whistle MP3 sound + show a flash label (Death only, E key)."""
+    global _whistle_cooldown, _whistle_label, _whistle_remaining, _whistle_bgm_paused
     if _whistle_cooldown > 0 or _whistle_remaining > 0:
         return
     _whistle_cooldown = _WHISTLE_COOLDOWN
     _whistle_remaining = max(0.1, getattr(_whistle_audio, 'length', 3.0))
+
+    # Pause battlesong background music while whistle plays
+    if bg_music and not _whistle_bgm_paused:
+        try:
+            bg_music.pause()
+            _whistle_bgm_paused = True
+        except Exception:
+            pass
 
     # Play audio when triggered with F
     _whistle_audio.stop()
@@ -2600,6 +2969,415 @@ def update_whistle_hud():
     cooldown_ratio = clamp(_whistle_cooldown / _WHISTLE_COOLDOWN, 0.0, 1.0)
     hud_whistle_cooldown.visible = cooldown_ratio > 0
     hud_whistle_cooldown.scale_y = max(0.001, WHISTLE_ICON_SIZE * cooldown_ratio)
+
+
+# =============================================================================
+# DEATH'S ULTIMATE ABILITY: RING OF FIRE (Climax 1v1 Arena from The Last Wish)
+# =============================================================================
+_ult_cooldown           = 0.0
+_ULT_COOLDOWN           = 32.0          # cooldown in seconds
+_ring_of_fire_active    = False
+_ring_of_fire_center    = Vec3(0, 0, 0)
+_ring_of_fire_radius    = 8.5           # circular duel arena radius
+_ring_of_fire_remaining = 0.0
+_RING_OF_FIRE_DURATION  = 16.0          # duration of the fiery cage
+_ring_of_fire_target    = None          # target locked in the 1v1
+_ring_of_fire_entities  = []            # all 3D flame quads, decals, and embers
+_ring_of_fire_embers    = []            # floating spark particle definitions
+
+
+def update_ult_hud():
+    if not hud_ult_icon or not hud_ult_cooldown:
+        return
+    cooldown_ratio = clamp(_ult_cooldown / _ULT_COOLDOWN, 0.0, 1.0)
+    hud_ult_cooldown.visible = cooldown_ratio > 0
+    hud_ult_cooldown.scale_y = max(0.001, ULT_ICON_SIZE * cooldown_ratio)
+
+
+def cast_death_ult():
+    """
+    Death's Ultimate: Ring of Fire (Puss in Boots: The Last Wish).
+    Death clashes his two sickles producing intense sparks, then summons a towering,
+    multi-colored ring of blazing magical fire around himself and his opponent,
+    locking them into an inescapable 1v1 duel to the death.
+    """
+    global _ult_cooldown, _ring_of_fire_active, _ring_of_fire_center, _ring_of_fire_remaining
+    global _ring_of_fire_target, _ring_of_fire_entities, _ring_of_fire_embers
+
+    if _ult_cooldown > 0 or _ring_of_fire_active or player is None or game_state != 'playing':
+        return
+
+    _ult_cooldown = _ULT_COOLDOWN
+    _ring_of_fire_active = True
+    _ring_of_fire_remaining = _RING_OF_FIRE_DURATION
+
+    # Identify duel target (closest active bot or multiplayer remote player)
+    closest_enemy = None
+    closest_dist = 999.0
+    for bot in active_bots:
+        if not bot.is_dead and hasattr(bot, 'root') and bot.root:
+            d = (bot.root.position - player.position).length()
+            if d < closest_dist:
+                closest_dist = d
+                closest_enemy = bot
+
+    if remote_player and network_connected:
+        rd = (remote_player.position - player.position).length()
+        if rd < closest_dist:
+            closest_dist = rd
+            closest_enemy = remote_player
+
+    _ring_of_fire_target = closest_enemy
+
+    # Position arena center between Death and his duel opponent if close, else around Death
+    if closest_enemy and closest_dist < 13.0:
+        target_pos = closest_enemy.root.position if hasattr(closest_enemy, 'root') else closest_enemy.position
+        _ring_of_fire_center = Vec3(
+            (player.x + target_pos.x) * 0.5,
+            0.0,
+            (player.z + target_pos.z) * 0.5
+        )
+    else:
+        _ring_of_fire_center = Vec3(player.x, 0.0, player.z)
+
+    # 1. Death Sickle Clash Friction Animation
+    if arm_left:
+        arm_left.animate_rotation(Vec3(25, 45, -20), duration=0.12)
+        arm_left.animate_position(Vec3(-0.35, 1.82, 0.40), duration=0.12)
+    if weapon_arm:
+        weapon_arm.animate_rotation(Vec3(25, -45, 20), duration=0.12)
+        weapon_arm.animate_position(Vec3(0.35, 1.82, 0.40), duration=0.12)
+
+    # 2. Burst of Friction Sparks from sickles
+    clash_point = player.position + Vec3(0, 1.82, 0.45)
+    for _ in range(16):
+        spark = Entity(
+            model='quad',
+            texture='flame_ember.png',
+            color=color.rgb(255/255, random.uniform(200, 255)/255, random.uniform(80, 140)/255),
+            scale=random.uniform(0.12, 0.26),
+            position=clash_point,
+            double_sided=True
+        )
+        s_dir = Vec3(random.uniform(-1, 1), random.uniform(-0.3, 1), random.uniform(-1, 1)).normalized()
+        spark.animate_position(spark.position + s_dir * random.uniform(1.2, 2.8), duration=0.35, curve=curve.out_quad)
+        spark.fade_out(duration=0.30, delay=0.08)
+        destroy(spark, delay=0.45)
+
+    update_ult_hud()
+
+    # 3. Ignite Ring of Fire after sickle friction clash
+    invoke(_ignite_ring_of_fire, delay=0.15)
+
+
+def _ignite_ring_of_fire():
+    """Erupt the multi-chromatic 3D flame wall around the duel arena."""
+    global _ring_of_fire_entities, _ring_of_fire_embers
+
+    if not _ring_of_fire_active or player is None:
+        return
+
+    # Death outward dual-sickle flare animation
+    if arm_left:
+        arm_left.animate_rotation(Vec3(-20, -50, 20), duration=0.25)
+        arm_left.animate_position(Vec3(-0.70, 1.82, 0.0), duration=0.25)
+    if weapon_arm:
+        weapon_arm.animate_rotation(Vec3(-20, 50, -20), duration=0.25)
+        weapon_arm.animate_position(Vec3(0.70, 1.82, 0.0), duration=0.25)
+    invoke(reset_attack_arm, delay=0.45)
+
+    # A) Fiery floor scorch and glowing ground rune decals
+    decal_size = _ring_of_fire_radius * 2.18
+    floor_ring = Entity(
+        model='quad',
+        texture='flame_ring_decal.png',
+        position=_ring_of_fire_center + Vec3(0, 0.03, 0),
+        rotation_x=90,
+        scale=(decal_size, decal_size),
+        color=color.rgb(255/255, 90/255, 20/255),
+        double_sided=True
+    )
+    _ring_of_fire_entities.append(floor_ring)
+
+    inner_glow = Entity(
+        model='quad',
+        texture='flame_ring_decal.png',
+        position=_ring_of_fire_center + Vec3(0, 0.04, 0),
+        rotation_x=90,
+        scale=(_ring_of_fire_radius * 2.06, _ring_of_fire_radius * 2.06),
+        color=color.rgb(255/255, 220/255, 50/255),
+        double_sided=True
+    )
+    _ring_of_fire_entities.append(inner_glow)
+
+    # B) Detailed multi-layered flame wall pillars (36 clusters around circle)
+    NUM_PILLARS = 36
+    for i in range(NUM_PILLARS):
+        angle = i * (2.0 * math.pi / NUM_PILLARS)
+        dir_vec = Vec3(math.cos(angle), 0, math.sin(angle))
+        pillar_pos = _ring_of_fire_center + dir_vec * _ring_of_fire_radius
+        tangent_yaw = -math.degrees(angle) + 90.0
+
+        # Layer 1: Outer Mystical Crimson & Magenta Flame Tips (Iconic Wishing Star edges)
+        scale_y_1 = random.uniform(3.8, 5.0)
+        c_layer1 = color.rgb(
+            random.uniform(205, 230) / 255,
+            random.uniform(20, 35) / 255,
+            random.uniform(70, 125) / 255
+        )
+        f1 = Entity(
+            model='quad',
+            texture='flame_tongue.png',
+            color=c_layer1,
+            scale=(1.45, scale_y_1),
+            position=pillar_pos + Vec3(0, scale_y_1 * 0.48, 0),
+            rotation=(0, tangent_yaw + random.uniform(-10, 10), random.uniform(-4, 4)),
+            double_sided=True
+        )
+        f1.base_scale_y = scale_y_1
+        f1.base_rot_z = f1.rotation_z
+        f1.flicker_phase = angle * 2.5
+        _ring_of_fire_entities.append(f1)
+
+        # Layer 2: Mid Blazing Scarlet & Fiery Orange Flames
+        scale_y_2 = random.uniform(3.0, 4.0)
+        c_layer2 = color.rgb(
+            255 / 255,
+            random.uniform(75, 125) / 255,
+            random.uniform(10, 25) / 255
+        )
+        f2 = Entity(
+            model='quad',
+            texture='flame_tongue.png',
+            color=c_layer2,
+            scale=(1.25, scale_y_2),
+            position=pillar_pos + Vec3(0, scale_y_2 * 0.48, 0),
+            rotation=(0, tangent_yaw + random.uniform(-25, 25), 0),
+            double_sided=True
+        )
+        f2.base_scale_y = scale_y_2
+        f2.base_rot_z = 0.0
+        f2.flicker_phase = angle * 2.5 + 1.2
+        _ring_of_fire_entities.append(f2)
+
+        # Layer 3: Inner Golden Sun Incandescent Core Flames
+        scale_y_3 = random.uniform(2.0, 2.9)
+        c_layer3 = color.rgb(
+            255 / 255,
+            random.uniform(215, 245) / 255,
+            random.uniform(40, 90) / 255
+        )
+        f3 = Entity(
+            model='quad',
+            texture='flame_tongue.png',
+            color=c_layer3,
+            scale=(0.95, scale_y_3),
+            position=pillar_pos + Vec3(0, scale_y_3 * 0.48, 0),
+            rotation=(0, tangent_yaw + random.uniform(-15, 15), 0),
+            double_sided=True
+        )
+        f3.base_scale_y = scale_y_3
+        f3.base_rot_z = 0.0
+        f3.flicker_phase = angle * 2.5 + 2.4
+        _ring_of_fire_entities.append(f3)
+
+        # Layer 4: Volumetric Radial Cross-Quad (perpendicular for full 3D depth)
+        scale_y_4 = random.uniform(2.8, 3.8)
+        f4 = Entity(
+            model='quad',
+            texture='flame_tongue.png',
+            color=color.rgb(255/255, 105/255, 18/255),
+            scale=(1.15, scale_y_4),
+            position=pillar_pos + Vec3(0, scale_y_4 * 0.48, 0),
+            rotation=(0, tangent_yaw + 90.0, 0),
+            double_sided=True
+        )
+        f4.base_scale_y = scale_y_4
+        f4.base_rot_z = 0.0
+        f4.flicker_phase = angle * 2.5 + 0.6
+        _ring_of_fire_entities.append(f4)
+
+    # C) Floating Rising Ember Particles along the circle
+    _ring_of_fire_embers.clear()
+    for _ in range(28):
+        ember_angle = random.uniform(0, 2 * math.pi)
+        e_pos = _ring_of_fire_center + Vec3(
+            math.cos(ember_angle) * (_ring_of_fire_radius + random.uniform(-0.35, 0.35)),
+            random.uniform(0.2, 4.0),
+            math.sin(ember_angle) * (_ring_of_fire_radius + random.uniform(-0.35, 0.35))
+        )
+        ember = Entity(
+            model='quad',
+            texture='flame_ember.png',
+            color=color.rgb(255/255, random.uniform(150, 240)/255, 45/255),
+            scale=random.uniform(0.12, 0.22),
+            position=e_pos,
+            double_sided=True
+        )
+        _ring_of_fire_embers.append({
+            'entity': ember,
+            'base_angle': ember_angle,
+            'speed': random.uniform(2.6, 4.4),
+            'sway_freq': random.uniform(3.5, 7.0),
+            'sway_amp': random.uniform(0.12, 0.28)
+        })
+        _ring_of_fire_entities.append(ember)
+
+    # D) Dramatic On-Screen Fiery Duel Announcement
+    banner_title = Text(
+        text="RING OF FIRE",
+        origin=(0, 0),
+        position=(0, 0.25),
+        scale=2.7,
+        color=color.rgb(255/255, 140/255, 20/255),
+        font=HUD_FONT,
+        parent=camera.ui
+    )
+    banner_sub = Text(
+        text="1v1 LOCKED DUEL",
+        origin=(0, 0),
+        position=(0, 0.17),
+        scale=1.35,
+        color=color.rgb(255/255, 40/255, 60/255),
+        font=HUD_FONT,
+        parent=camera.ui
+    )
+    banner_title.animate_scale(3.3, duration=0.25, curve=curve.out_back)
+    banner_title.fade_out(duration=0.6, delay=1.8)
+    banner_sub.fade_out(duration=0.6, delay=1.8)
+    destroy(banner_title, delay=2.5)
+    destroy(banner_sub, delay=2.5)
+
+
+def update_ring_of_fire(dt):
+    """
+    Tick ultimate timer, flicker the multi-colored flames, drift the sparks,
+    and enforce the 1v1 containment boundary with burn damage.
+    """
+    global _ult_cooldown, _ring_of_fire_active, _ring_of_fire_remaining
+    global _ring_of_fire_target, _ring_of_fire_entities, _ring_of_fire_embers
+
+    if _ult_cooldown > 0:
+        _ult_cooldown = max(0.0, _ult_cooldown - dt)
+        update_ult_hud()
+
+    if not _ring_of_fire_active:
+        return
+
+    _ring_of_fire_remaining -= dt
+
+    # Check expiration or target death
+    if _ring_of_fire_remaining <= 0 or (
+        _ring_of_fire_target and hasattr(_ring_of_fire_target, 'is_dead') and _ring_of_fire_target.is_dead
+    ):
+        extinguish_ring_of_fire()
+        return
+
+    t = time.time()
+
+    # 1. Animate multi-chromatic flame flickers and wind sway
+    for ent in _ring_of_fire_entities:
+        if hasattr(ent, 'base_scale_y'):
+            flicker = math.sin(t * 14.0 + ent.flicker_phase)
+            ent.scale_y = ent.base_scale_y * (1.0 + 0.16 * flicker)
+            if hasattr(ent, 'base_rot_z'):
+                ent.rotation_z = ent.base_rot_z + 3.8 * math.sin(t * 9.0 + ent.flicker_phase)
+
+    # 2. Animate floating rising embers
+    for item in _ring_of_fire_embers:
+        ember = item['entity']
+        if ember and ember.enabled:
+            ember.y += item['speed'] * dt
+            sway = math.sin(t * item['sway_freq'] + item['base_angle']) * item['sway_amp']
+            ang = item['base_angle']
+            ember.x = _ring_of_fire_center.x + math.cos(ang) * (_ring_of_fire_radius + sway)
+            ember.z = _ring_of_fire_center.z + math.sin(ang) * (_ring_of_fire_radius + sway)
+            if ember.y > 4.8:
+                ember.y = random.uniform(0.1, 0.4)
+                item['base_angle'] = random.uniform(0, 2 * math.pi)
+
+    # 3. 1v1 Arena Containment & Burn Barrier
+    # Player (Death) stays inside the ring of fire
+    if player:
+        p_diff = player.position - _ring_of_fire_center
+        p_diff.y = 0
+        p_dist = p_diff.length()
+        if p_dist > _ring_of_fire_radius - 0.4 and p_dist > 0.01:
+            player.position = _ring_of_fire_center + p_diff.normalized() * (_ring_of_fire_radius - 0.4)
+
+    # Bots: Target trapped inside; outsiders repelled outside
+    for bot in list(active_bots):
+        if bot.is_dead or not hasattr(bot, 'root') or not bot.root:
+            continue
+        b_diff = bot.root.position - _ring_of_fire_center
+        b_diff.y = 0
+        b_dist = b_diff.length()
+
+        is_duel_target = (bot == _ring_of_fire_target)
+        if is_duel_target or b_dist < _ring_of_fire_radius:
+            # Trapped inside
+            if b_dist > _ring_of_fire_radius - 0.6 and b_dist > 0.01:
+                bot.root.position = _ring_of_fire_center + b_diff.normalized() * (_ring_of_fire_radius - 0.7)
+                bot.take_damage(28.0 * dt, is_crit=True)
+                for child in bot.root.children:
+                    if hasattr(child, 'color'):
+                        child.blink(color.rgb(255/255, 60/255, 10/255), duration=0.1)
+        else:
+            # Outsider bot: cannot enter the 1v1 ring
+            if b_dist < _ring_of_fire_radius + 0.8 and b_dist > 0.01:
+                bot.root.position = _ring_of_fire_center + b_diff.normalized() * (_ring_of_fire_radius + 1.1)
+                bot.take_damage(28.0 * dt, is_crit=True)
+
+    # Remote player in multiplayer
+    if remote_player and network_connected:
+        r_diff = remote_player.position - _ring_of_fire_center
+        r_diff.y = 0
+        r_dist = r_diff.length()
+        if r_dist < _ring_of_fire_radius:
+            if r_dist > _ring_of_fire_radius - 0.6 and r_dist > 0.01:
+                remote_player.position = _ring_of_fire_center + r_diff.normalized() * (_ring_of_fire_radius - 0.7)
+                spawn_damage_number(remote_player.position, 28.0 * dt, is_crit=True)
+        else:
+            if r_dist < _ring_of_fire_radius + 0.8 and r_dist > 0.01:
+                remote_player.position = _ring_of_fire_center + r_diff.normalized() * (_ring_of_fire_radius + 1.1)
+                spawn_damage_number(remote_player.position, 28.0 * dt, is_crit=True)
+
+
+def extinguish_ring_of_fire():
+    """Dissolve the ring of fire into fading embers at the end of the duel."""
+    global _ring_of_fire_active, _ring_of_fire_entities, _ring_of_fire_embers
+    _ring_of_fire_active = False
+    for ent in list(_ring_of_fire_entities):
+        if ent and hasattr(ent, 'fade_out'):
+            try:
+                ent.fade_out(duration=0.5)
+                destroy(ent, delay=0.55)
+            except Exception:
+                deep_destroy(ent)
+        elif ent:
+            deep_destroy(ent)
+    _ring_of_fire_entities.clear()
+    _ring_of_fire_embers.clear()
+
+
+def teardown_ring_of_fire():
+    """Immediately clean up all entities and HUD elements."""
+    global _ring_of_fire_active, _ring_of_fire_entities, _ring_of_fire_embers
+    global _ring_of_fire_remaining, _ring_of_fire_target, _ult_cooldown
+    global hud_ult_icon, hud_ult_cooldown
+    _ring_of_fire_active = False
+    _ring_of_fire_remaining = 0.0
+    _ring_of_fire_target = None
+    for ent in list(_ring_of_fire_entities):
+        deep_destroy(ent)
+    _ring_of_fire_entities.clear()
+    _ring_of_fire_embers.clear()
+    if hud_ult_icon:
+        deep_destroy(hud_ult_icon)
+    if hud_ult_cooldown:
+        deep_destroy(hud_ult_cooldown)
+    hud_ult_icon = None
+    hud_ult_cooldown = None
 
 
 # =============================================================================
@@ -2756,9 +3534,34 @@ def input(key):
         y_velocity = JUMP_FORCE
         is_grounded = False
 
-    # --- Death's Whistle (F) ---
+    # --- Death's Whistle (E) ---
     if key == controls['ability'] and selected_char == 'death':
         play_death_whistle()
+
+    # --- Death's Ultimate: Ring of Fire (X) ---
+    if (key == controls.get('ult', 'x') or key == 'x') and selected_char == 'death':
+        cast_death_ult()
+
+    # --- Camera Zoom & FOV Scroll Controls ---
+    global cam_zoom_delta, cam_fov_delta
+    if key == 'scroll up':
+        # Zoom in on character: increases zoomness / character size on screen
+        cam_zoom_delta = clamp(cam_zoom_delta + 0.6, -7.0, 2.8)
+        cam_fov_delta  = clamp(cam_fov_delta - 3.5, -24.0, 36.0)
+        camera.z   = cam_base_z + cam_zoom_delta
+        camera.fov = cam_base_fov + cam_fov_delta
+    elif key == 'scroll down':
+        # Increase FOV and pull back camera for wide-angle battlefield perspective
+        cam_zoom_delta = clamp(cam_zoom_delta - 0.6, -7.0, 2.8)
+        cam_fov_delta  = clamp(cam_fov_delta + 3.5, -24.0, 36.0)
+        camera.z   = cam_base_z + cam_zoom_delta
+        camera.fov = cam_base_fov + cam_fov_delta
+    elif key == 'middle mouse down':
+        # Reset camera zoom and FOV to character preset default
+        cam_zoom_delta = 0.0
+        cam_fov_delta  = 0.0
+        camera.z   = cam_base_z
+        camera.fov = cam_base_fov
 
 
 # =============================================================================
@@ -2777,6 +3580,88 @@ def do_dash():
 
 
 # =============================================================================
+# COLLISION SYSTEM (Player vs Bots, Bot vs Bot, Player vs Player)
+# =============================================================================
+
+def resolve_collisions():
+    """
+    Push apart characters on the XZ plane so players and bots cannot walk through each other.
+    Handles:
+    - Player vs Active Bots
+    - Bot vs Bot
+    - Player vs Remote Player
+    - Remote Player vs Bots
+    """
+    if game_state != 'playing' or not player:
+        return
+
+    player_radius = 0.75 if selected_char == 'death' else 0.50
+
+    # 1. Player vs Active Bots
+    for bot in active_bots:
+        if bot.is_dead or not bot.root:
+            continue
+        diff = player.position - bot.root.position
+        diff.y = 0
+        dist = diff.length()
+        min_dist = player_radius + 0.50
+        if 0.0001 < dist < min_dist:
+            push = (min_dist - dist)
+            norm = diff.normalized()
+            player.position += norm * (push * 0.55)
+            bot.root.position -= norm * (push * 0.45)
+
+    # 2. Bot vs Bot (prevent overlapping into a single spot)
+    num_bots = len(active_bots)
+    for i in range(num_bots):
+        b1 = active_bots[i]
+        if b1.is_dead or not b1.root:
+            continue
+        for j in range(i + 1, num_bots):
+            b2 = active_bots[j]
+            if b2.is_dead or not b2.root:
+                continue
+            diff = b1.root.position - b2.root.position
+            diff.y = 0
+            dist = diff.length()
+            min_dist = 1.05
+            if 0.0001 < dist < min_dist:
+                push = (min_dist - dist) * 0.5
+                norm = diff.normalized()
+                b1.root.position += norm * push
+                b2.root.position -= norm * push
+
+    # 3. Player vs Remote Player (Multiplayer)
+    if remote_player and network_connected:
+        r_rad = 0.75 if remote_player_char == 'death' else 0.50
+        diff = player.position - remote_player.position
+        diff.y = 0
+        dist = diff.length()
+        min_dist = player_radius + r_rad
+        if 0.0001 < dist < min_dist:
+            push = (min_dist - dist) * 0.5
+            norm = diff.normalized()
+            player.position += norm * push
+            remote_player.position -= norm * push
+
+    # 4. Remote Player vs Bots (Multiplayer)
+    if remote_player and network_connected:
+        r_rad = 0.75 if remote_player_char == 'death' else 0.50
+        for bot in active_bots:
+            if bot.is_dead or not bot.root:
+                continue
+            diff = remote_player.position - bot.root.position
+            diff.y = 0
+            dist = diff.length()
+            min_dist = r_rad + 0.50
+            if 0.0001 < dist < min_dist:
+                push = (min_dist - dist) * 0.5
+                norm = diff.normalized()
+                remote_player.position += norm * push
+                bot.root.position -= norm * push
+
+
+# =============================================================================
 # MAIN UPDATE LOOP
 # =============================================================================
 camera_yaw   = 0.0
@@ -2784,18 +3669,11 @@ camera_pitch = 3.0
 
 def update():
     global dash_cooldown, camera_yaw, camera_pitch, y_velocity, is_grounded, walk_time
-    global bot_respawn_timer, _whistle_cooldown, _whistle_remaining
+    global bot_respawn_timer, _whistle_cooldown, _whistle_remaining, _whistle_bgm_paused
     global network_local_snapshot
 
     dt = time.dt
     process_network_events()
-
-    if network_role and player:
-        with network_snapshot_lock:
-            network_local_snapshot = {
-                'x': float(player.x), 'y': float(player.y), 'z': float(player.z),
-                'yaw': float(player.rotation_y), 'attack_seq': network_attack_sequence,
-            }
 
     if game_state in (
         'main_menu', 'play_menu', 'singleplayer_menu', 'multiplayer_menu',
@@ -2812,6 +3690,16 @@ def update():
         update_whistle_hud()
     if _whistle_remaining > 0:
         _whistle_remaining = max(0.0, _whistle_remaining - dt)
+        if _whistle_remaining <= 0 and _whistle_bgm_paused:
+            if bg_music:
+                try:
+                    bg_music.resume()
+                except Exception:
+                    pass
+            _whistle_bgm_paused = False
+
+    # Tick Death's Ultimate: Ring of Fire
+    update_ring_of_fire(dt)
 
     # 3D Turntable continuous rotation in selection menu
     if game_state == 'selection' and preview_pivot:
@@ -2823,7 +3711,7 @@ def update():
 
     if network_connected:
         if not remote_player:
-            _create_remote_player()
+            _create_remote_player(network_remote_snapshot.get('char', 'puss') if network_remote_snapshot else 'puss')
         _apply_remote_snapshot(dt)
 
     # -------------------------------------------------------
@@ -3008,6 +3896,30 @@ def update():
             if not is_attacking and not is_blocking and _whistle_remaining <= 0:
                 if arm_left:   arm_left.rotation = Vec3(0, 0, 0)
                 if weapon_arm: weapon_arm.rotation = Vec3(0, 0, 0)
+
+    # -------------------------------------------------------
+    # CHARACTER COLLISIONS (Push apart players & bots)
+    # -------------------------------------------------------
+    resolve_collisions()
+
+    # -------------------------------------------------------
+    # MULTIPLAYER SNAPSHOT UPDATE (Full movement & combat state sync)
+    # -------------------------------------------------------
+    if network_role and player:
+        with network_snapshot_lock:
+            network_local_snapshot = {
+                'x': float(player.x),
+                'y': float(player.y),
+                'z': float(player.z),
+                'yaw': float(player.rotation_y),
+                'attack_seq': int(network_attack_sequence),
+                'char': str(selected_char),
+                'moving': bool(is_moving) if 'is_moving' in locals() else False,
+                'sprinting': bool(is_sprinting) if 'is_sprinting' in locals() else False,
+                'blocking': bool(is_blocking),
+                'attacking': bool(is_attacking),
+                'hp': float(player_hp),
+            }
 
 
 if __name__ == '__main__':

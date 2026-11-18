@@ -31,8 +31,8 @@ COLOR_DIAMOND = (80, 220, 220)
 COLOR_OAK_BROWN = (101, 67, 33)
 COLOR_BIRCH_WHITE = (220, 220, 220)
 COLOR_PLANKS = (210, 180, 140)
-COLOR_LEAVES_G = (34, 100, 34)
-COLOR_LEAVES_B = (50, 120, 50)
+COLOR_LEAVES_G = (9, 127, 2)
+COLOR_LEAVES_B = (88, 115, 59)
 COLOR_RED = (255, 0, 0)
 COLOR_DARK_RED = (200, 0, 0)
 
@@ -55,6 +55,19 @@ def draw_nameplate(surface, font, label, center_x, top_y, text_color=(255, 255, 
     pygame.draw.rect(surface, (0, 0, 0), (box_x, box_y, box_w, box_h))
     pygame.draw.rect(surface, (255, 255, 255), (box_x, box_y, box_w, box_h), 1)
     surface.blit(txt, (box_x + pad_x, box_y + pad_y))
+
+
+def _rect_overlaps_water(rect, world):
+    left = rect.left // TILE_SIZE
+    right = (rect.right - 1) // TILE_SIZE
+    top = rect.top // TILE_SIZE
+    bottom = (rect.bottom - 1) // TILE_SIZE
+    for ty in range(top, bottom + 1):
+        for tx in range(left, right + 1):
+            if world.get_block(tx % WORLD_WIDTH, ty) == WATER:
+                return True
+    return False
+
 
 BASE_DIR = Path(__file__).resolve().parent
 WORLDS_DIR = BASE_DIR / "worlds"
@@ -127,6 +140,10 @@ W_SLAB = 31
 C_SLAB = 32
 SS_STAIRS = 33
 SS_SLAB = 34
+GLASS = 35
+GLASS_PANE = 36
+VILLAGE_GENERATION_VERSION = 7
+VILLAGE_FOOTPRINT_WIDTH = 128
 TALL_GRASS = 37
 SEEDS = 38
 FARMLAND = 39
@@ -184,6 +201,31 @@ RAW_SALMON = 85
 COOKED_SALMON = 86
 RAW_FISH = RAW_COD
 COOKED_FISH = COOKED_COD
+DIORITE = 92
+GRANITE = 93
+GRAVEL = 94
+ANDESITE = 95
+DEEPSLATE = 96
+COPPER_ORE = 97
+COPPER_INGOT = 98
+FLINT = 99
+CARROT_STG0 = 152
+CARROT_STG1 = 153
+CARROT_STG2 = 154
+CARROT_STG3 = 155
+POTATO_STG0 = 156
+POTATO_STG1 = 157
+POTATO_STG2 = 158
+POTATO_STG3 = 159
+BEETROOT_STG0 = 160
+BEETROOT_STG1 = 161
+BEETROOT_STG2 = 162
+BEETROOT_STG3 = 163
+CARROT_ITEM = 164
+POTATO_ITEM = 165
+POISONOUS_POTATO = 166
+BEETROOT_ITEM = 167
+BEETROOT_SEEDS = 168
 
 # Tool IDs
 W_PICK = 100; S_PICK = 101; I_PICK = 110
@@ -197,6 +239,10 @@ D_PICK = 115; D_AXE = 116; D_SHOVEL = 117; D_SWORD = 118; D_HOE = 119
 I_HELMET = 120; I_CHEST = 121; I_LEGS = 122; I_BOOTS = 123
 D_HELMET = 124; D_CHEST = 125; D_LEGS = 126; D_BOOTS = 127
 SHIELD = 134
+FLINT_STEEL = 140
+SHEARS = 141
+WATER_BUCKET = 142
+ROCKET_LAUNCHER = 143
 
 BLOCK_HARDNESS = {
     GRASS_BLOCK: 0.1, DIRT_BLOCK: 0.5, STONE_BLOCK: 1.5, 
@@ -206,7 +252,9 @@ BLOCK_HARDNESS = {
     CHEST: 2.5, HAY_BALE: 0.5, FARMLAND: 0.6, FENCE: 2.0, FENCE_GATE: 2.0,
     DOOR: 3.0, TRAPDOOR: 3.0, W_STAIRS: 2.0, C_STAIRS: 2.0, SS_STAIRS: 2.0,
     W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, LADDER: 0.4, TORCH: 0.1,
-    SAND_BLOCK: 0.5, CACTUS: 0.4, DEAD_BUSH: 0.1
+    SAND_BLOCK: 0.5, CACTUS: 0.4, DEAD_BUSH: 0.1,
+    DIORITE: 1.5, GRANITE: 1.5, GRAVEL: 0.6, ANDESITE: 1.5,
+    DEEPSLATE: 3.0, COPPER_ORE: 3.0, GLASS: 0.3, GLASS_PANE: 0.3
 }
 
 BLOCK_NAMES = {
@@ -267,8 +315,61 @@ BLOCK_NAMES = {
     COOKED_SALMON: "Cooked Salmon",
     FISHING_ROD: "Fishing Rod",
     TORCH: "Torch",
-    SAND_BLOCK: "Sand", CACTUS: "Cactus", DEAD_BUSH: "Dead Bush", BEDROCK: "Bedrock", SADDLE: "Saddle"
+    SAND_BLOCK: "Sand", CACTUS: "Cactus", DEAD_BUSH: "Dead Bush", BEDROCK: "Bedrock", SADDLE: "Saddle",
+    DIORITE: "Diorite", GRANITE: "Granite", GRAVEL: "Gravel", ANDESITE: "Andesite",
+    DEEPSLATE: "Deepslate", COPPER_ORE: "Copper Ore", COPPER_INGOT: "Copper Ingot",
+    FLINT: "Flint", FLINT_STEEL: "Flint and Steel", SHEARS: "Shears",
+    GLASS: "Glass", GLASS_PANE: "Glass Pane",
+    CARROT_STG0: "Carrot Crop", CARROT_STG1: "Carrot Crop",
+    CARROT_STG2: "Carrot Crop", CARROT_STG3: "Carrot Crop",
+    POTATO_STG0: "Potato Crop", POTATO_STG1: "Potato Crop",
+    POTATO_STG2: "Potato Crop", POTATO_STG3: "Potato Crop",
+    BEETROOT_STG0: "Beetroot Crop", BEETROOT_STG1: "Beetroot Crop",
+    BEETROOT_STG2: "Beetroot Crop", BEETROOT_STG3: "Beetroot Crop",
+    CARROT_ITEM: "Carrot", POTATO_ITEM: "Potato",
+    POISONOUS_POTATO: "Poisonous Potato", BEETROOT_ITEM: "Beetroot",
+    BEETROOT_SEEDS: "Beetroot Seeds",
+    WATER_BUCKET: "Water Bucket", ROCKET_LAUNCHER: "Rocket Launcher"
 }
+
+CROP_STAGES = {
+    "wheat": (WHEAT_STG0, WHEAT_STG1, WHEAT_STG2, WHEAT_STG3),
+    "carrot": (CARROT_STG0, CARROT_STG1, CARROT_STG2, CARROT_STG3),
+    "potato": (POTATO_STG0, POTATO_STG1, POTATO_STG2, POTATO_STG3),
+    "beetroot": (BEETROOT_STG0, BEETROOT_STG1, BEETROOT_STG2, BEETROOT_STG3),
+}
+CROP_STAGE_TO_KIND = {
+    block_type: kind
+    for kind, stages in CROP_STAGES.items()
+    for block_type in stages
+}
+CROP_PLANT_ITEMS = {
+    SEEDS: "wheat",
+    CARROT_ITEM: "carrot",
+    POTATO_ITEM: "potato",
+    BEETROOT_SEEDS: "beetroot",
+}
+
+def get_crop_drops(block_type):
+    crop_kind = CROP_STAGE_TO_KIND.get(block_type)
+    if crop_kind is None:
+        return []
+    if block_type != CROP_STAGES[crop_kind][-1]:
+        if crop_kind == "wheat":
+            return [(SEEDS, 1)]
+        if crop_kind == "beetroot":
+            return [(BEETROOT_SEEDS, 1)]
+        return []
+    if crop_kind == "wheat":
+        return [(WHEAT_ITEM, 1), (SEEDS, random.randint(1, 2))]
+    if crop_kind == "carrot":
+        return [(CARROT_ITEM, random.randint(1, 3))]
+    if crop_kind == "potato":
+        drops = [(POTATO_ITEM, random.randint(1, 4))]
+        if random.random() < 0.02:
+            drops.append((POISONOUS_POTATO, 1))
+        return drops
+    return [(BEETROOT_ITEM, random.randint(1, 3)), (BEETROOT_SEEDS, random.randint(1, 2))]
 
 MAX_DURABILITY = {
     W_PICK: 60, W_AXE: 60, W_SHOVEL: 60, W_SWORD: 60, W_HOE: 60,
@@ -279,7 +380,20 @@ MAX_DURABILITY = {
     D_HELMET: 363, D_CHEST: 528, D_LEGS: 495, D_BOOTS: 429,
     BOW: 384,
     FISHING_ROD: 64,
-    SHIELD: 336
+    SHIELD: 336,
+    FLINT_STEEL: 64,
+    SHEARS: 238
+}
+
+ACHIEVEMENTS = {
+    "first_break": ("Getting Started", "Mine your first block"),
+    "first_build": ("Builder", "Place your first block"),
+    "first_craft": ("Crafting Time", "Craft your first item"),
+    "first_hunt": ("First Hunt", "Defeat a creature"),
+    "find_diamond": ("Shiny!", "Mine diamond ore"),
+    "collect_water": ("Water Carrier", "Collect water with a bucket"),
+    "shear_sheep": ("Wool Gatherer", "Shear a sheep"),
+    "harvest_wheat": ("Harvest Time", "Harvest mature wheat"),
 }
 
 PLACEABLE_BLOCKS = {
@@ -289,22 +403,89 @@ PLACEABLE_BLOCKS = {
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
     LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS,
     W_SLAB, C_SLAB, SS_SLAB, FARMLAND, HAY_BALE, CHEST,
-    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK, CACTUS, BEDROCK
+    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK,
+    CACTUS, BEDROCK, DIORITE, GRANITE, GRAVEL, ANDESITE, DEEPSLATE, COPPER_ORE,
+    GLASS, GLASS_PANE
 }
+
+def unlock_achievement(world, achievement_id):
+    if world is None:
+        return False
+    achievement = ACHIEVEMENTS.get(achievement_id)
+    if achievement is None or achievement_id in world.unlocked_achievements:
+        return False
+
+    world.unlocked_achievements.add(achievement_id)
+    toast = {"title": achievement[0], "description": achievement[1], "timer": 240}
+    if world.achievement_toast is None:
+        world.achievement_toast = toast
+    else:
+        world.achievement_queue.append(toast)
+    return True
+
+
+def draw_achievement_toast(surface, font, world):
+    if world.achievement_toast is None and world.achievement_queue:
+        world.achievement_toast = world.achievement_queue.pop(0)
+    toast = world.achievement_toast
+    if toast is None:
+        return
+
+    width, height = 360, 80
+    margin = 16
+    y = SCREEN_HEIGHT - height - 52
+    remaining = toast["timer"]
+    progress = min(1.0, (240 - remaining) / 12, remaining / 12)
+    x = margin - int(width * (1.0 - max(0.0, progress)))
+
+    panel = pygame.Surface((width, height), pygame.SRCALPHA)
+    pygame.draw.rect(panel, (25, 30, 28, 235), (0, 0, width, height), border_radius=4)
+    pygame.draw.rect(panel, (100, 180, 110, 255), (0, 0, width, height), 2, border_radius=4)
+    pygame.draw.rect(panel, (195, 160, 65, 255), (12, 14, 34, 34), border_radius=3)
+    pygame.draw.rect(panel, (55, 45, 28, 255), (19, 20, 20, 14))
+    pygame.draw.rect(panel, (55, 45, 28, 255), (15, 17, 5, 5))
+    pygame.draw.rect(panel, (55, 45, 28, 255), (38, 17, 5, 5))
+    pygame.draw.rect(panel, (55, 45, 28, 255), (24, 34, 10, 4))
+
+    header = font.render("Achievement Unlocked!", True, (255, 222, 125))
+    title = font.render(toast["title"], True, COLOR_WHITE)
+    description = font.render(toast["description"], True, (190, 195, 190))
+    panel.blit(header, (56, 4))
+    panel.blit(title, (56, 28))
+    panel.blit(description, (56, 52))
+    surface.blit(panel, (x, y))
+
+    toast["timer"] -= 1
+    if toast["timer"] <= 0:
+        world.achievement_toast = None
+
+
+def _load_persistent_player_id(player):
+    id_sources = (
+        (WORLDS_DIR / "savegame.json", "player_id"),
+        (WORLDS_DIR / "player_id.json", "id"),
+    )
+    for path, key in id_sources:
+        if not path.exists():
+            continue
+        try:
+            with open(path, "r") as f:
+                saved_data = json.load(f)
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"[SAVE] Could not read player ID from {path}: {error}")
+            continue
+
+        saved_id = saved_data.get(key) if isinstance(saved_data, dict) else None
+        if isinstance(saved_id, str) and saved_id:
+            player.persistent_id = saved_id
+            return
+        print(f"[SAVE] No valid player ID found in {path}")
+
 
 class Player:
     def __init__(self, display_name="Player"):
-        # Persistent ID for multiplayer saves
         self.persistent_id = "player_" + str(random.randint(1000, 9999))
-        try:
-            player_id_file = WORLDS_DIR / "player_id.json"
-            if player_id_file.exists():
-                with open(player_id_file, "r") as f:
-                    self.persistent_id = json.load(f).get("id", self.persistent_id)
-            else:
-                with open(player_id_file, "w") as f:
-                    json.dump({"id": self.persistent_id}, f)
-        except: pass
+        _load_persistent_player_id(self)
 
         self.display_name = sanitize_display_name(display_name)
 
@@ -313,6 +494,7 @@ class Player:
         self.speed = 5
         self.jump_strength = -8.0 # Stronger jump for easier towering
         self.on_ground = False
+        self.flying = False
         self.direction = 1 
         self.riding_mob = None
         
@@ -343,6 +525,8 @@ class Player:
         self.held_item = None
         self.show_inventory = False
         self.show_3x3 = False
+        self.recipe_book_open = False
+        self.recipe_book_page = 0
         self.active_furnace_pos = None
         self.active_chest_pos = None
         self.active_chest_is_large = False
@@ -402,7 +586,9 @@ class Player:
 
         if self.show_inventory: return # Freeze movement
         
-        if self.on_ground:
+        if self.flying:
+            self.highest_y = self.rect.y
+        elif self.on_ground:
             self.highest_y = self.rect.y
         else:
             self.highest_y = min(self.highest_y, self.rect.y)
@@ -410,15 +596,15 @@ class Player:
         dx = 0
         keys = pygame.key.get_pressed()
         
-        # Physics Check: Water
-        in_water = False
-        px, py = self.rect.centerx // TILE_SIZE, self.rect.centery // TILE_SIZE
-        if (px, py) in world.data and world.data[(px, py)] == WATER:
-            in_water = True
+        # Use the whole hitbox so swimming works while the player is only partly submerged.
+        in_water = _rect_overlaps_water(self.rect, world)
+        if in_water:
+            self.highest_y = self.rect.y
+            self.vel_y = min(self.vel_y, 2.0)
 
         head_underwater = False
         hx, hy = self.rect.centerx // TILE_SIZE, self.rect.top // TILE_SIZE
-        if (hx, hy) in world.data and world.data[(hx, hy)] == WATER:
+        if world.get_block(hx % WORLD_WIDTH, hy) == WATER:
             head_underwater = True
 
         # Drowning Logic
@@ -473,7 +659,7 @@ class Player:
                     self.direction = 1
                 return
 
-        if on_boat and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]):
+        if on_boat and not self.flying and (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]):
             exit_dx = 1 if self.direction > 0 else -1
             exit_x = (below_x + exit_dx) % WORLD_WIDTH
             self.rect.x = exit_x * TILE_SIZE
@@ -489,32 +675,45 @@ class Player:
         if keys[pygame.K_d]:
             dx += self.speed * (0.5 if in_water else speed_mult) * weather_speed_mult
             self.direction = 1
+        sneaking = (keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]) and not self.flying
         
         # Blocking
         self.blocking = False
-        if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
+        if sneaking:
             item_in_hand = self.inventory[self.selected_slot]
             if (item_in_hand and item_in_hand["type"] == SHIELD) or (self.offhand and self.offhand["type"] == SHIELD):
                 self.blocking = True
                 dx *= 0.3 # Slow down while blocking
 
-        if keys[pygame.K_SPACE] or keys[pygame.K_w]:
+        if sneaking and not self.blocking:
+            dx *= 0.3
+
+        if self.flying:
+            if keys[pygame.K_SPACE] or keys[pygame.K_w]:
+                self.vel_y = -self.speed
+            elif keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT] or keys[pygame.K_s]:
+                self.vel_y = self.speed
+            else:
+                self.vel_y = 0
+        elif keys[pygame.K_SPACE] or keys[pygame.K_w]:
             if in_water:
-                self.vel_y = -4 # Stronger swim up
+                self.vel_y = -6
             elif self.on_ground and keys[pygame.K_SPACE]:
                 self.vel_y = self.jump_strength * weather_jump_mult * (1.2 if sprinting else 1.0)
                 self.jump_attack_timer = 12
 
-        self.vel_y += GRAVITY * (0.3 if in_water else 1.0)
+        if not self.flying:
+            self.vel_y += GRAVITY * (0.3 if in_water else 1.0)
         
         # Ladder climbing
         on_ladder = False
         lx = self.rect.centerx // TILE_SIZE
         # Check top, middle, and bottom of player for ladder contact
-        for ly in [self.rect.top // TILE_SIZE, self.rect.centery // TILE_SIZE, (self.rect.bottom - 1) // TILE_SIZE]:
-            if (lx, ly) in world.data and world.data[(lx, ly)] == LADDER:
-                on_ladder = True
-                break
+        if not self.flying:
+            for ly in [self.rect.top // TILE_SIZE, self.rect.centery // TILE_SIZE, (self.rect.bottom - 1) // TILE_SIZE]:
+                if (lx, ly) in world.data and world.data[(lx, ly)] == LADDER:
+                    on_ladder = True
+                    break
         
         if on_ladder:
             # Touching a ladder breaks the fall, so don't carry pre-ladder fall distance forward.
@@ -525,13 +724,30 @@ class Player:
                 self.vel_y = -4 # Climb up
             elif keys[pygame.K_s]:
                 self.vel_y = 4 # Climb down
-            # Don't let gravity pull us down if we're on a ladder
-            dy = self.vel_y
         else:
             if sprinting and self.on_ground and (keys[pygame.K_a] or keys[pygame.K_d]):
                 dx *= 1.15 # Small takeoff boost while sprinting
             if self.vel_y > 15: self.vel_y = 15
-            dy = self.vel_y
+
+        if in_water and sneaking and not (keys[pygame.K_SPACE] or keys[pygame.K_w]):
+            self.vel_y = max(self.vel_y, 3.0)
+        dy = self.vel_y
+
+        if sneaking and self.on_ground and dx:
+            direction = 1 if dx > 0 else -1
+            safe_distance = 0.0
+            while safe_distance < abs(dx):
+                step = min(1.0, abs(dx) - safe_distance)
+                candidate = self.rect.copy()
+                candidate.x += direction * (safe_distance + step)
+                foot_probe = pygame.Rect(candidate.left, candidate.bottom, candidate.width, 2)
+                if not any(
+                    foot_probe.colliderect(block)
+                    for block in world.get_surrounding_blocks(candidate)
+                ):
+                    break
+                safe_distance += step
+            dx = direction * safe_distance
 
         self.on_ground = False
         
@@ -661,8 +877,15 @@ class Player:
             self.last_damage_cause = cause
 
 class World:
-    def __init__(self):
-        self.chunks = {} 
+    def __init__(self, seed=None):
+        self.seed = seed if seed is not None else random.SystemRandom().getrandbits(64)
+        self.rng = random.Random(self.seed)
+        self.chunks = {}
+        self.unloaded_chunks = {}
+        self.loaded_chunk_columns = None
+        self.villages_generated = False
+        self.village_generation_version = VILLAGE_GENERATION_VERSION
+        self.village_locations = []
         self.block_meta = {} # (tx, ty) -> {"facing": 1 or -1}
         self.death_messages = []
         self.furnace_data = {} # (tx, ty) -> {"input": slot, "fuel": slot, "output": slot, "cook_time": float, "fuel_time": float}
@@ -673,18 +896,115 @@ class World:
         self.projectiles = [] # ThrownPearl instances
         self.egg_projectiles = [] # EggShot instances
         self.arrows = [] # ArrowShot instances
+        self.rocket_projectiles = [] # RocketShot instances
+        self.explosions = []
         self.fishing_hooks = [] # FishingHook instances
         self.time = 0 # 0 corresponds to 6:00 AM (Sunrise)
         self.weather_type = "clear"  # clear, rain, snow
         self.weather_timer = 0
         self.weather_intensity = 0.0
+        self.unlocked_achievements = set()
+        self.achievement_queue = []
+        self.achievement_toast = None
         self.active_water = set() # Track coordinates of flowing water
+        self.water_cascade_removed = []
         self.falling_sand = set() # Track coordinates of sand/cactus blocks that should fall
         self.generate_world()
         self.choose_weather()
 
     def get_chunk_id(self, tx, ty):
         return ((tx % WORLD_WIDTH) // CHUNK_SIZE, ty // CHUNK_SIZE)
+
+    def update_loaded_chunks(self, player_x):
+        column_count = WORLD_WIDTH // CHUNK_SIZE
+        center_column = (int(player_x) % WORLD_PIXELS) // (CHUNK_SIZE * TILE_SIZE)
+        desired_columns = {
+            (center_column + offset) % column_count
+            for offset in (-1, 0, 1)
+        }
+        if self.loaded_chunk_columns == desired_columns:
+            return
+
+        for chunk_id, chunk in list(self.chunks.items()):
+            if chunk_id[0] not in desired_columns:
+                self.unloaded_chunks[chunk_id] = chunk
+                del self.chunks[chunk_id]
+
+        for chunk_id in list(self.unloaded_chunks):
+            if chunk_id[0] in desired_columns:
+                self.chunks[chunk_id] = self.unloaded_chunks.pop(chunk_id)
+
+        self.loaded_chunk_columns = desired_columns
+
+    def iter_all_chunks(self):
+        yield from self.chunks.values()
+        yield from self.unloaded_chunks.values()
+
+    def _remove_chunk_block(self, tx, ty):
+        tx %= WORLD_WIDTH
+        chunk_id = self.get_chunk_id(tx, ty)
+        for storage in (self.chunks, self.unloaded_chunks):
+            chunk = storage.get(chunk_id)
+            if chunk is not None and (tx, ty) in chunk:
+                del chunk[(tx, ty)]
+                if not chunk:
+                    del storage[chunk_id]
+                return
+
+    def _remove_dependent_water_flows(self, tx, ty, source_level):
+        root = (tx % WORLD_WIDTH, ty)
+        candidates = set()
+        levels = {}
+        queue = [(root, source_level)]
+        while queue:
+            parent_pos, parent_level = queue.pop()
+            px, py = parent_pos
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                pos = ((px + dx) % WORLD_WIDTH, py + dy)
+                if pos in candidates or self.get_block(*pos) != WATER:
+                    continue
+                water_meta = self.block_meta.get(pos, {})
+                level = water_meta.get("level", 7)
+                is_source = water_meta.get("source", level == 7)
+                if level < parent_level or not is_source:
+                    candidates.add(pos)
+                    levels[pos] = level
+                    queue.append((pos, level))
+
+        supported = set()
+        for x, y in candidates:
+            level = levels[(x, y)]
+            for support_pos in (
+                ((x - 1) % WORLD_WIDTH, y),
+                ((x + 1) % WORLD_WIDTH, y),
+                (x, y - 1),
+                (x, y + 1),
+            ):
+                if (
+                    support_pos != root
+                    and support_pos not in candidates
+                    and self.get_block(*support_pos) == WATER
+                    and self.block_meta.get(support_pos, {}).get("level", 7) > level
+                ):
+                    supported.add((x, y))
+                    break
+
+        queue = list(supported)
+        while queue:
+            x, y = queue.pop()
+            parent_level = levels[(x, y)]
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                pos = ((x + dx) % WORLD_WIDTH, y + dy)
+                if pos in candidates and pos not in supported and levels[pos] < parent_level:
+                    supported.add(pos)
+                    queue.append(pos)
+
+        for x, y in candidates - supported:
+            pos = (x, y)
+            self._remove_chunk_block(x, y)
+            self.block_meta.pop(pos, None)
+            self.active_water.discard(pos)
+            self.water_cascade_removed.append(pos)
 
     def choose_weather(self):
         if random.random() < 0.60:
@@ -718,15 +1038,17 @@ class World:
         """Remove all CACTUS blocks from (tx, ty) upward. Drops each as an item."""
         cy = ty
         while self.get_block(tx, cy) == CACTUS:
-            cid = self.get_chunk_id(tx, cy)
-            if cid in self.chunks and (tx, cy) in self.chunks[cid]:
-                del self.chunks[cid][(tx, cy)]
-                if not self.chunks[cid]: del self.chunks[cid]
+            self._remove_chunk_block(tx, cy)
             self.dropped_items.append(DroppedItem(tx * TILE_SIZE + 8, cy * TILE_SIZE + 8, CACTUS))
             cy -= 1  # go up
 
     def set_block(self, tx, ty, b_type):
+        tx %= WORLD_WIDTH
         cid = self.get_chunk_id(tx, ty)
+        old_type = self.get_block(tx, ty)
+        if old_type == WATER and b_type != WATER:
+            level = self.block_meta.get((tx, ty), {}).get("level", 7)
+            self._remove_dependent_water_flows(tx, ty, level)
         
         if b_type is None or b_type == AIR:
             # Wake up adjacent water blocks when a block is broken
@@ -735,22 +1057,23 @@ class World:
                     self.active_water.add((nx, ny))
             # Wake up sand above this position when a block is broken
             above = self.get_block(tx, ty - 1)
-            if above == SAND_BLOCK:
+            if above in (SAND_BLOCK, GRAVEL):
                 self.falling_sand.add((tx, ty - 1))
             # If we're removing a CACTUS, cascade-break all cactus above it
             if self.get_block(tx, ty) == CACTUS:
                 # First remove this block normally
-                if cid in self.chunks and (tx, ty) in self.chunks[cid]:
-                    del self.chunks[cid][(tx, ty)]
-                    if not self.chunks[cid]: del self.chunks[cid]
+                self._remove_chunk_block(tx, ty)
                 # Then cascade upward
                 self._break_cactus_column_upward(tx, ty - 1)
                 return
                     
-            if cid in self.chunks and (tx, ty) in self.chunks[cid]:
-                del self.chunks[cid][(tx, ty)]
-                if not self.chunks[cid]: del self.chunks[cid]
+            self._remove_chunk_block(tx, ty)
+            self.block_meta.pop((tx, ty), None)
             return
+
+        if b_type != WATER:
+            self.active_water.discard((tx, ty))
+            self.block_meta.pop((tx, ty), None)
             
         # --- Placing a block: check if adjacent to cactus ---
         if b_type != AIR:
@@ -763,28 +1086,32 @@ class World:
                     # Break the entire column from bottom up
                     col_y = base_y
                     while self.get_block(nx, col_y) == CACTUS:
-                        cid2 = self.get_chunk_id(nx, col_y)
-                        if cid2 in self.chunks and (nx, col_y) in self.chunks[cid2]:
-                            del self.chunks[cid2][(nx, col_y)]
-                            if not self.chunks[cid2]: del self.chunks[cid2]
+                        self._remove_chunk_block(nx, col_y)
                         self.dropped_items.append(DroppedItem(nx * TILE_SIZE + 8, col_y * TILE_SIZE + 8, CACTUS))
                         col_y -= 1  # go up
 
-        if cid not in self.chunks: self.chunks[cid] = {}
-        self.chunks[cid][(tx, ty)] = b_type
+        storage = self.chunks
+        if self.loaded_chunk_columns is not None and cid[0] not in self.loaded_chunk_columns:
+            storage = self.unloaded_chunks
+        if cid not in storage:
+            storage[cid] = {}
+        storage[cid][(tx, ty)] = b_type
         
         if b_type == WATER:
             self.active_water.add((tx, ty))
-        elif b_type == SAND_BLOCK:
+        elif b_type in (SAND_BLOCK, GRAVEL):
             # A new sand block was placed — check if it should fall
             if self.get_block(tx, ty + 1) is None:
                 self.falling_sand.add((tx, ty))
 
 
     def get_block(self, tx, ty):
+        tx %= WORLD_WIDTH
         cid = self.get_chunk_id(tx, ty)
         if cid in self.chunks:
             return self.chunks[cid].get((tx, ty))
+        if cid in self.unloaded_chunks:
+            return self.unloaded_chunks[cid].get((tx, ty))
         return None
 
     def update_water(self):
@@ -806,9 +1133,9 @@ class World:
             below_type = self.get_block(tx, ty + 1)
             
             if below_type is None or below_type == AIR:
-                # Flow down as a full source block (level 7)
+                # Falling water is full-height but still depends on its source.
                 self.set_block(tx, ty + 1, WATER)
-                self.block_meta[(tx, ty + 1)] = {"level": 7}
+                self.block_meta[(tx, ty + 1)] = {"level": 7, "source": False}
                 next_active.add((tx, ty + 1))
                 spread_occurred = True
                 
@@ -816,7 +1143,7 @@ class World:
             elif below_type != WATER or self.block_meta.get((tx, ty + 1), {}).get("level", 7) == 7:
                 if level > 0:
                     for dx in [-1, 1]:
-                        nx, ny = tx + dx, ty
+                        nx, ny = (tx + dx) % WORLD_WIDTH, ty
                         neighbor_type = self.get_block(nx, ny)
                         
                         can_spread = False
@@ -830,7 +1157,7 @@ class World:
                                 
                         if can_spread:
                             self.set_block(nx, ny, WATER)
-                            self.block_meta[(nx, ny)] = {"level": level - 1}
+                            self.block_meta[(nx, ny)] = {"level": level - 1, "source": False}
                             next_active.add((nx, ny))
                             spread_occurred = True
                             
@@ -845,7 +1172,7 @@ class World:
             return
 
         next_falling = set()
-        GRAVITY_BLOCKS = (SAND_BLOCK,)
+        GRAVITY_BLOCKS = (SAND_BLOCK, GRAVEL)
 
         for tx, ty in list(self.falling_sand):
             b_type = self.get_block(tx, ty)
@@ -882,14 +1209,17 @@ class World:
             def __contains__(self, key): return self.w.get_block(key[0], key[1]) is not None
             def __delitem__(self, key): self.w.set_block(key[0], key[1], None)
             def items(self):
-                for chunk in self.w.chunks.values():
-                    for k, v in chunk.items(): yield k, v
+                for storage in (self.w.chunks, self.w.unloaded_chunks):
+                    for chunk in storage.values():
+                        yield from chunk.items()
             def values(self):
-                for chunk in self.w.chunks.values():
-                    for v in chunk.values(): yield v
+                for storage in (self.w.chunks, self.w.unloaded_chunks):
+                    for chunk in storage.values():
+                        yield from chunk.values()
             def keys(self):
-                for chunk in self.w.chunks.values():
-                    for k in chunk.keys(): yield k
+                for storage in (self.w.chunks, self.w.unloaded_chunks):
+                    for chunk in storage.values():
+                        yield from chunk.keys()
             def pop(self, key, default=None):
                 val = self.w.get_block(key[0], key[1])
                 if val is not None:
@@ -900,13 +1230,15 @@ class World:
                 val = self.w.get_block(key[0], key[1])
                 return val if val is not None else default
             def __bool__(self):
-                return bool(self.w.chunks)
+                return bool(self.w.chunks or self.w.unloaded_chunks)
         return DataProxy(self)
 
     @data.setter
     def data(self, new_dict):
         # Allow clearing/setting world data directly (used by network sync)
         self.chunks = {}
+        self.unloaded_chunks = {}
+        self.loaded_chunk_columns = None
         if isinstance(new_dict, dict):
             for k, v in new_dict.items():
                 self.set_block(k[0], k[1], v)
@@ -915,45 +1247,77 @@ class World:
                 self.set_block(k[0], k[1], v)
 
     def generate_world(self):
-        # Surface & Lakes
-        for x in range(WORLD_WIDTH):
-            # Base height with some variation
-            h = int(12 + math.sin(x * 0.15) * 4 + math.cos(x * 0.05) * 2)
-            
-            # Lake Generation
-            is_lake = False
-            if 30 < x < 50 or 75 < x < 90:
-                h += 3 # Dip for water
-                is_lake = True
+        rng = self.rng
 
+        # Build irregular, seeded terrain from random height anchors.
+        anchor_spacing = 8
+        height_anchors = [
+            rng.randint(10, 20)
+            for _ in range((WORLD_WIDTH + anchor_spacing - 1) // anchor_spacing)
+        ]
+        surface_heights = []
+        for x in range(WORLD_WIDTH):
+            anchor_idx, offset = divmod(x, anchor_spacing)
+            start_h = height_anchors[anchor_idx]
+            end_h = height_anchors[(anchor_idx + 1) % len(height_anchors)]
+            blend = offset / anchor_spacing
+            h = round(start_h + (end_h - start_h) * blend + rng.uniform(-1.0, 1.0))
+            surface_heights.append(max(8, min(22, h)))
+
+        # Surface and underground layers
+        for x, h in enumerate(surface_heights):
             for y in range(WORLD_HEIGHT):
-                if y > h: 
-                    self.data[(x, y)] = STONE_BLOCK if y > h+4 else DIRT_BLOCK
-                elif y == h: 
+                if y > h:
+                    if y == WORLD_HEIGHT - 1:
+                        self.data[(x, y)] = BEDROCK
+                    elif y >= 80:
+                        self.data[(x, y)] = DEEPSLATE
+                    else:
+                        self.data[(x, y)] = STONE_BLOCK if y > h + 4 else DIRT_BLOCK
+                elif y == h:
                     self.data[(x, y)] = GRASS_BLOCK
-                    if random.random() < 0.2: # 20% chance for tall grass
+                    if h > 1 and rng.random() < 0.2:
                         self.data[(x, y - 1)] = TALL_GRASS
-                elif is_lake and y > h - 4:
+
+        # Form small, rounded ponds in low ground rather than rectangular tanks.
+        for _ in range(max(5, WORLD_WIDTH // 192)):
+            center_x = rng.randrange(WORLD_WIDTH)
+            radius = rng.randint(2, 5)
+            x_positions = [(center_x + dx) % WORLD_WIDTH for dx in range(-radius, radius + 1)]
+            water_y = max(surface_heights[x] for x in x_positions)
+            depth = rng.randint(2, 4)
+            for dx in range(-radius, radius + 1):
+                x = (center_x + dx) % WORLD_WIDTH
+                edge_ratio = abs(dx) / radius
+                column_depth = max(1, round(depth * (1 - edge_ratio * edge_ratio)))
+                if abs(dx) == radius:
+                    self.data[(x, water_y)] = DIRT_BLOCK
+                    continue
+                for y in range(surface_heights[x], water_y):
+                    if y < water_y:
+                        self.data[(x, y)] = None
+                for y in range(water_y, water_y + column_depth):
                     self.data[(x, y)] = WATER
+                self.data[(x, water_y + column_depth)] = DIRT_BLOCK
                 
         # Generate Caves (Random Walks)
         for _ in range(15):
-            cx = random.randint(0, WORLD_WIDTH - 1)
-            cy = random.randint(20, WORLD_HEIGHT - 20)
-            for _ in range(random.randint(20, 50)):
+            cx = rng.randint(0, WORLD_WIDTH - 1)
+            cy = rng.randint(20, WORLD_HEIGHT - 20)
+            for _ in range(rng.randint(20, 50)):
                 # Carve a small sphere
                 for dx in range(-1, 2):
                     for dy in range(-1, 2):
-                        if (cx+dx, cy+dy) in self.data:
+                        if self.data.get((cx + dx, cy + dy)) not in (None, WATER):
                             del self.data[(cx+dx, cy+dy)]
-                cx = (cx + random.randint(-1, 1)) % WORLD_WIDTH
-                cy = min(WORLD_HEIGHT - 5, max(10, cy + random.randint(-1, 1)))
+                cx = (cx + rng.randint(-1, 1)) % WORLD_WIDTH
+                cy = min(WORLD_HEIGHT - 5, max(10, cy + rng.randint(-1, 1)))
 
         # Generate Ravines (Long vertical slits)
         for _ in range(3):
-            rx = random.randint(10, WORLD_WIDTH - 10)
-            ry = random.randint(20, 50)
-            r_len = random.randint(15, 25)
+            rx = rng.randint(10, WORLD_WIDTH - 10)
+            ry = rng.randint(20, 50)
+            r_len = rng.randint(15, 25)
             for i in range(r_len):
                 curr_y = ry + i
                 curr_x = rx + int(math.sin(i * 0.5) * 2)
@@ -961,46 +1325,79 @@ class World:
                     if (curr_x + dx, curr_y) in self.data:
                         del self.data[(curr_x + dx, curr_y)]
                 
+        # Place large rock deposits in broad, irregular underground clusters.
+        for block_type, cluster_count, y_min, y_max in (
+            (DIORITE, WORLD_WIDTH // 48, 24, 76),
+            (GRANITE, WORLD_WIDTH // 48, 24, 76),
+            (ANDESITE, WORLD_WIDTH // 48, 32, 90),
+            (GRAVEL, WORLD_WIDTH // 56, 20, 100),
+        ):
+            for _ in range(cluster_count):
+                vx = rng.randrange(WORLD_WIDTH)
+                vy = rng.randint(y_min, y_max)
+                for _ in range(rng.randint(18, 30)):
+                    radius_x = rng.randint(2, 4)
+                    radius_y = rng.randint(2, 3)
+                    for dx in range(-radius_x, radius_x + 1):
+                        for dy in range(-radius_y, radius_y + 1):
+                            if (dx * dx) / (radius_x * radius_x) + (dy * dy) / (radius_y * radius_y) > 1.2:
+                                continue
+                            pos = ((vx + dx) % WORLD_WIDTH, max(1, min(WORLD_HEIGHT - 2, vy + dy)))
+                            if self.data.get(pos) in (STONE_BLOCK, DEEPSLATE):
+                                self.data[pos] = block_type
+                    vx = (vx + rng.randint(-3, 3)) % WORLD_WIDTH
+                    vy = max(y_min, min(y_max, vy + rng.randint(-2, 2)))
+
         # Generate Veins (Coal and Iron) - Scaled for world size
         # Surface/Mid Coal
         for _ in range(WORLD_WIDTH // 3): 
-            vx = random.randint(0, WORLD_WIDTH - 1)
-            vy = random.randint(15, 60)
-            for _ in range(random.randint(6, 12)):
-                if (vx, vy) in self.data and self.data[(vx, vy)] == STONE_BLOCK:
+            vx = rng.randint(0, WORLD_WIDTH - 1)
+            vy = rng.randint(15, 60)
+            for _ in range(rng.randint(6, 12)):
+                if self.data.get((vx, vy)) in (STONE_BLOCK, DEEPSLATE):
                     self.data[(vx, vy)] = COAL_BLOCK
-                vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
-                vy = max(15, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
+                vx = (vx + rng.choice([-1, 0, 1])) % WORLD_WIDTH
+                vy = max(15, min(WORLD_HEIGHT - 1, vy + rng.choice([-1, 0, 1])))
         
         # Deep Coal
         for _ in range(WORLD_WIDTH // 5):
-            vx = random.randint(0, WORLD_WIDTH - 1)
-            vy = random.randint(60, WORLD_HEIGHT - 10)
-            for _ in range(random.randint(8, 14)):
-                if (vx, vy) in self.data and self.data[(vx, vy)] == STONE_BLOCK:
+            vx = rng.randint(0, WORLD_WIDTH - 1)
+            vy = rng.randint(60, WORLD_HEIGHT - 10)
+            for _ in range(rng.randint(8, 14)):
+                if self.data.get((vx, vy)) in (STONE_BLOCK, DEEPSLATE):
                     self.data[(vx, vy)] = COAL_BLOCK
-                vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
-                vy = max(60, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
+                vx = (vx + rng.choice([-1, 0, 1])) % WORLD_WIDTH
+                vy = max(60, min(WORLD_HEIGHT - 1, vy + rng.choice([-1, 0, 1])))
                 
         # Iron Veins
         for _ in range(WORLD_WIDTH // 6):
-            vx = random.randint(0, WORLD_WIDTH - 1)
-            vy = random.randint(40, WORLD_HEIGHT - 10)
-            for _ in range(random.randint(5, 9)):
-                if (vx, vy) in self.data and self.data[(vx, vy)] == STONE_BLOCK:
+            vx = rng.randint(0, WORLD_WIDTH - 1)
+            vy = rng.randint(40, WORLD_HEIGHT - 10)
+            for _ in range(rng.randint(5, 9)):
+                if self.data.get((vx, vy)) in (STONE_BLOCK, DEEPSLATE):
                     self.data[(vx, vy)] = IRON_BLOCK
-                vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
-                vy = max(40, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
+                vx = (vx + rng.choice([-1, 0, 1])) % WORLD_WIDTH
+                vy = max(40, min(WORLD_HEIGHT - 1, vy + rng.choice([-1, 0, 1])))
+
+        # Copper is more common in shallow and middle underground layers.
+        for _ in range(WORLD_WIDTH // 10):
+            vx = rng.randrange(WORLD_WIDTH)
+            vy = rng.randint(28, 76)
+            for _ in range(rng.randint(5, 10)):
+                if self.data.get((vx, vy)) in (STONE_BLOCK, DEEPSLATE):
+                    self.data[(vx, vy)] = COPPER_ORE
+                vx = (vx + rng.choice([-1, 0, 1])) % WORLD_WIDTH
+                vy = max(28, min(76, vy + rng.choice([-1, 0, 1])))
 
         # Diamond Veins - rare and deep
         for _ in range(max(8, WORLD_WIDTH // 24)):
-            vx = random.randint(0, WORLD_WIDTH - 1)
-            vy = random.randint(80, WORLD_HEIGHT - 8)
-            for _ in range(random.randint(3, 6)):
-                if (vx, vy) in self.data and self.data[(vx, vy)] == STONE_BLOCK:
+            vx = rng.randint(0, WORLD_WIDTH - 1)
+            vy = rng.randint(80, WORLD_HEIGHT - 8)
+            for _ in range(rng.randint(3, 6)):
+                if self.data.get((vx, vy)) == DEEPSLATE:
                     self.data[(vx, vy)] = DIAMOND_ORE
-                vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
-                vy = max(80, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
+                vx = (vx + rng.choice([-1, 0, 1])) % WORLD_WIDTH
+                vy = max(80, min(WORLD_HEIGHT - 1, vy + rng.choice([-1, 0, 1])))
 
         # Generate Trees (only in non-desert biome zones)
         DESERT_START = 200
@@ -1011,9 +1408,9 @@ class World:
             while (x, h) not in self.data or self.data[(x, h)] != GRASS_BLOCK:
                 h += 1
                 if h >= WORLD_HEIGHT: break
-            if h < WORLD_HEIGHT and not is_desert and random.random() < 0.15: # 15% chance for a tree
-                tree_type = "oak" if random.random() < 0.7 else "birch"
-                t_h = random.randint(3, 5)
+            if h < WORLD_HEIGHT and not is_desert and rng.random() < 0.15:
+                tree_type = "oak" if rng.random() < 0.7 else "birch"
+                t_h = rng.randint(3, 5)
                 log_b = OAK_LOG if tree_type == "oak" else BIRCH_LOG
                 leaf_b = OAK_LEAVES if tree_type == "oak" else BIRCH_LEAVES
                 # Trunk
@@ -1045,32 +1442,32 @@ class World:
             if (wx, h - 1) in self.data and self.data[(wx, h - 1)] == TALL_GRASS:
                 del self.data[(wx, h - 1)]
             # Place cacti (10% chance)
-            if random.random() < 0.10:
-                cactus_h = random.randint(2, 3)
+            if rng.random() < 0.10:
+                cactus_h = rng.randint(2, 3)
                 for ch in range(1, cactus_h + 1):
                     self.data[(wx, h - ch)] = CACTUS
             # Place dead bushes (8% chance)
-            elif random.random() < 0.08:
+            elif rng.random() < 0.08:
                 self.data[(wx, h - 1)] = DEAD_BUSH
 
         # Generate Caves (Worms)
         for _ in range(15): # 15 cave systems
-            vx, vy = random.randint(0, WORLD_WIDTH-1), random.randint(50, 90)
+            vx, vy = rng.randint(0, WORLD_WIDTH-1), rng.randint(50, 90)
             for _ in range(30): # Worm length
                 for dx in range(-1, 2):
                     for dy in range(-1, 2):
                         ctx, cty = (vx + dx) % WORLD_WIDTH, max(0, min(WORLD_HEIGHT-1, vy + dy))
                         if (ctx, cty) in self.data and self.data[(ctx, cty)] == STONE_BLOCK:
                             del self.data[(ctx, cty)]
-                vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
-                vy = max(40, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
+                vx = (vx + rng.choice([-1, 0, 1])) % WORLD_WIDTH
+                vy = max(40, min(WORLD_HEIGHT - 1, vy + rng.choice([-1, 0, 1])))
         
         # Generate Ravines
         for _ in range(2):
-            rx = random.randint(0, WORLD_WIDTH-1)
-            ry = random.randint(40, 60)
-            r_len = random.randint(20, 40)
-            r_width = random.randint(2, 4)
+            rx = rng.randint(0, WORLD_WIDTH-1)
+            ry = rng.randint(40, 60)
+            r_len = rng.randint(20, 40)
+            r_width = rng.randint(2, 4)
             for i in range(r_len):
                 cur_x = (rx + i) % WORLD_WIDTH
                 cur_y = ry + int(math.sin(i * 0.2) * 5)
@@ -1083,6 +1480,184 @@ class World:
         # Solid unbreakable Bedrock layer at the bottom of the world
         for x in range(WORLD_WIDTH):
             self.data[(x, WORLD_HEIGHT - 1)] = BEDROCK
+        self.generate_villages()
+        # Generated ponds are still pools; only newly placed water is simulated.
+        self.active_water.clear()
+
+    def generate_villages(self, village_locations=None, house_counts=None):
+        if self.villages_generated:
+            return
+
+        def surface_y(x):
+            for y in range(0, 40):
+                if self.get_block(x, y) == GRASS_BLOCK:
+                    return y
+            return None
+
+        if village_locations is None:
+            village_locations = []
+            for region_start, region_end in ((24, 180), (420, WORLD_WIDTH - 44)):
+                candidates = []
+                last_start = region_end - VILLAGE_FOOTPRINT_WIDTH
+                for start_x in range(region_start, last_start + 1, 3):
+                    surface = [
+                        surface_y(x)
+                        for x in range(start_x, start_x + VILLAGE_FOOTPRINT_WIDTH)
+                    ]
+                    if any(y is None for y in surface):
+                        continue
+                    candidates.append(start_x)
+                if candidates:
+                    village_locations.append((self.rng.choice(candidates), None))
+
+        generated_locations = []
+        for village_index, (village_x, saved_ground_y) in enumerate(village_locations):
+            surfaces = [
+                surface_y(x)
+                for x in range(village_x, village_x + VILLAGE_FOOTPRINT_WIDTH)
+            ]
+            valid_surfaces = [y for y in surfaces if y is not None]
+            if not valid_surfaces and saved_ground_y is None:
+                continue
+            village_ground_y = min(
+                valid_surfaces + ([saved_ground_y] if saved_ground_y is not None else [])
+            )
+            generated_locations.append((village_x, village_ground_y))
+
+            saved_house_count = (
+                house_counts[village_index]
+                if house_counts is not None and village_index < len(house_counts)
+                else None
+            )
+            house_count = (
+                saved_house_count
+                if saved_house_count is not None and 4 <= saved_house_count <= 7
+                else self.rng.randint(4, 7)
+            )
+            blacksmith_index = 0 if self.rng.random() < 0.25 else None
+            house_spacing = 16
+            for house_index in range(house_count):
+                house_x = village_x + house_index * house_spacing
+                is_blacksmith = house_index == blacksmith_index
+                house_width = 8
+                house_surfaces = [
+                    surface_y(x) for x in range(house_x, house_x + house_width)
+                ]
+                house_ground_y = min(
+                    (y for y in house_surfaces if y is not None),
+                    default=saved_ground_y if saved_ground_y is not None else village_ground_y,
+                )
+                for x in range(house_x, house_x + house_width):
+                    for y in range(house_ground_y):
+                        if self.get_block(x, y) is not None:
+                            self.set_block(x, y, None)
+                    self.set_block(x, house_ground_y, PLANKS)
+
+                if is_blacksmith:
+                    for roof_row in range(4):
+                        roof_width = 2 + roof_row * 2
+                        left = house_x + (house_width - roof_width) // 2
+                        roof_y = house_ground_y - 8 + roof_row
+                        for x in range(left, left + roof_width):
+                            if x == left or x == left + roof_width - 1:
+                                self.set_block(x, roof_y, W_STAIRS)
+                                self.block_meta[(x, roof_y)] = {
+                                    "facing": 1 if x == left else -1
+                                }
+                            else:
+                                self.set_block(x, roof_y, PLANKS)
+
+                    for x in (house_x, house_x + house_width - 1):
+                        support_bottom = max(
+                            house_ground_y,
+                            house_surfaces[x - house_x]
+                            if house_surfaces[x - house_x] is not None
+                            else house_ground_y,
+                        )
+                        for y in range(house_ground_y - 4, support_bottom + 1):
+                            self.set_block(x, y, OAK_LOG)
+                else:
+                    for roof_row in range(4):
+                        roof_width = 2 + roof_row * 2
+                        left = house_x + (house_width - roof_width) // 2
+                        roof_y = house_ground_y - 7 + roof_row
+                        for x in range(left, left + roof_width):
+                            if x == left or x == left + roof_width - 1:
+                                self.set_block(x, roof_y, W_STAIRS)
+                                self.block_meta[(x, roof_y)] = {
+                                    "facing": 1 if x == left else -1
+                                }
+                            else:
+                                self.set_block(x, roof_y, PLANKS)
+                    for y in range(house_ground_y - 3, house_ground_y):
+                        self.set_block(house_x, y, OAK_LOG)
+                        self.set_block(house_x + house_width - 1, y, OAK_LOG)
+                    for x in range(house_x + 1, house_x + house_width - 1):
+                        self.set_block(x, house_ground_y - 3, PLANKS)
+                    self.set_block(house_x, house_ground_y - 2, GLASS_PANE)
+
+                door_x = house_x + house_width - 1
+                self.set_block(door_x, house_ground_y - 1, DOOR)
+                self.set_block(door_x, house_ground_y - 2, DOOR_TOP)
+                bed_x = house_x + (2 if is_blacksmith else 1)
+                self.set_block(bed_x, house_ground_y - 1, BED)
+                self.set_block(bed_x + 1, house_ground_y - 1, BED_RIGHT)
+                if is_blacksmith:
+                    forge_start = house_x - 12
+                    for x in range(forge_start, house_x):
+                        self.set_block(x, house_ground_y, STONE_BLOCK)
+
+                    for x in range(house_x - 10, house_x - 1):
+                        self.set_block(x, house_ground_y - 6, STONE_BLOCK)
+                    for y in range(house_ground_y - 6, house_ground_y):
+                        self.set_block(house_x - 1, y, LADDER)
+
+                    for x in (house_x - 9, house_x - 8):
+                        self.set_block(x, house_ground_y, None)
+                        self.set_block(x, house_ground_y - 1, FURNACE)
+                villager_x = house_x + 3 if is_blacksmith else house_x + house_width
+                villager_ground_y = (
+                    house_ground_y if is_blacksmith else surface_y(villager_x)
+                )
+                if villager_ground_y is None:
+                    villager_ground_y = house_ground_y
+                villager = Mob(
+                    villager_x * TILE_SIZE,
+                    (villager_ground_y - 2) * TILE_SIZE,
+                    "villager",
+                )
+                self.mobs.append(villager)
+
+            farm_x = village_x + (house_count - 1) * house_spacing + 18
+            farm_surfaces = [
+                surface_y(x) for x in range(farm_x, farm_x + 9)
+            ]
+            farm_ground_y = max(
+                (y for y in farm_surfaces if y is not None),
+                default=saved_ground_y if saved_ground_y is not None else village_ground_y,
+            )
+            for x in range(farm_x, farm_x + 9):
+                for y in range(farm_ground_y):
+                    if self.get_block(x, y) is not None:
+                        self.set_block(x, y, None)
+
+            crop_kinds = ("wheat", "carrot", "potato", "beetroot")
+            for index in range(9):
+                x = farm_x + index
+                if index in (0, 8):
+                    self.set_block(x, farm_ground_y, OAK_LOG)
+                elif index % 2:
+                    crop_kind = crop_kinds[index // 2]
+                    crop_block = CROP_STAGES[crop_kind][self.rng.randint(1, 3)]
+                    self.set_block(x, farm_ground_y, FARMLAND)
+                    self.set_block(x, farm_ground_y - 1, crop_block)
+                else:
+                    self.set_block(x, farm_ground_y, WATER)
+                    self.block_meta[(x, farm_ground_y)] = {"level": 7, "source": True}
+
+        self.village_locations = generated_locations
+        self.village_generation_version = VILLAGE_GENERATION_VERSION
+        self.villages_generated = True
 
     def find_safe_spawn(self, player):
         """Finds a safe Y level for the player at their current X to prevent getting stuck."""
@@ -1108,7 +1683,15 @@ class World:
                 tx, ty = (p_x + x_off) % WORLD_WIDTH, p_y + y_off
                 if (tx, ty) in self.data:
                     b_type = self.data[(tx, ty)]
-                    if b_type == TALL_GRASS or WHEAT_STG0 <= b_type <= WHEAT_STG3 or b_type in (FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR_OPEN, WATER, LADDER, BOAT, TORCH): continue # Non-solid / rideable
+                    if (
+                        b_type == TALL_GRASS
+                        or b_type in CROP_STAGE_TO_KIND
+                        or b_type in (
+                            FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP,
+                            TRAPDOOR_OPEN, WATER, LADDER, BOAT, TORCH,
+                        )
+                    ):
+                        continue
                     bx, by = (p_x + x_off) * TILE_SIZE, ty * TILE_SIZE
                     if b_type == FARMLAND:
                         blocks.append(pygame.Rect(bx, by + 4, TILE_SIZE, TILE_SIZE - 4))
@@ -1186,13 +1769,30 @@ class World:
                         
                         # Only draw blocks that are visible on screen
                         if -TILE_SIZE < draw_x < SCREEN_WIDTH and -TILE_SIZE < draw_y < SCREEN_HEIGHT:
-                            if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
-                                pygame.draw.rect(surface, COLOR_STONE, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                                ore_color = COLOR_COAL if b_type == COAL_BLOCK else (COLOR_IRON if b_type == IRON_BLOCK else COLOR_DIAMOND)
+                            if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE, COPPER_ORE):
+                                stone_color = (70, 70, 80) if ty >= 80 else COLOR_STONE
+                                pygame.draw.rect(surface, stone_color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                ore_color = {
+                                    COAL_BLOCK: COLOR_COAL,
+                                    IRON_BLOCK: COLOR_IRON,
+                                    DIAMOND_ORE: COLOR_DIAMOND,
+                                    COPPER_ORE: (190, 110, 55),
+                                }[b_type]
                                 # Chunky ore shapes
                                 pygame.draw.rect(surface, ore_color, (draw_x + 4, draw_y + 6, 10, 8))
                                 pygame.draw.rect(surface, ore_color, (draw_x + 16, draw_y + 18, 12, 10))
                                 pygame.draw.rect(surface, ore_color, (draw_x + 22, draw_y + 4, 8, 8))
+                            elif b_type in (DIORITE, GRANITE, GRAVEL, ANDESITE, DEEPSLATE):
+                                base_color, speckle_color = {
+                                    DIORITE: ((190, 190, 185), (130, 130, 130)),
+                                    GRANITE: ((145, 95, 85), (90, 55, 50)),
+                                    GRAVEL: ((125, 120, 110), (80, 75, 70)),
+                                    ANDESITE: ((115, 120, 125), (75, 80, 85)),
+                                    DEEPSLATE: ((65, 70, 80), (35, 40, 50)),
+                                }[b_type]
+                                pygame.draw.rect(surface, base_color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                for dx, dy in ((5, 6), (19, 10), (11, 23), (25, 26)):
+                                    pygame.draw.rect(surface, speckle_color, (draw_x + dx, draw_y + dy, 3, 3))
                             elif b_type == OAK_LOG:
                                 pygame.draw.rect(surface, COLOR_OAK_BROWN, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
                             elif b_type == BIRCH_LOG:
@@ -1241,12 +1841,32 @@ class World:
                             elif b_type == FARMLAND:
                                 pygame.draw.rect(surface, (80, 50, 30), (draw_x, draw_y + 4, TILE_SIZE, TILE_SIZE - 4))
                                 pygame.draw.rect(surface, (60, 40, 20), (draw_x, draw_y + 4, TILE_SIZE, 4)) # Tilled top
-                            elif WHEAT_STG0 <= b_type <= WHEAT_STG3:
-                                stage = b_type - WHEAT_STG0
-                                color = (50, 200, 50) if stage < 3 else (220, 200, 50)
-                                h = 8 + stage * 6
-                                for x_off in [8, 16, 24]:
-                                    pygame.draw.line(surface, color, (draw_x + x_off, draw_y + TILE_SIZE), (draw_x + x_off, draw_y + TILE_SIZE - h), 2)
+                            elif b_type in CROP_STAGE_TO_KIND:
+                                crop_kind = CROP_STAGE_TO_KIND[b_type]
+                                stage = CROP_STAGES[crop_kind].index(b_type)
+                                crop_colors = {
+                                    "wheat": (50, 200, 50) if stage < 3 else (220, 200, 50),
+                                    "carrot": (55, 175, 45),
+                                    "potato": (75, 155, 45),
+                                    "beetroot": (65, 165, 55),
+                                }
+                                crop_color = crop_colors[crop_kind]
+                                height = 8 + stage * 6
+                                for x_off in (8, 16, 24):
+                                    top_y = draw_y + TILE_SIZE - height
+                                    pygame.draw.line(surface, crop_color, (draw_x + x_off, draw_y + TILE_SIZE), (draw_x + x_off, top_y), 2)
+                                    if stage >= 2:
+                                        pygame.draw.line(surface, crop_color, (draw_x + x_off, top_y + 7), (draw_x + x_off - 4, top_y + 3), 2)
+                                        pygame.draw.line(surface, crop_color, (draw_x + x_off, top_y + 10), (draw_x + x_off + 4, top_y + 6), 2)
+                                if crop_kind == "carrot" and stage == 3:
+                                    pygame.draw.ellipse(surface, (235, 115, 35), (draw_x + 10, draw_y + 21, 5, 9))
+                                    pygame.draw.ellipse(surface, (235, 115, 35), (draw_x + 20, draw_y + 20, 5, 10))
+                                elif crop_kind == "potato" and stage == 3:
+                                    pygame.draw.circle(surface, (190, 160, 95), (draw_x + 11, draw_y + 25), 3)
+                                    pygame.draw.circle(surface, (190, 160, 95), (draw_x + 22, draw_y + 26), 3)
+                                elif crop_kind == "beetroot" and stage == 3:
+                                    pygame.draw.circle(surface, (155, 40, 55), (draw_x + 11, draw_y + 25), 4)
+                                    pygame.draw.circle(surface, (155, 40, 55), (draw_x + 22, draw_y + 25), 4)
                             elif b_type == CHEST:
                                 # Draw chest body
                                 pygame.draw.rect(surface, (120, 80, 40), (draw_x + 4, draw_y + 4, TILE_SIZE - 8, TILE_SIZE - 4))
@@ -1353,6 +1973,27 @@ class World:
                                 water_surf = pygame.Surface((TILE_SIZE, pixel_h), pygame.SRCALPHA)
                                 water_surf.fill((0, 100, 255, 150))
                                 surface.blit(water_surf, (draw_x, draw_y + y_off))
+                            elif b_type == GLASS:
+                                glass_surface = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                                glass_surface.fill((170, 220, 235, 105))
+                                surface.blit(glass_surface, (draw_x, draw_y))
+                                pygame.draw.rect(surface, (215, 240, 245), (draw_x, draw_y, TILE_SIZE, TILE_SIZE), 2)
+                            elif b_type == GLASS_PANE:
+                                pane_size = TILE_SIZE - 4
+                                pane_rect = pygame.Rect(
+                                    draw_x + 2, draw_y + 2, pane_size, pane_size
+                                )
+                                pane_surface = pygame.Surface(
+                                    (pane_size, pane_size), pygame.SRCALPHA
+                                )
+                                pane_surface.fill((175, 225, 240, 75))
+                                surface.blit(pane_surface, pane_rect.topleft)
+                                pygame.draw.rect(surface, (215, 240, 245), pane_rect, 1)
+                                pygame.draw.line(
+                                    surface, (215, 240, 245),
+                                    (pane_rect.left + 1, pane_rect.top + 1),
+                                    (pane_rect.right - 2, pane_rect.top + 1), 1
+                                )
                             elif b_type == BOAT:
                                 # Draw boat in world
                                 pygame.draw.polygon(surface, (100, 70, 40), [(draw_x, draw_y + 20), (draw_x + TILE_SIZE, draw_y + 20), (draw_x + TILE_SIZE + 4, draw_y + 10), (draw_x - 4, draw_y + 10)])
@@ -1393,8 +2034,13 @@ class World:
                                 }
                                 color = block_colors.get(b_type, (255, 0, 255)) # Magenta for unknown
                                 pygame.draw.rect(surface, color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                                if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE): # Add speckles for ores
-                                    speckle_c = (0,0,0) if b_type == COAL_BLOCK else ((140, 100, 60) if b_type == IRON_BLOCK else (120, 240, 240))
+                                if b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE, COPPER_ORE): # Add speckles for ores
+                                    speckle_c = {
+                                        COAL_BLOCK: (0, 0, 0),
+                                        IRON_BLOCK: (140, 100, 60),
+                                        DIAMOND_ORE: (120, 240, 240),
+                                        COPPER_ORE: (190, 110, 55),
+                                    }[b_type]
                                     # Deterministic speckles based on block pos
                                     seed = (tx * 7 + ty * 13) % 100
                                     for i in range(4):
@@ -1465,45 +2111,41 @@ class ThrownPearl:
     def __init__(self, x, y, target_x, target_y):
         self.x = float(x)
         self.y = float(y)
-        self.target_x = float(target_x)
-        self.target_y = float(target_y)
-        self.speed = 14.0
+        dx = target_x - self.x
+        if dx > WORLD_PIXELS / 2:
+            dx -= WORLD_PIXELS
+        elif dx < -WORLD_PIXELS / 2:
+            dx += WORLD_PIXELS
+        dy = target_y - self.y
+        distance = max(0.001, math.hypot(dx, dy))
+        self.vel_x = (dx / distance) * 14.0
+        self.vel_y = (dy / distance) * 14.0
         self.rect = pygame.Rect(int(self.x) - 4, int(self.y) - 4, 8, 8)
         self.spawn_time = pygame.time.get_ticks()
         self.last_safe_x = self.x
         self.last_safe_y = self.y
 
-    def _wrap_dx(self, dx):
-        if dx > WORLD_PIXELS / 2:
-            dx -= WORLD_PIXELS
-        elif dx < -WORLD_PIXELS / 2:
-            dx += WORLD_PIXELS
-        return dx
-
     def update(self, world):
-        self.last_safe_x = self.x
-        self.last_safe_y = self.y
+        self.vel_y = min(self.vel_y + 0.2, 8.0)
+        steps = max(1, int(math.ceil(max(abs(self.vel_x), abs(self.vel_y)) / 4.0)))
+        step_x = self.vel_x / steps
+        step_y = self.vel_y / steps
 
-        dx = self._wrap_dx(self.target_x - self.x)
-        dy = self.target_y - self.y
-        dist = math.hypot(dx, dy)
-
-        if dist <= self.speed or dist == 0:
-            self.x = self.target_x
-            self.y = self.target_y
+        for _ in range(steps):
+            self.x = (self.x + step_x) % WORLD_PIXELS
+            self.y += step_y
             self.rect.center = (int(self.x), int(self.y))
-            return True, (self.x, self.y)
-
-        self.x = (self.x + (dx / dist) * self.speed) % WORLD_PIXELS
-        self.y += (dy / dist) * self.speed
-        self.rect.center = (int(self.x), int(self.y))
-
-        for block_rect in world.get_surrounding_blocks(self.rect):
-            if self.rect.colliderect(block_rect):
-                return True, (self.last_safe_x, self.last_safe_y)
+            for block_rect in world.get_surrounding_blocks(self.rect):
+                if self.rect.colliderect(block_rect):
+                    self.x = self.last_safe_x
+                    self.y = self.last_safe_y
+                    self.rect.center = (int(self.x), int(self.y))
+                    return True, (self.x, self.y)
+            self.last_safe_x = self.x
+            self.last_safe_y = self.y
 
         if self.y < 0 or self.y > WORLD_HEIGHT * TILE_SIZE or pygame.time.get_ticks() - self.spawn_time > 5000:
-            return True, (self.x, self.y)
+            return True, None
 
         return False, None
 
@@ -1515,6 +2157,115 @@ class ThrownPearl:
             dy = self.rect.centery - int(scroll_y)
             pygame.draw.circle(surface, (90, 0, 140), (dx, dy), 5)
             pygame.draw.circle(surface, (220, 220, 255), (dx - 1, dy - 1), 2)
+
+class ExplosionEffect:
+    def __init__(self, x, y):
+        self.x = float(x)
+        self.y = float(y)
+        self.age = 0
+        self.duration = 18
+        self.max_radius = 80
+
+    def update(self):
+        self.age += 1
+        return self.age >= self.duration
+
+    def draw(self, surface, scroll_x, scroll_y):
+        progress = self.age / self.duration
+        radius = max(4, int(self.max_radius * progress))
+        alpha = max(0, int(255 * (1 - progress)))
+        for offset in (-WORLD_PIXELS, 0, WORLD_PIXELS):
+            x = int(self.x - scroll_x + offset)
+            y = int(self.y - scroll_y)
+            if not (-radius <= x <= SCREEN_WIDTH + radius and -radius <= y <= SCREEN_HEIGHT + radius):
+                continue
+            effect = pygame.Surface((radius * 2 + 2, radius * 2 + 2), pygame.SRCALPHA)
+            center = (radius + 1, radius + 1)
+            pygame.draw.circle(effect, (255, 110, 20, alpha), center, radius, 5)
+            pygame.draw.circle(effect, (255, 210, 70, alpha), center, max(2, radius // 3))
+            surface.blit(effect, (x - radius - 1, y - radius - 1))
+
+class RocketShot:
+    def __init__(self, x, y, target_x, target_y):
+        self.x = float(x)
+        self.y = float(y)
+        self.prev_x = self.x
+        self.prev_y = self.y
+        dx = target_x - self.x
+        if dx > WORLD_PIXELS / 2:
+            dx -= WORLD_PIXELS
+        elif dx < -WORLD_PIXELS / 2:
+            dx += WORLD_PIXELS
+        dy = target_y - self.y
+        distance = max(0.001, math.hypot(dx, dy))
+        self.vel_x = (dx / distance) * 15.0
+        self.vel_y = (dy / distance) * 15.0
+        self.rect = pygame.Rect(int(self.x) - 6, int(self.y) - 4, 12, 8)
+        self.spawn_time = pygame.time.get_ticks()
+
+    def _explode(self, world):
+        world.explosions.append(ExplosionEffect(self.x, self.y))
+        for mob in world.mobs:
+            push_dx = mob.rect.centerx - self.x
+            if push_dx > WORLD_PIXELS / 2:
+                push_dx -= WORLD_PIXELS
+            elif push_dx < -WORLD_PIXELS / 2:
+                push_dx += WORLD_PIXELS
+            dx = abs(push_dx)
+            dy = self.y - mob.rect.centery
+            distance = math.hypot(dx, dy)
+            if distance <= 80:
+                mob.health -= max(2, int(12 * (1 - distance / 100)))
+                mob.hurt_timer = 10
+                mob.vel_x += 3.0 if push_dx >= 0 else -3.0
+                mob.vel_y = min(mob.vel_y, -5)
+                if mob.m_type == "enderman":
+                    mob.angry = True
+                    mob.teleport_timer = 0
+
+    def update(self, world):
+        self.prev_x, self.prev_y = self.x, self.y
+        self.vel_y = min(self.vel_y + 0.12, 8.0)
+        steps = max(1, int(math.ceil(max(abs(self.vel_x), abs(self.vel_y)) / 4.0)))
+        step_x = self.vel_x / steps
+        step_y = self.vel_y / steps
+
+        for _ in range(steps):
+            self.x = (self.x + step_x) % WORLD_PIXELS
+            self.y += step_y
+            self.rect.center = (int(self.x), int(self.y))
+            hitbox = self.rect.inflate(8, 8)
+            hit_mob = any(
+                hitbox.colliderect(mob.rect.move(offset, 0))
+                for mob in world.mobs
+                for offset in (-WORLD_PIXELS, 0, WORLD_PIXELS)
+            )
+            hit_block = any(
+                hitbox.colliderect(block_rect)
+                for block_rect in world.get_surrounding_blocks(hitbox)
+            )
+            if hit_mob or hit_block:
+                self._explode(world)
+                return True
+
+        if self.y < 0 or self.y > WORLD_HEIGHT * TILE_SIZE or pygame.time.get_ticks() - self.spawn_time > 3500:
+            return True
+        return False
+
+    def draw(self, surface, scroll_x, scroll_y):
+        for offset in (-WORLD_PIXELS, 0, WORLD_PIXELS):
+            x = self.rect.centerx - int(scroll_x) + offset
+            y = self.rect.centery - int(scroll_y)
+            if -20 <= x <= SCREEN_WIDTH + 20:
+                pygame.draw.line(
+                    surface, (255, 120, 35),
+                    (int(self.prev_x - scroll_x + offset), int(self.prev_y - scroll_y)),
+                    (x, y), 5
+                )
+                pygame.draw.rect(surface, (75, 75, 80), (x - 6, y - 4, 12, 8))
+                pygame.draw.polygon(surface, (220, 220, 225), [(x + 6, y - 4), (x + 10, y), (x + 6, y + 4)])
+                pygame.draw.circle(surface, (255, 210, 80), (x - 7, y), 3)
+                break
 
 class ArrowShot:
     def __init__(self, x, y, target_x, target_y):
@@ -1757,6 +2508,7 @@ class FishingHook:
 class Mob:
     def __init__(self, x, y, m_type="zombie"):
         self.m_type = m_type
+        self.sheared = False
         # Cows and sheep are a bit wider/shorter; endermen are 3 blocks tall.
         if m_type == "enderman":
             self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 3 - 2)
@@ -1783,6 +2535,10 @@ class Mob:
             self.rect = pygame.Rect(x, y, 48, TILE_SIZE * 2 + 8)
             self.speed = 0.6
             self.health = 32
+        elif m_type == "villager":
+            self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 2 - 4)
+            self.speed = 0.45
+            self.health = 20
         else:
             self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 2 - 2)
             self.speed = 2
@@ -1959,6 +2715,11 @@ class Mob:
                 if self.wander_timer <= 0:
                     self.wander_timer = random.randint(120, 300)
                     self.vel_x = random.choice([-self.speed, 0, 0, self.speed])
+        elif self.m_type == "villager":
+            self.wander_timer -= 1
+            if self.wander_timer <= 0:
+                self.wander_timer = random.randint(120, 300)
+                self.vel_x = random.choice([-self.speed, 0, 0, self.speed])
         else: # Cow/Sheep Wander / Follow
             slot = player.inventory[player.selected_slot] if not player.show_inventory else player.held_item
             lure_item = WHEAT_ITEM
@@ -2140,10 +2901,11 @@ class Mob:
                 h_color = (255, 150, 150) if is_hurt else (180, 140, 100)
                 pygame.draw.rect(surface, h_color, (hx, dy + 4, 8, 12))
             elif self.m_type == "sheep":
-                # Sheep draw (Woolly body)
-                color = (255, 100, 100) if is_hurt else (240, 240, 240)
-                pygame.draw.rect(surface, color, (dx, dy, self.rect.width, self.rect.height), 0, 8)
-                pygame.draw.rect(surface, (200, 200, 200), (dx, dy, self.rect.width, self.rect.height), 2, 8)
+                color = (255, 100, 100) if is_hurt else ((145, 110, 75) if self.sheared else (240, 240, 240))
+                body_rect = pygame.Rect(dx, dy + (5 if self.sheared else 0), self.rect.width, self.rect.height - (5 if self.sheared else 0))
+                pygame.draw.rect(surface, color, body_rect, 0, 8)
+                if not self.sheared:
+                    pygame.draw.rect(surface, (200, 200, 200), body_rect, 2, 8)
                 hx = dx + (self.rect.width if self.vel_x >= 0 else -6)
                 h_color = (255, 100, 100) if is_hurt else (50, 50, 50)
                 pygame.draw.rect(surface, h_color, (hx, dy + 6, 8, 10)) # Face
@@ -2182,6 +2944,26 @@ class Mob:
                 # Tattered rags - dark strips across body
                 pygame.draw.rect(surface, (160, 120, 60), (dx + 2, dy + 20, 20, 3))
                 pygame.draw.rect(surface, (160, 120, 60), (dx + 4, dy + 32, 16, 3))
+            elif self.m_type == "villager":
+                tunic = (255, 100, 100) if is_hurt else (125, 85, 55)
+                skin = (255, 180, 180) if is_hurt else (190, 145, 105)
+                pygame.draw.rect(surface, tunic, (dx + 2, dy + 16, self.rect.width - 4, self.rect.height - 16))
+                pygame.draw.rect(surface, skin, (dx + 4, dy + 2, self.rect.width - 8, 18))
+                pygame.draw.rect(surface, (70, 50, 35), (dx + 6, dy + 9, 3, 3))
+                pygame.draw.rect(surface, (70, 50, 35), (dx + 15, dy + 9, 3, 3))
+                if self.vel_x < 0:
+                    nose = [
+                        (dx + 12, dy + 10), (dx + 6, dy + 10),
+                        (dx + 4, dy + 13), (dx + 7, dy + 15),
+                        (dx + 7, dy + 18), (dx + 12, dy + 17),
+                    ]
+                else:
+                    nose = [
+                        (dx + 12, dy + 10), (dx + 18, dy + 10),
+                        (dx + 20, dy + 13), (dx + 17, dy + 15),
+                        (dx + 17, dy + 18), (dx + 12, dy + 17),
+                    ]
+                pygame.draw.polygon(surface, (155, 110, 75) if not is_hurt else skin, nose)
             elif self.m_type == "camel":
                 # Camel body
                 body_c = (255, 150, 150) if is_hurt else (205, 160, 80)
@@ -2205,13 +2987,37 @@ class Mob:
                     pygame.draw.line(surface, (180, 180, 180), (dx + 23, dy + 14), (dx + 23, dy + 22), 2)
 
 def draw_block_icon(screen, b_type, x, y, size, font):
-    if b_type == STICK:
+    if b_type == GLASS:
+        pygame.draw.rect(screen, (175, 225, 240), (x, y, size, size))
+        pygame.draw.rect(screen, (220, 245, 250), (x, y, size, size), 2)
+    elif b_type == GLASS_PANE:
+        inset = max(1, size // 12)
+        pane_rect = pygame.Rect(x + inset, y + inset, size - inset * 2, size - inset * 2)
+        pygame.draw.rect(screen, (175, 225, 240), pane_rect)
+        pygame.draw.rect(screen, (220, 245, 250), pane_rect, 2)
+    elif b_type == STICK:
         pygame.draw.line(screen, (101, 67, 33), (x + size//4, y + size - 4), (x + size - 4, y + size//4), 3)
-    elif b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
-        pygame.draw.rect(screen, COLOR_STONE, (x, y, size, size))
-        ore_c = COLOR_COAL if b_type == COAL_BLOCK else (COLOR_IRON if b_type == IRON_BLOCK else COLOR_DIAMOND)
+    elif b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE, COPPER_ORE):
+        pygame.draw.rect(screen, (70, 70, 80) if b_type == DIAMOND_ORE else COLOR_STONE, (x, y, size, size))
+        ore_c = {
+            COAL_BLOCK: COLOR_COAL,
+            IRON_BLOCK: COLOR_IRON,
+            DIAMOND_ORE: COLOR_DIAMOND,
+            COPPER_ORE: (190, 110, 55),
+        }[b_type]
         pygame.draw.rect(screen, ore_c, (x + 3, y + 5, 8, 6))
         pygame.draw.rect(screen, ore_c, (x + 12, y + 14, 10, 8))
+    elif b_type in (DIORITE, GRANITE, GRAVEL, ANDESITE, DEEPSLATE):
+        color = {
+            DIORITE: (190, 190, 185),
+            GRANITE: (145, 95, 85),
+            GRAVEL: (125, 120, 110),
+            ANDESITE: (115, 120, 125),
+            DEEPSLATE: (65, 70, 80),
+        }[b_type]
+        pygame.draw.rect(screen, color, (x, y, size, size))
+        for dx, dy in ((5, 6), (19, 10), (11, 23), (25, 26)):
+            pygame.draw.rect(screen, (55, 55, 55), (x + dx, y + dy, 3, 3))
     elif b_type == DIAMOND:
         pygame.draw.polygon(screen, COLOR_DIAMOND, [
             (x + size//2, y + 3),
@@ -2313,6 +3119,10 @@ def draw_block_icon(screen, b_type, x, y, size, font):
         pygame.draw.line(screen, (101, 67, 33), (x + 4, y + size - 4), (x + size - 7, y + 5), 3)
         pygame.draw.line(screen, (240, 240, 240), (x + size - 7, y + 5), (x + size - 3, y + 1), 1)
         pygame.draw.circle(screen, (240, 240, 240), (x + size - 3, y + 1), 2)
+    elif b_type == ROCKET_LAUNCHER:
+        pygame.draw.rect(screen, (75, 75, 80), (x + 3, y + size // 3, size - 9, size // 3))
+        pygame.draw.rect(screen, (120, 120, 125), (x + size - 8, y + size // 3 - 2, 5, size // 3 + 4))
+        pygame.draw.rect(screen, (100, 65, 40), (x + 8, y + size // 2, 5, size // 3))
     elif b_type == TORCH:
         pygame.draw.rect(screen, (90, 55, 20), (x + size//2 - 1, y + 5, 2, size - 7))
         pygame.draw.polygon(screen, (255, 180, 60), [
@@ -2344,6 +3154,28 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type in (OAK_LEAVES, BIRCH_LEAVES):
         l_c = COLOR_LEAVES_G if b_type == OAK_LEAVES else COLOR_LEAVES_B
         pygame.draw.rect(screen, l_c, (x, y, size, size))
+    elif b_type in CROP_STAGE_TO_KIND or b_type in (
+        CARROT_ITEM, POTATO_ITEM, POISONOUS_POTATO, BEETROOT_ITEM, BEETROOT_SEEDS
+    ):
+        crop_kind = CROP_STAGE_TO_KIND.get(b_type)
+        if crop_kind == "carrot" or b_type == CARROT_ITEM:
+            pygame.draw.ellipse(screen, (235, 115, 35), (x + 8, y + 5, size // 3, size - 10))
+            pygame.draw.line(screen, (55, 165, 45), (x + size // 2, y + 8), (x + size // 2 + 5, y + 2), 2)
+        elif crop_kind == "potato" or b_type in (POTATO_ITEM, POISONOUS_POTATO):
+            color = (110, 150, 70) if crop_kind else ((125, 160, 80) if b_type == POTATO_ITEM else (100, 150, 55))
+            pygame.draw.ellipse(screen, color, (x + 5, y + 8, size - 10, size - 16))
+            if b_type == POISONOUS_POTATO:
+                pygame.draw.circle(screen, (90, 60, 35), (x + size // 2, y + size // 2), 2)
+        elif crop_kind == "beetroot" or b_type in (BEETROOT_ITEM, BEETROOT_SEEDS):
+            if b_type == BEETROOT_SEEDS:
+                for dx in (8, 15, 22):
+                    pygame.draw.circle(screen, (120, 45, 50), (x + dx, y + size // 2), 3)
+            else:
+                pygame.draw.circle(screen, (155, 40, 55), (x + size // 2, y + size // 2 + 5), size // 4)
+                pygame.draw.line(screen, (65, 165, 55), (x + size // 2, y + size // 2), (x + size // 2, y + 5), 3)
+        else:
+            for dx in (8, 16, 24):
+                pygame.draw.line(screen, (220, 200, 50), (x + dx, y + size - 4), (x + dx, y + 5), 2)
     elif b_type >= 100: # Tools
         mat_c = (150, 110, 60) if b_type in (W_PICK, W_AXE, W_SHOVEL, W_SWORD, W_HOE) else (128, 128, 128)
         if b_type in (I_PICK, I_AXE, I_SHOVEL, I_SWORD, I_HOE, I_HELMET, I_CHEST, I_LEGS, I_BOOTS): mat_c = (200, 200, 220)
@@ -2383,6 +3215,17 @@ def draw_block_icon(screen, b_type, x, y, size, font):
             pygame.draw.rect(screen, (120, 80, 40), (x+4, y+2, size-8, size-4))
             pygame.draw.rect(screen, (200, 200, 200), (x+4, y+2, size-8, size-4), 2)
             pygame.draw.rect(screen, (150, 150, 150), (x+size//2-2, y+4, 4, size-8))
+        elif b_type == FLINT_STEEL:
+            pygame.draw.line(screen, (160, 160, 170), (x + 9, y + size - 5), (x + size - 8, y + 7), 4)
+            pygame.draw.line(screen, (120, 80, 40), (x + 8, y + size - 8), (x + size - 4, y + size - 5), 3)
+            pygame.draw.polygon(screen, (255, 150, 30), [
+                (x + size - 9, y + 10), (x + size - 4, y + 2), (x + size - 2, y + 11),
+            ])
+        elif b_type == SHEARS:
+            pygame.draw.circle(screen, (180, 180, 190), (x + 9, y + 20), 6, 2)
+            pygame.draw.circle(screen, (180, 180, 190), (x + 23, y + 20), 6, 2)
+            pygame.draw.line(screen, (180, 180, 190), (x + 12, y + 16), (x + 25, y + 5), 2)
+            pygame.draw.line(screen, (180, 180, 190), (x + 20, y + 16), (x + 7, y + 5), 2)
     elif b_type == IRON_BLOCK_PROD:
         pygame.draw.rect(screen, (200, 200, 220), (x, y, size, size))
         pygame.draw.rect(screen, (150, 150, 170), (x, y, size, size), 1)
@@ -2456,9 +3299,20 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type == IRON_INGOT:
         pygame.draw.rect(screen, (190, 190, 200), (x+4, y+8, size-12, size-16), 0, 4) # Ingot body
         pygame.draw.rect(screen, (150, 150, 160), (x+4, y+8, size-12, size-16), 1, 4) # Border
+    elif b_type == COPPER_INGOT:
+        pygame.draw.rect(screen, (190, 110, 55), (x + 4, y + 8, size - 12, size - 16), 0, 4)
+        pygame.draw.rect(screen, (130, 70, 35), (x + 4, y + 8, size - 12, size - 16), 1, 4)
+    elif b_type == FLINT:
+        pygame.draw.polygon(screen, (55, 55, 60), [
+            (x + 5, y + size - 7), (x + 11, y + 8),
+            (x + size - 5, y + 4), (x + size - 9, y + size - 6),
+        ])
     elif b_type == BUCKET:
         pygame.draw.polygon(screen, (150, 150, 160), [(x+8, y+8), (x+size-8, y+8), (x+size-12, y+size-8), (x+12, y+size-8)])
         pygame.draw.rect(screen, (120, 120, 130), (x+12, y+8, size-24, 2)) # Rim
+    elif b_type == WATER_BUCKET:
+        pygame.draw.polygon(screen, (150, 150, 160), [(x+8, y+8), (x+size-8, y+8), (x+size-12, y+size-8), (x+12, y+size-8)])
+        pygame.draw.rect(screen, (0, 100, 255), (x + 10, y + 14, size - 20, size // 3))
     elif b_type == MILK_BUCKET:
         pygame.draw.polygon(screen, (150, 150, 160), [(x+8, y+8), (x+size-8, y+8), (x+size-12, y+size-8), (x+12, y+size-8)])
         pygame.draw.rect(screen, (255, 255, 255), (x+10, y+10, size-20, 4)) # Milk surface
@@ -2573,6 +3427,9 @@ def update_crafting(player):
     if grid3.count(IRON_BLOCK_PROD) == 1 and grid3.count(None) == 8:
         res3 = {"type": IRON_INGOT, "count": 9}
 
+    if grid3 == [PLANKS] * 9:
+        res3 = {"type": ROCKET_LAUNCHER, "count": 1}
+
     def match(pattern, result):
         nonlocal res3
         if res3 is not None: return # Already matched
@@ -2633,6 +3490,8 @@ def update_crafting(player):
     match([N,N,ST, N,ST,STR, ST,N,STR], {"type": FISHING_ROD, "count": 1, "durability": 64})
     # Furnace
     match([S,S,S, S,N,S, S,S,S], {"type": FURNACE, "count": 1})
+    # Glass panes
+    match([GLASS,GLASS,GLASS, GLASS,GLASS,GLASS, N,N,N], {"type": GLASS_PANE, "count": 16})
     # Iron Products
     match([I,I,I, I,I,I, I,I,I], {"type": IRON_BLOCK_PROD, "count": 1})
     match([I,I,N, I,I,N, I,I,N], {"type": IRON_DOOR, "count": 3})
@@ -2685,6 +3544,10 @@ def update_crafting(player):
     
     # Bucket (3 Iron in V shape)
     match([N,N,N, I,N,I, N,I,N], {"type": BUCKET, "count": 1})
+    # Flint and Steel
+    match([I,N,N, N,FLINT,N, N,N,N], {"type": FLINT_STEEL, "count": 1, "durability": 64})
+    # Shears
+    match([I,N,N, N,I,N, N,N,N], {"type": SHEARS, "count": 1, "durability": 238})
     
     # Boat (5 Planks in U shape)
     match([N,N,N, W,N,W, W,W,W], {"type": BOAT, "count": 1})
@@ -2693,6 +3556,138 @@ def update_crafting(player):
     match([T,N,T, T,T,T, T,N,T], {"type": LADDER, "count": 3})
     
     player.output_3x3 = res3
+
+
+RECIPE_BOOK_ENTRIES = [
+    (PLANKS, 4, "1 Oak or Birch Log", "2x2/3x3"),
+    (STICK, 4, "2 Planks, vertical", "2x2/3x3"),
+    (TORCH, 4, "1 Coal or Charcoal + 1 Stick", "2x2/3x3"),
+    (CRAFTING_TABLE, 1, "4 Planks", "2x2/3x3"),
+    (IRON_INGOT, 9, "1 Iron Block", "2x2/3x3"),
+]
+
+for material, pick, axe, shovel, sword, hoe in (
+    ("Planks", W_PICK, W_AXE, W_SHOVEL, W_SWORD, W_HOE),
+    ("Cobblestone", S_PICK, S_AXE, S_SHOVEL, S_SWORD, S_HOE),
+    ("Iron Ingots", I_PICK, I_AXE, I_SHOVEL, I_SWORD, I_HOE),
+    ("Diamonds", D_PICK, D_AXE, D_SHOVEL, D_SWORD, D_HOE),
+):
+    RECIPE_BOOK_ENTRIES.extend((
+        (pick, 1, f"3 {material} + 2 Sticks", "3x3"),
+        (axe, 1, f"3 {material} + 2 Sticks", "3x3"),
+        (shovel, 1, f"1 {material} + 2 Sticks", "3x3"),
+        (sword, 1, f"2 {material} + 1 Stick", "3x3"),
+        (hoe, 1, f"2 {material} + 2 Sticks", "3x3"),
+    ))
+
+for material, helmet, chest, legs, boots in (
+    ("Iron Ingots", I_HELMET, I_CHEST, I_LEGS, I_BOOTS),
+    ("Diamonds", D_HELMET, D_CHEST, D_LEGS, D_BOOTS),
+):
+    RECIPE_BOOK_ENTRIES.extend((
+        (helmet, 1, f"5 {material}", "3x3"),
+        (chest, 1, f"8 {material}", "3x3"),
+        (legs, 1, f"7 {material}", "3x3"),
+        (boots, 1, f"4 {material}", "3x3"),
+    ))
+
+RECIPE_BOOK_ENTRIES.extend((
+    (SHIELD, 1, "6 Planks + 1 Iron Ingot", "3x3"),
+    (BOW, 1, "3 Strings + 3 Sticks", "3x3"),
+    (FISHING_ROD, 1, "3 Sticks + 2 Strings", "3x3"),
+    (FURNACE, 1, "8 Cobblestone", "3x3"),
+    (GLASS_PANE, 16, "6 Glass", "3x3"),
+    (IRON_BLOCK_PROD, 1, "9 Iron Ingots", "3x3"),
+    (IRON_DOOR, 3, "6 Iron Ingots", "3x3"),
+    (IRON_TRAPDOOR, 2, "6 Iron Ingots", "3x3"),
+    (IRON_PRESSURE_PLATE, 1, "2 Iron Ingots", "3x3"),
+    (CHAIN, 1, "3 Iron Ingots", "3x3"),
+    (W_STAIRS, 4, "6 Planks", "3x3"),
+    (C_STAIRS, 4, "6 Cobblestone", "3x3"),
+    (SS_STAIRS, 4, "6 Smooth Stone", "3x3"),
+    (W_SLAB, 6, "3 Planks", "3x3"),
+    (C_SLAB, 6, "3 Cobblestone", "3x3"),
+    (SS_SLAB, 6, "3 Smooth Stone", "3x3"),
+    (BREAD, 1, "3 Wheat", "3x3"),
+    (HAY_BALE, 1, "9 Wheat", "3x3"),
+    (COAL_BLOCK_ITEM, 1, "9 Coal", "3x3"),
+    (CHEST, 1, "8 Planks", "3x3"),
+    (DOOR, 3, "6 Planks", "3x3"),
+    (TRAPDOOR, 2, "6 Planks", "3x3"),
+    (PRESSURE_PLATE, 1, "2 Planks", "3x3"),
+    (BUTTON, 1, "1 Plank", "3x3"),
+    (FENCE, 2, "6 Sticks", "3x3"),
+    (FENCE_GATE, 1, "4 Sticks + 2 Planks", "3x3"),
+    (LEVER, 1, "1 Stick + 1 Cobblestone", "3x3"),
+    (BED, 1, "3 Wool + 3 Planks", "3x3"),
+    (SMOKER, 1, "4 Oak or Birch Logs + 1 Furnace", "3x3"),
+    (BLAST_FURNACE, 1, "5 Iron Ingots + 1 Furnace + 3 Smooth Stone", "3x3"),
+    (BUCKET, 1, "3 Iron Ingots", "3x3"),
+    (FLINT_STEEL, 1, "1 Iron Ingot + 1 Flint", "3x3"),
+    (SHEARS, 1, "2 Iron Ingots", "3x3"),
+    (BOAT, 1, "5 Planks", "3x3"),
+    (LADDER, 3, "7 Sticks", "3x3"),
+))
+
+RECIPE_BOOK_PAGE_SIZE = 9
+RECIPE_BOOK_BUTTON_RECT = pygame.Rect(16, 16, 150, 34)
+RECIPE_BOOK_PANEL_RECT = pygame.Rect(90, 35, 620, 530)
+
+
+def _recipe_book_page_count():
+    return max(1, math.ceil(len(RECIPE_BOOK_ENTRIES) / RECIPE_BOOK_PAGE_SIZE))
+
+
+def _handle_recipe_book_click(player, mx, my):
+    panel = RECIPE_BOOK_PANEL_RECT
+    close_rect = pygame.Rect(panel.right - 82, panel.top + 10, 68, 28)
+    previous_rect = pygame.Rect(panel.left + 28, panel.bottom - 42, 94, 28)
+    next_rect = pygame.Rect(panel.right - 122, panel.bottom - 42, 94, 28)
+    if close_rect.collidepoint(mx, my):
+        player.recipe_book_open = False
+    elif previous_rect.collidepoint(mx, my):
+        player.recipe_book_page = max(0, player.recipe_book_page - 1)
+    elif next_rect.collidepoint(mx, my):
+        player.recipe_book_page = min(_recipe_book_page_count() - 1, player.recipe_book_page + 1)
+
+
+def _draw_recipe_book(screen, font, small_font, page):
+    panel = RECIPE_BOOK_PANEL_RECT
+    overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 150))
+    screen.blit(overlay, (0, 0))
+    pygame.draw.rect(screen, (205, 190, 150), panel)
+    pygame.draw.rect(screen, (55, 45, 30), panel, 4)
+    screen.blit(font.render("Recipe Book", True, (40, 35, 25)), (panel.left + 24, panel.top + 10))
+    help_text = small_font.render("Ingredients and crafting grid size | Mouse wheel to browse", True, (60, 55, 45))
+    screen.blit(help_text, (panel.left + 24, panel.top + 40))
+
+    start = page * RECIPE_BOOK_PAGE_SIZE
+    for row, (item_type, count, ingredients, grid_size) in enumerate(
+        RECIPE_BOOK_ENTRIES[start:start + RECIPE_BOOK_PAGE_SIZE]
+    ):
+        row_y = panel.top + 72 + row * 46
+        row_rect = pygame.Rect(panel.left + 16, row_y, panel.width - 32, 42)
+        pygame.draw.rect(screen, (225, 214, 183) if row % 2 == 0 else (215, 202, 169), row_rect)
+        draw_block_icon(screen, item_type, row_rect.left + 6, row_y + 6, 30, font)
+        name = BLOCK_NAMES.get(item_type, "Unknown")
+        name_text = small_font.render(f"{name} x{count}", True, (35, 35, 30))
+        ingredient_text = small_font.render(ingredients, True, (55, 55, 48))
+        grid_text = small_font.render(grid_size, True, (65, 50, 30))
+        screen.blit(name_text, (row_rect.left + 44, row_y + 3))
+        screen.blit(ingredient_text, (row_rect.left + 44, row_y + 22))
+        screen.blit(grid_text, (row_rect.right - grid_text.get_width() - 8, row_y + 3))
+
+    close_rect = pygame.Rect(panel.right - 82, panel.top + 10, 68, 28)
+    previous_rect = pygame.Rect(panel.left + 28, panel.bottom - 42, 94, 28)
+    next_rect = pygame.Rect(panel.right - 122, panel.bottom - 42, 94, 28)
+    for button, label in ((close_rect, "Close"), (previous_rect, "Previous"), (next_rect, "Next")):
+        pygame.draw.rect(screen, (125, 108, 76), button)
+        pygame.draw.rect(screen, (55, 45, 30), button, 2)
+        text = small_font.render(label, True, (255, 255, 240))
+        screen.blit(text, text.get_rect(center=button.center))
+    page_text = small_font.render(f"Page {page + 1}/{_recipe_book_page_count()}", True, (40, 35, 25))
+    screen.blit(page_text, page_text.get_rect(center=(panel.centerx, previous_rect.centery)))
 
 
 def handle_inventory_click(player, mx, my, button, world=None):
@@ -2763,6 +3758,7 @@ def handle_inventory_click(player, mx, my, button, world=None):
                     if player.held_item is None:
                         player.held_item = player.crafting_output
                         player.crafting_output = None
+                        unlock_achievement(world, "first_craft")
                         for i in range(4):
                             if player.crafting_grid[i]:
                                 player.crafting_grid[i]["count"] -= 1
@@ -2771,6 +3767,7 @@ def handle_inventory_click(player, mx, my, button, world=None):
                     elif player.held_item["type"] == player.crafting_output["type"] and player.held_item["count"] + player.crafting_output["count"] <= 80:
                         player.held_item["count"] += player.crafting_output["count"]
                         player.crafting_output = None
+                        unlock_achievement(world, "first_craft")
                         for i in range(4):
                             if player.crafting_grid[i]:
                                 player.crafting_grid[i]["count"] -= 1
@@ -2789,6 +3786,7 @@ def handle_inventory_click(player, mx, my, button, world=None):
                     if player.held_item is None:
                         player.held_item = player.output_3x3
                         player.output_3x3 = None
+                        unlock_achievement(world, "first_craft")
                         for i in range(9):
                             if player.crafting_3x3[i]:
                                 player.crafting_3x3[i]["count"] -= 1
@@ -2797,6 +3795,7 @@ def handle_inventory_click(player, mx, my, button, world=None):
                     elif player.held_item["type"] == player.output_3x3["type"] and player.held_item["count"] + player.output_3x3["count"] <= 80:
                         player.held_item["count"] += player.output_3x3["count"]
                         player.output_3x3 = None
+                        unlock_achievement(world, "first_craft")
                         for i in range(9):
                             if player.crafting_3x3[i]:
                                 player.crafting_3x3[i]["count"] -= 1
@@ -2876,6 +3875,8 @@ def update_furnaces(world):
             i_type = data["input"]["type"]
             if i_type == COBBLESTONE: result_type = STONE_BLOCK
             elif i_type == IRON_BLOCK: result_type = IRON_INGOT
+            elif i_type == COPPER_ORE: result_type = COPPER_INGOT
+            elif i_type == SAND_BLOCK: result_type = GLASS
             elif i_type == RAW_BEEF: result_type = STEAK
             elif i_type == RAW_MUTTON: result_type = COOKED_MUTTON
             elif i_type == RAW_CHICKEN: result_type = COOKED_CHICKEN
@@ -2888,7 +3889,7 @@ def update_furnaces(world):
                 b_at_pos = world.data.get(pos)
                 # Filtering
                 if b_at_pos == SMOKER and i_type not in (RAW_BEEF, RAW_MUTTON, RAW_CHICKEN, RAW_COD, RAW_SALMON): can_smelt = False
-                if b_at_pos == BLAST_FURNACE and i_type not in (IRON_BLOCK, COBBLESTONE): can_smelt = False
+                if b_at_pos == BLAST_FURNACE and i_type not in (IRON_BLOCK, COPPER_ORE, COBBLESTONE): can_smelt = False
                 
                 if data["output"] and (data["output"]["type"] != result_type or data["output"]["count"] >= 80):
                     can_smelt = False
@@ -2929,6 +3930,9 @@ def update_furnaces(world):
 
 def save_game(world, player, filename):
     save_data = {
+        "player_id": player.persistent_id,
+        "seed": world.seed,
+        "achievements": sorted(world.unlocked_achievements),
         "world_data": {f"{k[0]},{k[1]}": v for k, v in world.data.items()},
         "block_meta": {f"{k[0]},{k[1]}": v for k, v in world.block_meta.items()},
         "chest_data": {f"{k[0]},{k[1]}": v for k, v in world.chest_data.items()},
@@ -2937,6 +3941,9 @@ def save_game(world, player, filename):
         "weather_type": world.weather_type,
         "weather_timer": world.weather_timer,
         "weather_intensity": world.weather_intensity,
+        "villages_generated": world.villages_generated,
+        "village_generation_version": world.village_generation_version,
+        "village_locations": world.village_locations,
         "player": {
             "x": player.rect.x, "y": player.rect.y,
             "health": player.health, "hunger": player.hunger,
@@ -2946,10 +3953,27 @@ def save_game(world, player, filename):
             "name": getattr(player, "display_name", "Player")
         },
         "remote_players": world.remote_players_data,
-        "mobs": [{"x": m.rect.x, "y": m.rect.y, "type": m.m_type, "hp": m.health} for m in world.mobs]
+        "mobs": [
+            {
+                "x": m.rect.x,
+                "y": m.rect.y,
+                "type": m.m_type,
+                "hp": m.health,
+                "sheared": m.sheared,
+                "saddled": getattr(m, "saddled", False),
+            }
+            for m in world.mobs
+        ]
     }
     with open(filename, "w") as f:
         json.dump(save_data, f)
+    if Path(filename).resolve() == (WORLDS_DIR / "savegame.json").resolve():
+        legacy_player_id_file = WORLDS_DIR / "player_id.json"
+        if legacy_player_id_file.exists():
+            try:
+                legacy_player_id_file.unlink()
+            except OSError as error:
+                print(f"[SAVE] Could not remove migrated player ID file: {error}")
     return True
 
 def load_game(world, player, filename):
@@ -2957,8 +3981,23 @@ def load_game(world, player, filename):
     try:
         with open(filename, "r") as f:
             sd = json.load(f)
+            saved_player_id = sd.get("player_id")
+            if isinstance(saved_player_id, str) and saved_player_id:
+                player.persistent_id = saved_player_id
+            world.seed = sd.get("seed", world.seed)
+            world.rng = random.Random(world.seed)
             # Restore World
             world.chunks = {} # Clear existing
+            world.unloaded_chunks = {}
+            world.loaded_chunk_columns = None
+            world.villages_generated = sd.get("villages_generated", False)
+            world.village_generation_version = sd.get("village_generation_version", 0)
+            world.village_locations = [
+                tuple(location) for location in sd.get("village_locations", [])
+            ]
+            world.active_water.clear()
+            world.water_cascade_removed.clear()
+            world.falling_sand.clear()
             raw_world = sd.get("world_data", {})
             max_x = -1
             for k_str, v in raw_world.items():
@@ -2970,31 +4009,35 @@ def load_game(world, player, filename):
             if 0 < max_x < WORLD_WIDTH - 1:
                 print(f"Legacy save detected. Generating missing terrain from x={max_x+1} to {WORLD_WIDTH-1}...")
                 for x in range(max_x + 1, WORLD_WIDTH):
-                    h = int(12 + math.sin(x * 0.15) * 4 + math.cos(x * 0.05) * 2)
+                    h = world.rng.randint(10, 20)
                     for y in range(WORLD_HEIGHT):
                         if y > h: 
                             world.data[(x, y)] = STONE_BLOCK if y > h+4 else DIRT_BLOCK
                         elif y == h: 
                             world.data[(x, y)] = GRASS_BLOCK
-                            if random.random() < 0.2:
+                            if world.rng.random() < 0.2:
                                 world.data[(x, y - 1)] = TALL_GRASS
             
             world.block_meta = {tuple(map(int, k.split(','))): v for k, v in sd.get("block_meta", {}).items()}
             world.chest_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("chest_data", {}).items()}
             world.furnace_data = {tuple(map(int, k.split(','))): v for k, v in sd.get("furnace_data", {}).items()}
             world.time = sd.get("time", 0)
+            world.active_water.clear()
+            world.unlocked_achievements = set(sd.get("achievements", []))
+            world.achievement_queue.clear()
+            world.achievement_toast = None
             world.weather_type = sd.get("weather_type", "clear")
             world.weather_timer = sd.get("weather_timer", 0)
             world.weather_intensity = sd.get("weather_intensity", 0.0)
             if DIAMOND_ORE not in world.data.values():
                 for _ in range(max(8, WORLD_WIDTH // 24)):
-                    vx = random.randint(0, WORLD_WIDTH - 1)
-                    vy = random.randint(80, WORLD_HEIGHT - 8)
-                    for _ in range(random.randint(3, 6)):
+                    vx = world.rng.randint(0, WORLD_WIDTH - 1)
+                    vy = world.rng.randint(80, WORLD_HEIGHT - 8)
+                    for _ in range(world.rng.randint(3, 6)):
                         if (vx, vy) in world.data and world.data[(vx, vy)] == STONE_BLOCK:
                             world.data[(vx, vy)] = DIAMOND_ORE
-                        vx = (vx + random.choice([-1, 0, 1])) % WORLD_WIDTH
-                        vy = max(80, min(WORLD_HEIGHT - 1, vy + random.choice([-1, 0, 1])))
+                        vx = (vx + world.rng.choice([-1, 0, 1])) % WORLD_WIDTH
+                        vy = max(80, min(WORLD_HEIGHT - 1, vy + world.rng.choice([-1, 0, 1])))
             # Restore Player
             p_data = sd.get("player", {})
             player.rect.x = p_data.get("x", 100)
@@ -3015,9 +4058,148 @@ def load_game(world, player, filename):
             for m_data in sd.get("mobs", []):
                 m = Mob(m_data["x"], m_data["y"], m_data["type"])
                 m.health = m_data["hp"]
+                m.sheared = m_data.get("sheared", False)
+                m.saddled = m_data.get("saddled", False)
                 world.mobs.append(m)
+            if world.village_generation_version < VILLAGE_GENERATION_VERSION:
+                legacy_houses = {}
+                if world.village_generation_version >= 6:
+                    door_offset = 7
+                    house_spacing = 16
+                    bed_offsets = (1, 2)
+                elif world.village_generation_version >= 3:
+                    door_offset = 9
+                    house_spacing = 16
+                    bed_offsets = (4,)
+                elif world.village_generation_version >= 2:
+                    door_offset = 9
+                    house_spacing = 14
+                    bed_offsets = (4,)
+                else:
+                    door_offset = 4
+                    house_spacing = 10
+                    bed_offsets = (1,)
+                for (tx, ty), block_type in world.data.items():
+                    if (
+                        block_type == DOOR
+                        and world.get_block(tx, ty - 1) == DOOR_TOP
+                    ):
+                        house_x = (tx - door_offset) % WORLD_WIDTH
+                        if any(
+                            world.get_block(house_x + bed_offset, ty) == BED
+                            and world.get_block(house_x + bed_offset + 1, ty) == BED_RIGHT
+                            for bed_offset in bed_offsets
+                        ):
+                            legacy_houses[house_x] = ty + 1
+
+                legacy_locations = []
+                legacy_house_counts = []
+                houses_to_clear = set()
+                for region_start, region_end in ((24, 180), (420, WORLD_WIDTH - 44)):
+                    region_houses = {
+                        x: y for x, y in legacy_houses.items()
+                        if region_start <= x < region_end
+                    }
+                    for house_x in sorted(region_houses):
+                        if world.village_generation_version >= 3:
+                            if house_x - house_spacing in region_houses:
+                                continue
+                            cluster = [house_x]
+                            while cluster[-1] + house_spacing in region_houses:
+                                cluster.append(cluster[-1] + house_spacing)
+                            if len(cluster) < 4:
+                                continue
+                            houses_to_clear.update(cluster)
+                            legacy_locations.append(
+                                (house_x, max(region_houses[x] for x in cluster))
+                            )
+                            legacy_house_counts.append(len(cluster))
+                        elif house_x + house_spacing in region_houses:
+                            houses_to_clear.update(
+                                (house_x, house_x + house_spacing)
+                            )
+                            legacy_locations.append(
+                                (
+                                    house_x,
+                                    max(
+                                        region_houses[house_x],
+                                        region_houses[house_x + house_spacing],
+                                    ),
+                                )
+                            )
+                            legacy_house_counts.append(None)
+
+                if legacy_locations:
+                    old_house_blocks = {
+                        PLANKS, GLASS_PANE, DOOR, DOOR_TOP, BED, BED_RIGHT,
+                        OAK_LOG, W_STAIRS,
+                    }
+                    for house_x in houses_to_clear:
+                        floor_y = legacy_houses[house_x]
+                        for x in range(house_x, house_x + 16):
+                            for y in range(max(0, floor_y - 20), floor_y + 1):
+                                if world.get_block(x, y) in old_house_blocks:
+                                    world.set_block(x, y, None)
+                        for x in (
+                            house_x, house_x + 1, house_x + 7, house_x + 10,
+                        ):
+                            for y in range(floor_y, min(WORLD_HEIGHT, floor_y + 16)):
+                                if world.get_block(x, y) == OAK_LOG:
+                                    world.set_block(x, y, None)
+                        for x in range(house_x - 12, house_x):
+                            for y in range(max(0, floor_y - 7), floor_y + 1):
+                                if world.get_block(x, y) in (
+                                    STONE_BLOCK, LADDER, FURNACE,
+                                ):
+                                    world.set_block(x, y, None)
+                    world.villages_generated = False
+                    world.mobs = [m for m in world.mobs if m.m_type != "villager"]
+                    world.generate_villages(legacy_locations, legacy_house_counts)
+                elif not world.villages_generated:
+                    world.generate_villages()
+                else:
+                    world.village_generation_version = VILLAGE_GENERATION_VERSION
+            elif not world.villages_generated:
+                world.generate_villages()
     except Exception as e:
         print(f"Load error: {e}")
+
+def shear_saddled_camel(world, camel):
+    if camel.m_type != "camel" or not getattr(camel, "saddled", False):
+        return False
+    camel.saddled = False
+    world.dropped_items.append(
+        DroppedItem(camel.rect.centerx, camel.rect.centery, SADDLE)
+    )
+    return True
+
+def drop_mob_loot(world, mob):
+    def spawn_drop(item_type, count=1):
+        for _ in range(count):
+            world.dropped_items.append(
+                DroppedItem(mob.rect.centerx, mob.rect.centery, item_type)
+            )
+
+    if mob.m_type == "cow":
+        spawn_drop(RAW_BEEF, random.randint(2, 4))
+    elif mob.m_type in ("zombie", "husk"):
+        spawn_drop(ROTTEN_FLESH, random.randint(1, 2))
+        spawn_drop(BONE, random.randint(1, 2))
+    elif mob.m_type == "camel":
+        if getattr(mob, "saddled", False):
+            spawn_drop(SADDLE)
+    elif mob.m_type == "enderman":
+        spawn_drop(ENDER_PEARL, random.randint(1, 2))
+    elif mob.m_type == "sheep":
+        if not mob.sheared:
+            spawn_drop(WOOL, random.randint(1, 2))
+        spawn_drop(RAW_MUTTON, random.randint(1, 3))
+    elif mob.m_type == "chicken":
+        spawn_drop(RAW_CHICKEN, random.randint(1, 2))
+        if random.random() < 0.65:
+            spawn_drop(FEATHER, random.randint(1, 2))
+    elif mob.m_type == "spider":
+        spawn_drop(STRING_ITEM, random.randint(1, 3))
 
 def add_item_to_inventory(player, item_type, count=1, durability=None):
     for slot in player.inventory:
@@ -3036,10 +4218,36 @@ def add_item_to_inventory(player, item_type, count=1, durability=None):
 
     return False
 
+def drop_selected_item(player, world):
+    slot = player.inventory[player.selected_slot]
+    if not slot:
+        return False
+    drop = DroppedItem(
+        player.rect.centerx,
+        player.rect.centery,
+        slot["type"],
+        1,
+        slot.get("durability"),
+    )
+    drop.vel_x = player.direction * 4
+    drop.vel_y = -3
+    world.dropped_items.append(drop)
+    slot["count"] -= 1
+    if slot["count"] <= 0:
+        player.inventory[player.selected_slot] = None
+    return True
+
+def get_bed_partner(world, tx, ty, block_type):
+    partner_type = BED_RIGHT if block_type == BED else BED
+    for neighbor_x in ((tx + 1) % WORLD_WIDTH, (tx - 1) % WORLD_WIDTH):
+        if world.data.get((neighbor_x, ty)) == partner_type:
+            return neighbor_x, ty
+    return None
+
 def _can_smelt_in_furnace(item_type):
     return item_type in (
-        COBBLESTONE, IRON_BLOCK, RAW_BEEF, RAW_MUTTON, RAW_CHICKEN, RAW_COD,
-        RAW_SALMON, OAK_LOG, BIRCH_LOG
+        COBBLESTONE, IRON_BLOCK, COPPER_ORE, RAW_BEEF, RAW_MUTTON, RAW_CHICKEN, RAW_COD,
+        RAW_SALMON, OAK_LOG, BIRCH_LOG, SAND_BLOCK
     )
 
 def _is_furnace_fuel(item_type):
@@ -3238,7 +4446,7 @@ def main():
     elif choice == "4":
         return
     
-    world_name = "wrld3"
+    world_name = "default"
     if mode != "join":
         # List existing worlds
         saves = [f.name for f in WORLDS_DIR.iterdir() if f.is_file() and f.name.startswith("savegame") and f.name.endswith(".json")]
@@ -3251,7 +4459,7 @@ def main():
                 print(f" - {name}")
         
         print("\n(Type a world name to load, or 'create' for a new world)")
-        world_name = input("Enter world name [wrld3]: ").strip() or "wrld3"
+        world_name = input("Enter world name [default]: ").strip() or "default"
         if world_name.lower() == "create":
             world_name = input("Enter name for new world: ").strip() or f"world_{int(time.time())}"
     else:
@@ -3274,6 +4482,7 @@ def main():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 24)
+    recipe_font = pygame.font.SysFont(None, 18)
 
     world, player = World(), Player(player_name)
     
@@ -3343,7 +4552,9 @@ def main():
         load_game(world, player, save_filename)
         world.find_safe_spawn(player)
 
-    scroll_x, scroll_y = 0, player.rect.centery - SCREEN_HEIGHT // 2
+    print(f"[WORLD] Seed: {world.seed}")
+    scroll_x = player.rect.centerx - SCREEN_WIDTH // 2
+    scroll_y = player.rect.centery - SCREEN_HEIGHT // 2
     auto_save_timer = 0
     save_msg_timer = 0
     save_msg_text = "Game Saved!"
@@ -3359,10 +4570,12 @@ def main():
         
         if mode == "host":
             active_remote_ids = set()
-            for p_id, p_data in world.remote_players_data.items():
+            connected_players = net.get_player_data_snapshot() if net else {}
+            for p_id, p_data in connected_players.items():
                 if p_id == "host" or not isinstance(p_data, dict):
                     continue
                 active_remote_ids.add(p_id)
+                world.remote_players_data[p_id] = p_data.copy()
                 if p_id not in remote_players:
                     remote_players[p_id] = RemotePlayer(
                         p_id,
@@ -3393,6 +4606,7 @@ def main():
             
         scroll_x += (target_scroll_x - scroll_x) * 0.1
         scroll_y += (target_scroll_y - scroll_y) * 0.1
+        world.update_loaded_chunks(scroll_x + SCREEN_WIDTH // 2)
 
         # --- Join Loading Screen ---
         if mode == "join" and not world.data:
@@ -3570,23 +4784,31 @@ def main():
                                     update_crafting(player)
                             if moved:
                                 continue
-                if event.key == pygame.K_q: 
-                    if save_game(world, player, save_filename):
-                        save_msg_timer = 120
-                        save_msg_text = "Game Saved!"
-                    running = False
                 if event.key == pygame.K_r: player.respawn()
+                if (
+                    event.key == pygame.K_l
+                    and not player.show_inventory
+                    and sleep_anim_timer == 0
+                    and sleep_wake_timer == 0
+                ):
+                    player.flying = not player.flying
+                    player.vel_y = 0
+                    player.highest_y = player.rect.y
                 if event.key == pygame.K_e and sleep_anim_timer == 0 and sleep_wake_timer == 0: 
                     player.show_inventory = not player.show_inventory
                     if not player.show_inventory: 
                         player.show_3x3 = False
+                        player.recipe_book_open = False
                         player.active_furnace_pos = None
                         player.active_chest_pos = None
                 
                 if event.key == pygame.K_ESCAPE:
-                    if player.show_inventory:
+                    if player.recipe_book_open:
+                        player.recipe_book_open = False
+                    elif player.show_inventory:
                         player.show_inventory = False
                         player.show_3x3 = False
+                        player.recipe_book_open = False
                         player.active_furnace_pos = None
                         player.active_chest_pos = None
                     else:
@@ -3597,6 +4819,7 @@ def main():
                     print("[DEBUG] Force Unlocking Player...")
                     player.show_inventory = False
                     player.show_3x3 = False
+                    player.recipe_book_open = False
                     player.active_furnace_pos = None
                     player.active_chest_pos = None
                     world.find_safe_spawn(player)
@@ -3606,16 +4829,18 @@ def main():
                 if not player.show_inventory and sleep_anim_timer == 0 and sleep_wake_timer == 0:
                     if event.key in [pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4, pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8, pygame.K_9]:
                         player.selected_slot = event.key - pygame.K_1
-                    if event.key == pygame.K_z:
-                        slot = player.inventory[player.selected_slot]
-                        if slot:
-                            drop = DroppedItem(player.rect.centerx, player.rect.centery, slot["type"], 1, slot.get("durability"))
-                            drop.vel_x = player.direction * 4
-                            drop.vel_y = -3
-                            world.dropped_items.append(drop)
-                            slot["count"] -= 1
-                            if slot["count"] <= 0:
-                                player.inventory[player.selected_slot] = None
+                    if event.key in (pygame.K_q, pygame.K_z):
+                        drop_selected_item(player, world)
+
+            if (
+                event.type == pygame.MOUSEWHEEL
+                and player.show_inventory
+                and player.recipe_book_open
+                and event.y != 0
+            ):
+                player.recipe_book_page = max(
+                    0, min(_recipe_book_page_count() - 1, player.recipe_book_page - event.y)
+                )
 
             if (
                 event.type == pygame.MOUSEWHEEL
@@ -3629,9 +4854,17 @@ def main():
             if player.show_inventory:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     mx, my = pygame.mouse.get_pos()
-                    handle_inventory_click(player, mx, my, event.button, world)
+                    if player.recipe_book_open:
+                        _handle_recipe_book_click(player, mx, my)
+                    elif event.button == 1 and RECIPE_BOOK_BUTTON_RECT.collidepoint(mx, my):
+                        player.recipe_book_open = True
+                        player.recipe_book_page = min(
+                            player.recipe_book_page, _recipe_book_page_count() - 1
+                        )
+                    else:
+                        handle_inventory_click(player, mx, my, event.button, world)
                     update_crafting(player)
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_z:
+                if event.type == pygame.KEYDOWN and event.key in (pygame.K_q, pygame.K_z):
                     if player.held_item:
                         # Drop 1 from held item
                         drop = DroppedItem(player.rect.centerx, player.rect.centery, player.held_item["type"], 1, player.held_item.get("durability"))
@@ -3688,11 +4921,16 @@ def main():
                 speed = 1.0
                 if b_type == DIAMOND_ORE and t_type not in (I_PICK, D_PICK):
                     speed = 0.0
-                elif t_type in (W_PICK, S_PICK, I_PICK, D_PICK) and b_type in (STONE_BLOCK, COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE):
+                elif t_type in (W_PICK, S_PICK, I_PICK, D_PICK) and b_type in (
+                    STONE_BLOCK, DEEPSLATE, DIORITE, GRANITE, ANDESITE,
+                    COAL_BLOCK, IRON_BLOCK, COPPER_ORE, DIAMOND_ORE,
+                ):
                     if t_type == W_PICK: speed = 3.0
                     elif t_type == S_PICK: speed = 6.0
                     elif t_type == I_PICK: speed = 10.0
                     else: speed = 12.0 # Diamond
+                elif t_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL, D_SHOVEL) and b_type == GRAVEL:
+                    speed = 3.0 if t_type == W_SHOVEL else (6.0 if t_type == S_SHOVEL else (10.0 if t_type == I_SHOVEL else 12.0))
                 elif t_type in (W_AXE, S_AXE, I_AXE, D_AXE) and b_type in (OAK_LOG, BIRCH_LOG, PLANKS, CRAFTING_TABLE, FURNACE, IRON_BLOCK_PROD):
                     if t_type == W_AXE: speed = 3.0
                     elif t_type == S_AXE: speed = 6.0
@@ -3703,9 +4941,16 @@ def main():
                     elif t_type == S_SHOVEL: speed = 6.0
                     elif t_type == I_SHOVEL: speed = 10.0
                     else: speed = 12.0 # Diamond
+                elif t_type == SHEARS and b_type in (OAK_LEAVES, BIRCH_LEAVES):
+                    speed = 8.0
                 
                 hardness = BLOCK_HARDNESS.get(b_type, 1.0)
-                if b_type == TALL_GRASS: hardness = 0.01 # Instant break
+                if b_type == TALL_GRASS or b_type in (
+                    WHEAT_STG3, CARROT_STG3, POTATO_STG3, BEETROOT_STG3
+                ):
+                    hardness = 0.01
+                if player.flying:
+                    speed = max(speed, 60 * hardness)
                 player.breaking_progress += (1.0 / (60 * hardness)) * speed
                 
                 if player.breaking_progress >= 1.0:
@@ -3713,7 +4958,11 @@ def main():
                     for bx, by in mining_targets:
                         if (bx, by) in world.data and world.data[(bx, by)] not in (WATER, BEDROCK):
                             drop_type = world.data[(bx, by)]
+                            unlock_achievement(world, "first_break")
+                            if drop_type == DIAMOND_ORE:
+                                unlock_achievement(world, "find_diamond")
                             to_remove = [(bx, by)]
+                            extra_drops = []
                             if drop_type in (DOOR_TOP, DOOR_OPEN_TOP):
                                 base_pos = (bx, by + 1)
                                 if base_pos in world.data:
@@ -3724,15 +4973,10 @@ def main():
                                 if top_pos in world.data:
                                     to_remove.append(top_pos)
                                 drop_type = DOOR
-                            elif drop_type == BED_RIGHT:
-                                left_pos = ((bx - 1) % WORLD_WIDTH, by)
-                                if left_pos in world.data:
-                                    to_remove.append(left_pos)
-                                drop_type = BED
-                            elif drop_type == BED:
-                                right_pos = ((bx + 1) % WORLD_WIDTH, by)
-                                if right_pos in world.data:
-                                    to_remove.append(right_pos)
+                            elif drop_type in (BED, BED_RIGHT):
+                                bed_partner = get_bed_partner(world, bx, by, drop_type)
+                                if bed_partner is not None:
+                                    to_remove.append(bed_partner)
                                 drop_type = BED
                             if drop_type == TALL_GRASS:
                                 if random.random() < 0.15: drop_type = SEEDS
@@ -3741,28 +4985,18 @@ def main():
                                 drop_type = STICK
                                 if random.random() < 0.5:
                                     world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, STICK))
-                            elif WHEAT_STG0 <= drop_type <= WHEAT_STG3:
-                                if drop_type == WHEAT_STG3:
-                                    # Drop Wheat and Seeds
-                                    drop_type = WHEAT_ITEM
-                                    # Extra seed logic (adding directly since drop_type only holds one)
-                                    added_seeds = False
-                                    for slot in player.inventory:
-                                        if slot and slot["type"] == SEEDS and slot["count"] < 80:
-                                            slot["count"] += random.randint(1, 2)
-                                            added_seeds = True
-                                            break
-                                    if not added_seeds:
-                                        for i in range(36):
-                                            if player.inventory[i] is None:
-                                                player.inventory[i] = {"type": SEEDS, "count": random.randint(1, 2)}
-                                                added_seeds = True
-                                                break
-                                else:
-                                    drop_type = SEEDS # Young wheat drops seeds
+                            elif drop_type in CROP_STAGE_TO_KIND:
+                                crop_kind = CROP_STAGE_TO_KIND[drop_type]
+                                is_mature = drop_type == CROP_STAGES[crop_kind][-1]
+                                drop_type = None
+                                if is_mature:
+                                    if crop_kind == "wheat":
+                                        unlock_achievement(world, "harvest_wheat")
+                                extra_drops.extend(get_crop_drops(drop_type))
                             elif drop_type == GRASS_BLOCK: drop_type = DIRT_BLOCK
                             elif drop_type == COAL_BLOCK: drop_type = COAL
                             elif drop_type == DIAMOND_ORE: drop_type = DIAMOND
+                            elif drop_type == GRAVEL and random.random() < 0.1: drop_type = FLINT
                             elif drop_type == STONE_BLOCK: drop_type = COBBLESTONE
                             
                             for pos in to_remove:
@@ -3772,11 +5006,17 @@ def main():
                                     if net:
                                         net.send({"type": "BLOCK", "pos": f"{pos[0]},{pos[1]}", "b_type": None})
                             
-                            if drop_type and drop_type not in (OAK_LEAVES, BIRCH_LEAVES):
+                            if drop_type in (OAK_LEAVES, BIRCH_LEAVES) and tool and tool["type"] == SHEARS:
                                 world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, drop_type))
+                            elif drop_type and drop_type not in (OAK_LEAVES, BIRCH_LEAVES):
+                                world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, drop_type))
+                            for item_type, count in extra_drops:
+                                world.dropped_items.append(
+                                    DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, item_type, count)
+                                )
                         
                         # Durability Loss
-                        if tool and tool["type"] >= 100:
+                        if tool and tool["type"] in MAX_DURABILITY and tool["type"] != FLINT_STEEL:
                             if "durability" not in tool:
                                 # Fallback: add durability if missing (legacy items)
                                 tool["durability"] = MAX_DURABILITY.get(tool["type"], 60)
@@ -3796,8 +5036,27 @@ def main():
             action_taken = False
             slot = player.inventory[player.selected_slot]
 
+            if slot and slot["type"] == WATER_BUCKET and mouse_target is not None:
+                target_block = world.data.get(mouse_target)
+                if target_block is None:
+                    world.set_block(*mouse_target, WATER)
+                    world.block_meta[mouse_target] = {"level": 7, "source": True}
+                    world.active_water.add(mouse_target)
+                    slot["type"] = BUCKET
+                    if net:
+                        net.send({"type": "BLOCK", "pos": f"{mouse_target[0]},{mouse_target[1]}", "b_type": WATER})
+                    action_taken = True
+            elif slot and slot["type"] == BUCKET and mouse_target is not None:
+                if world.data.get(mouse_target) == WATER:
+                    world.set_block(*mouse_target, None)
+                    slot["type"] = WATER_BUCKET
+                    unlock_achievement(world, "collect_water")
+                    if net:
+                        net.send({"type": "BLOCK", "pos": f"{mouse_target[0]},{mouse_target[1]}", "b_type": None})
+                    action_taken = True
+
             # Ender Pearl: throw toward the mouse cursor and teleport on landing.
-            if slot and slot["type"] == ENDER_PEARL:
+            if not action_taken and slot and slot["type"] == ENDER_PEARL:
                 mx, my = pygame.mouse.get_pos()
                 target_x = (scroll_x + mx) % WORLD_PIXELS
                 target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
@@ -3807,7 +5066,15 @@ def main():
                     player.inventory[player.selected_slot] = None
                 player.last_action_time = now
                 action_taken = True
-            elif slot and slot["type"] == EGG:
+            elif not action_taken and slot and slot["type"] == ROCKET_LAUNCHER:
+                mx, my = pygame.mouse.get_pos()
+                target_x = (scroll_x + mx) % WORLD_PIXELS
+                target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
+                world.rocket_projectiles.append(
+                    RocketShot(player.rect.centerx, player.rect.centery, target_x, target_y)
+                )
+                action_taken = True
+            elif not action_taken and slot and slot["type"] == EGG:
                 mx, my = pygame.mouse.get_pos()
                 target_x = (scroll_x + mx) % WORLD_PIXELS
                 target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
@@ -3817,7 +5084,7 @@ def main():
                     player.inventory[player.selected_slot] = None
                 player.last_action_time = now
                 action_taken = True
-            elif slot and slot["type"] == BOW:
+            elif not action_taken and slot and slot["type"] == BOW:
                 mx, my = pygame.mouse.get_pos()
                 target_x = (scroll_x + mx) % WORLD_PIXELS
                 target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
@@ -3830,7 +5097,7 @@ def main():
                         player.inventory[player.selected_slot] = None
                     player.last_action_time = now
                     action_taken = True
-            elif slot and slot["type"] == FISHING_ROD:
+            elif not action_taken and slot and slot["type"] == FISHING_ROD:
                 mx, my = pygame.mouse.get_pos()
                 target_x = (scroll_x + mx) % WORLD_PIXELS
                 target_y = max(0, min(WORLD_HEIGHT * TILE_SIZE - 1, int(scroll_y + my)))
@@ -3863,7 +5130,15 @@ def main():
                 if clicked_camel:
                     action_taken = True
                     player.last_action_time = now
-                    if slot and slot["type"] == SADDLE:
+                    if (
+                        slot
+                        and slot["type"] == SHEARS
+                        and shear_saddled_camel(world, clicked_camel)
+                    ):
+                        slot["durability"] = slot.get("durability", MAX_DURABILITY[SHEARS]) - 1
+                        if slot["durability"] <= 0:
+                            player.inventory[player.selected_slot] = None
+                    elif slot and slot["type"] == SADDLE:
                         if not getattr(clicked_camel, "saddled", False):
                             clicked_camel.saddled = True
                             clicked_camel.tamed = True
@@ -3873,6 +5148,31 @@ def main():
                     else:
                         clicked_camel.tamed = True
                         player.riding_mob = clicked_camel
+                elif slot and slot["type"] == SHEARS:
+                    clicked_sheep = None
+                    for mob in world.mobs:
+                        if mob.m_type != "sheep" or mob.sheared:
+                            continue
+                        for offset in (-WORLD_PIXELS, 0, WORLD_PIXELS):
+                            sheep_rect = mob.rect.copy()
+                            sheep_rect.x += offset
+                            if sheep_rect.collidepoint(world_click_x, world_click_y):
+                                clicked_sheep = mob
+                                break
+                        if clicked_sheep:
+                            break
+                    if clicked_sheep:
+                        clicked_sheep.sheared = True
+                        unlock_achievement(world, "shear_sheep")
+                        for _ in range(random.randint(1, 3)):
+                            world.dropped_items.append(
+                                DroppedItem(clicked_sheep.rect.centerx, clicked_sheep.rect.centery, WOOL)
+                            )
+                        slot["durability"] = slot.get("durability", MAX_DURABILITY[SHEARS]) - 1
+                        if slot["durability"] <= 0:
+                            player.inventory[player.selected_slot] = None
+                        action_taken = True
+                        player.last_action_time = now
 
             for tx, ty in ([] if action_taken or mouse_target is None else [mouse_target]):
                 if (tx, ty) in world.data and world.data[(tx, ty)] == BOAT:
@@ -3887,7 +5187,7 @@ def main():
                 # Boat: place without replacing terrain, then allow right-click to mount it.
                 if slot and slot["type"] == BOAT:
                     boat_pos = None
-                    if (tx, ty) not in world.data:
+                    if (tx, ty) not in world.data or world.data.get((tx, ty)) == WATER:
                         boat_pos = (tx, ty)
                     elif ty > 0 and (tx, ty - 1) not in world.data:
                         boat_pos = (tx, ty - 1)
@@ -3903,9 +5203,19 @@ def main():
                         break
 
                 # Eating / Drinking
-                if slot and slot["type"] in (BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON, RAW_COD, COOKED_COD, RAW_SALMON, COOKED_SALMON, MILK_BUCKET):
+                if slot and slot["type"] in (
+                    BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON,
+                    RAW_COD, COOKED_COD, RAW_SALMON, COOKED_SALMON, MILK_BUCKET,
+                    CARROT_ITEM, POTATO_ITEM, POISONOUS_POTATO, BEETROOT_ITEM,
+                ):
                     if slot["type"] == MILK_BUCKET or player.hunger < player.max_hunger:
-                        fill = {BREAD: 5, RAW_BEEF: 3, STEAK: 8, ROTTEN_FLESH: 4, RAW_MUTTON: 3, COOKED_MUTTON: 7, RAW_COD: 2, COOKED_COD: 5, RAW_SALMON: 2, COOKED_SALMON: 6, MILK_BUCKET: 2}[slot["type"]]
+                        fill = {
+                            BREAD: 5, RAW_BEEF: 3, STEAK: 8, ROTTEN_FLESH: 4,
+                            RAW_MUTTON: 3, COOKED_MUTTON: 7, RAW_COD: 2,
+                            COOKED_COD: 5, RAW_SALMON: 2, COOKED_SALMON: 6,
+                            MILK_BUCKET: 2, CARROT_ITEM: 3, POTATO_ITEM: 2,
+                            POISONOUS_POTATO: 1, BEETROOT_ITEM: 2,
+                        }[slot["type"]]
                         player.hunger = min(player.max_hunger, player.hunger + fill)
                         if slot["type"] == MILK_BUCKET:
                             slot["type"] = BUCKET # Return empty bucket
@@ -3931,11 +5241,12 @@ def main():
                         if slot["durability"] <= 0: player.inventory[player.selected_slot] = None
                         action_taken = True
                         break
-                # Planting Seeds
-                if slot and slot["type"] == SEEDS:
+                # Planting crop seeds and vegetables
+                if slot and slot["type"] in CROP_PLANT_ITEMS:
                     if (tx, ty) in world.data and world.data[(tx, ty)] == FARMLAND:
                         if (tx, ty - 1) not in world.data:
-                            world.data[(tx, ty - 1)] = WHEAT_STG0
+                            crop_kind = CROP_PLANT_ITEMS[slot["type"]]
+                            world.data[(tx, ty - 1)] = CROP_STAGES[crop_kind][0]
                             slot["count"] -= 1
                             if slot["count"] <= 0: player.inventory[player.selected_slot] = None
                             action_taken = True
@@ -4035,10 +5346,13 @@ def main():
                         break
                     action_taken = True
                     break
-                elif (tx, ty) not in world.data:
+                elif (tx, ty) not in world.data or world.data.get((tx, ty)) == WATER:
                     slot = player.inventory[player.selected_slot]
                     if slot is not None and slot["type"] == DOOR:
-                        if ty > 0 and (tx, ty - 1) not in world.data:
+                        if ty > 0 and (
+                            (tx, ty - 1) not in world.data
+                            or world.data.get((tx, ty - 1)) == WATER
+                        ):
                             bottom_rect = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                             top_rect = pygame.Rect(tx * TILE_SIZE, (ty - 1) * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                             p_placement_rect = player.rect.inflate(-6, -6)
@@ -4054,7 +5368,7 @@ def main():
                     elif slot is not None and slot["type"] == BED:
                         bed_dx = 1 if player.direction > 0 else -1
                         tx2 = (tx + bed_dx) % WORLD_WIDTH
-                        if (tx2, ty) not in world.data:
+                        if (tx2, ty) not in world.data or world.data.get((tx2, ty)) == WATER:
                             bed_rect_1 = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                             bed_rect_2 = pygame.Rect(tx2 * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                             p_placement_rect = player.rect.inflate(-6, -6)
@@ -4076,6 +5390,7 @@ def main():
                         p_placement_rect.x %= WORLD_PIXELS
                         if not p_placement_rect.colliderect(tr): 
                             world.data[(tx, ty)] = slot["type"]
+                            unlock_achievement(world, "first_build")
                             if slot["type"] in (W_STAIRS, C_STAIRS, SS_STAIRS):
                                 world.block_meta[(tx, ty)] = {"facing": player.direction}
                             elif slot["type"] == TORCH:
@@ -4112,6 +5427,11 @@ def main():
                             if slot["count"] <= 0:
                                 player.inventory[player.selected_slot] = None
                                 break 
+            if world.water_cascade_removed:
+                if net:
+                    for wx, wy in world.water_cascade_removed:
+                        net.send({"type": "BLOCK", "pos": f"{wx},{wy}", "b_type": None})
+                world.water_cascade_removed.clear()
             if action_taken:
                 player.last_action_time = now
         else:
@@ -4179,7 +5499,7 @@ def main():
                 if hit_any:
                     player.last_action_time = now
                     # Durability Loss for tools
-                    if tool and tool["type"] >= 100:
+                    if tool and tool["type"] in MAX_DURABILITY and tool["type"] != FLINT_STEEL:
                         tool["durability"] -= 1
                         if tool["durability"] <= 0:
                             player.inventory[player.selected_slot] = None
@@ -4234,31 +5554,17 @@ def main():
             for mob in world.mobs[:]:
                 mob.update(world, player)
                 if mob.health <= 0:
-                    def spawn_drop(item_type, count=1):
-                        for _ in range(count):
-                            world.dropped_items.append(DroppedItem(mob.rect.centerx, mob.rect.centery, item_type))
-
-                    if mob.m_type == "cow":
-                        spawn_drop(RAW_BEEF, random.randint(2, 4))
-                    elif mob.m_type == "zombie":
-                        spawn_drop(ROTTEN_FLESH, random.randint(1, 2))
-                        spawn_drop(BONE, random.randint(1, 2))
-                    elif mob.m_type == "enderman":
-                        spawn_drop(ENDER_PEARL, random.randint(1, 2))
-                    elif mob.m_type == "sheep":
-                        spawn_drop(WOOL, random.randint(1, 2))
-                        spawn_drop(RAW_MUTTON, random.randint(1, 3))
-                    elif mob.m_type == "chicken":
-                        spawn_drop(RAW_CHICKEN, random.randint(1, 2))
-                        if random.random() < 0.65:
-                            spawn_drop(FEATHER, random.randint(1, 2))
-                    elif mob.m_type == "spider":
-                        spawn_drop(STRING_ITEM, random.randint(1, 3))
+                    unlock_achievement(world, "first_hunt")
+                    drop_mob_loot(world, mob)
                     world.mobs.remove(mob)
                     
             # --- Farming Growth ---
             if random.random() < 0.01: # Growth tick
-                crops = [pos for pos, b in world.data.items() if WHEAT_STG0 <= b < WHEAT_STG3]
+                crops = [
+                    pos for pos, block_type in world.data.items()
+                    if block_type in CROP_STAGE_TO_KIND
+                    and block_type != CROP_STAGES[CROP_STAGE_TO_KIND[block_type]][-1]
+                ]
                 if crops:
                     cp = random.choice(crops)
                     world.data[cp] += 1
@@ -4268,7 +5574,7 @@ def main():
             if auto_save_timer >= 1800: # 30 seconds
                 # Update remote player data before saving (Host only)
                 if mode == "host" and net:
-                    for p_id, p_data in net.player_data.items():
+                    for p_id, p_data in net.get_player_data_snapshot().items():
                         if p_id != "host":
                             world.remote_players_data[p_id] = p_data
                 elif mode == "join" and net:
@@ -4314,6 +5620,18 @@ def main():
                 world.arrows.remove(arrow)
             else:
                 arrow.draw(screen, scroll_x, scroll_y)
+
+        for rocket in world.rocket_projectiles[:]:
+            if rocket.update(world):
+                world.rocket_projectiles.remove(rocket)
+            else:
+                rocket.draw(screen, scroll_x, scroll_y)
+
+        for explosion in world.explosions[:]:
+            if explosion.update():
+                world.explosions.remove(explosion)
+            else:
+                explosion.draw(screen, scroll_x, scroll_y)
 
         # Update and Draw Fishing Hooks
         for hook in world.fishing_hooks[:]:
@@ -4410,6 +5728,10 @@ def main():
             
             # Draw Inventory & Hotbar
             inv_x, inv_y = SCREEN_WIDTH // 2 - 200, 360
+            pygame.draw.rect(screen, (105, 88, 58), RECIPE_BOOK_BUTTON_RECT)
+            pygame.draw.rect(screen, (35, 30, 20), RECIPE_BOOK_BUTTON_RECT, 2)
+            book_label = font.render("Recipe Book", True, (255, 245, 220))
+            screen.blit(book_label, book_label.get_rect(center=RECIPE_BOOK_BUTTON_RECT.center))
             
             # --- Draw Main Inventory Panel ---
             pygame.draw.rect(screen, (140, 140, 140), (inv_x - 10, inv_y - 30, 416, 180))
@@ -4626,6 +5948,9 @@ def main():
                 pygame.draw.rect(screen, (100, 100, 100), (mx + 15, my - 25, tw + 10, th + 6), 1)
                 screen.blit(t_txt, (mx + 20, my - 22))
 
+            if player.recipe_book_open:
+                _draw_recipe_book(screen, font, recipe_font, player.recipe_book_page)
+
         else: # Normal Game UI
             # --- Draw Hearts (HP) ---
             for i in range(10):
@@ -4733,6 +6058,7 @@ def main():
                         screen.blit(z_txt, (dx + 4, bed_y - 20))
                         break
 
+        draw_achievement_toast(screen, font, world)
         pygame.display.flip()
         clock.tick(60)
     pygame.quit()
