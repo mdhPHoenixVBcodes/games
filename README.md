@@ -2,7 +2,7 @@
 
 Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project utilizing libraries such as `ursina`, `pygame`, and `turtle`.
 
-I also have a collection of games which are a lot to upload here, so pls check out this [link](https://share.gemini.google/dlB8U2kbjuYZ)
+I also have a collection of games which are a lot to upload here, so pls check out this [link](https://share.gemini.google/dlB8U2kbjuYZ) (Its a very big chat so loading takes longer times)
 
 
 > ***Disclaimer: These projects `3dadventure.py`, `mc.py`, `horror.py`, `lego.py`, `timesurvivor.py`, `puss.py`, `puss2.py`, `racing.py`, `shooter.py`, `happy.py`, and `fnaf.py` are made with AI***.
@@ -14,7 +14,7 @@ To run these games, you will need **Python 3.x** installed on your system. You w
 
 `pip install ursina pygame`
 
-Pls delete `savegame.json` / `brainrot_save.json` cuz that's technically my data
+**Pls delete `savegame.json` / `brainrot_save.json` cuz that's technically my data**
 
 ## 🎮 Included Projects
 ### 1. 3D Adventure Dungeon 
