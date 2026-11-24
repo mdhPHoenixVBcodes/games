@@ -3,7 +3,7 @@
 Welcome to this repository containing a collection of fun, interactive 2D and 3D games and simulations built using Python! Each script is a standalone project utilizing libraries such as `ursina`, `pygame`, and `turtle`.
 
 I also have a collection of games which are a lot to upload here, so pls check out this [link](https://share.gemini.google/dlB8U2kbjuYZ) (Its a very big chat so loading takes longer times)
-
+If u have any feedback or problem with the game or a recommendation of a game, make sure to send it [here](https://github.com/mdhPHoenixVBcodes/games/issues)
 
 > ***Disclaimer: These projects `3dadventure.py`, `mc.py`, `horror.py`, `lego.py`, `timesurvivor.py`, `puss.py`, `puss2.py`, `racing.py`, `shooter.py`, `happy.py`, and `fnaf.py` are made with AI***.
 
