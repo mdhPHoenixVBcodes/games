@@ -13,13 +13,13 @@ If u have any feedback or problem with the game or a recommendation of a game, m
 
 To run these games, you will need **Python 3.x** installed on your system. You will also need to install the required external libraries. You can install them via pip:
 
-`pip install ursina pygame`
+`pip install ursina pygame tkinter`
 
 **Pls delete `savegame.json` / `brainrot_save.json` cuz that's technically my data**
 
 ## 🎮 Included Projects
 ### 1. 3D Adventure Dungeon 
-`3dadventure.py`
+`Adventure/3dadventure.py`
 This game is still in production so bugs may occur.
 A multi-phase 3D action-survival game built with the ursina engine. Progress through different dimensions, talk to NPCs, and defeat bosses.
 
@@ -47,7 +47,7 @@ Multiple levels (Plains, Safe Zone, Final Arena etc.), interactive NPCs, unlocka
 `0` / `Esc` - Main Menu
 
 ### 2. LAN Survival Horror 
-`horror.py`
+`Horror/horror.py`
 A terrifying 3D survival horror game built with the ursina engine. Play alone or brave the woods with a friend.
 
 #### Features: 
@@ -62,7 +62,7 @@ Single-player and LAN multiplayer modes via a terminal startup menu, dense fog a
 `Esc` - Pause / Mouse Unlock / Close Inventory
 
 ### 3. 2D PyCraft 
-`mc.py`
+`Adventure/mc.py`
 A sandbox game built using pygame.
 
 #### Features: 
@@ -84,7 +84,8 @@ Procedural terrain generation (dirt, grass, stone, ores, trees), block mining an
 
 `F` - Change Mining Mode
 
-### 4. Steal The Brainrots Base Defense (stb.py)
+### 4. Steal The Brainrots Base Defense 
+`Time Pass/stb.py`
 A humorous 3D base-building and collecting game created using the ursina engine.
 
 #### Features: 
@@ -104,7 +105,8 @@ Economy and auto-saving system (brainrot_save.json), custom AI bases, procedural
 
 `Esc` - Unlock Mouse
 
-### 5. Time Survivor (timesurvivor.py)
+### 5. Time Survivor 
+`Fighting/timesurvivor.py`
 A fast-paced 2D top-down arena survival game using Python's turtle module.
 
 #### Features: 
@@ -122,7 +124,8 @@ Endless waves of enemies, directional shooting mechanics, AoE shockwave attacks,
 
 `R` - Restart
 
-### 6. Interactive Turtle Drawer (tmnt.py)
+### 6. Interactive Turtle Drawer 
+`Time Pass/tmnt.py`
 A console-driven interactive drawing program using the turtle graphics module.
 
 #### Features: 
@@ -131,7 +134,8 @@ Terminal-based inputs translate directly to visual drawing commands on the canva
 #### Controls:
 Follow the on-screen terminal prompts to enter movement distances and turning angles (r for right, l for left). Type restart to clear canvas.
 
-### 7. Puss in Boots 3D Arena (puss.py)
+### 7. Puss in Boots 3D Arena 
+`Fighting/puss.py`
 A 3D floating battle arena fighter created using the ursina engine. Features a 3-panel character selection UI with a rotating 3D turntable preview, damage numbers, LAN TCP multiplayer mode (Host/Client), training grounds, custom keybindings, admin cheat panel, and an easter egg radar nuke system (nukeyes).
 
 #### Features:
@@ -155,7 +159,8 @@ Selectable characters (Puss in Boots, Kitty Softpaws, Death, Perrito), direction
 
 `Esc` - Pause menu / Unlock mouse
 
-### 8. Puss in Boots 3D Class Brawler (puss2.py)
+### 8. Puss in Boots 3D Class Brawler 
+`Fighting/puss2.py`
 An upgraded 3D class brawler built in ursina featuring Fortnite-style floating damage numbers, class selection, floating health UI, enemy bot tracking AI, and custom character models.
 
 #### Features: 
@@ -177,7 +182,8 @@ An upgraded 3D class brawler built in ursina featuring Fortnite-style floating d
 
 `Esc` - Pause Menu / Change Character
 
-### 9. Phoenix Vehicle Builder & Racer (racing.py)
+### 9. Phoenix Vehicle Builder & Racer 
+`Time Pass/racing.py`
 A full 3D vehicle building and racing sandbox built with the ursina engine, featuring singleplayer and LAN multiplayer modes, custom garage build zones, pressure plate blueprint saving/loading, a parts shop, full vehicle physics (acceleration, top speed, suspension braking, drifting, thruster flight), and a complete 10-checkpoint race track circuit with lap timers.
 
 #### Features: 
@@ -205,7 +211,8 @@ Build custom cars using Base Blocks, Wheels, Suspensions, Engines, Driver Seats,
 
 `Esc` - Lock / Unlock Mouse
 
-### 10. 3D FPS Shooter (shooter.py)
+### 10. 3D FPS Shooter 
+`Fighting/shooter.py`
 A 3D first-person shooter framework created using the ursina engine and Panda3D Actors.
 
 #### Features: 
@@ -227,7 +234,8 @@ First-person camera movement, animated gun actor (gun.glb) with reload animation
 
 `Esc` - Toggle Mouse Lock
 
-### 11. Trapdoor Rage (happy.py)
+### 11. Trapdoor Rage 
+`Adventure/happy.py`
 A rage platformer built in pygame with random control inversions, jump lockouts, crumbling trap platforms, side walls, level transitions, play timer, death counter, and humorous death quotes.
 
 #### Features: 
@@ -240,7 +248,8 @@ A rage platformer built in pygame with random control inversions, jump lockouts,
 `Space` (or Right Click) - Jump
 
 
-### 12. Nights at Python's (fnaf.py)
+### 12. Nights at Python's 
+`Horror/fnaf.py`
 A full 3D survival horror game built in the ursina engine, inspired by Five Nights at Freddy's.
 
 #### Features:
