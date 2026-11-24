@@ -73,6 +73,42 @@ BASE_DIR = Path(__file__).resolve().parent
 WORLDS_DIR = BASE_DIR / "worlds"
 WORLDS_DIR.mkdir(exist_ok=True)
 
+def play_loading_screens(screen):
+    fade_duration = 0.65
+    image_duration = 3.0
+    clock = pygame.time.Clock()
+    screen.fill((0, 0, 0))
+    pygame.display.flip()
+
+    for image_path in (BASE_DIR.parent.parent / "loading1pygame.png", BASE_DIR.parent.parent / "loading2.png"):
+        image = pygame.image.load(str(image_path))
+        image_width, image_height = image.get_size()
+        scale = min(SCREEN_WIDTH / image_width, SCREEN_HEIGHT / image_height)
+        scaled_size = (int(image_width * scale), int(image_height * scale))
+        image = pygame.transform.smoothscale(image, scaled_size)
+        image_rect = image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+        elapsed = 0.0
+
+        while elapsed < image_duration:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+
+            screen.fill((0, 0, 0))
+            screen.blit(image, image_rect)
+            fade_in = min(1.0, elapsed / fade_duration)
+            fade_out = min(1.0, (image_duration - elapsed) / fade_duration)
+            opacity = int(255 * (1.0 - min(fade_in, fade_out)))
+            if opacity:
+                fade = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+                fade.fill((0, 0, 0))
+                fade.set_alpha(opacity)
+                screen.blit(fade, (0, 0))
+            pygame.display.flip()
+            elapsed += clock.tick(60) / 1000
+
+    return True
+
 class RemotePlayer:
     def __init__(self, p_id, x, y, display_name=None):
         self.id = p_id
@@ -142,7 +178,7 @@ SS_STAIRS = 33
 SS_SLAB = 34
 GLASS = 35
 GLASS_PANE = 36
-VILLAGE_GENERATION_VERSION = 7
+VILLAGE_GENERATION_VERSION = 12
 VILLAGE_FOOTPRINT_WIDTH = 128
 TALL_GRASS = 37
 SEEDS = 38
@@ -185,6 +221,31 @@ DIAMOND = 69
 DOOR_TOP = 70
 DOOR_OPEN_TOP = 71
 BED_RIGHT = 72
+RED_DYE = 188
+RED_BED = 189
+RED_BED_RIGHT = 190
+YELLOW_DYE = 191
+YELLOW_BED = 192
+YELLOW_BED_RIGHT = 193
+ORANGE_DYE = 194
+ORANGE_BED = 195
+ORANGE_BED_RIGHT = 196
+GREEN_DYE = 197
+GREEN_BED = 198
+GREEN_BED_RIGHT = 199
+CORNFLOWER = 200
+BLUE_DYE = 201
+BLUE_BED = 202
+BLUE_BED_RIGHT = 203
+PURPLE_DYE = 204
+PURPLE_BED = 205
+PURPLE_BED_RIGHT = 206
+CYAN_DYE = 207
+CYAN_BED = 208
+CYAN_BED_RIGHT = 209
+FIRE = 210
+BED_BLOCKS = (BED, BED_RIGHT, RED_BED, RED_BED_RIGHT, YELLOW_BED, YELLOW_BED_RIGHT, ORANGE_BED, ORANGE_BED_RIGHT, GREEN_BED, GREEN_BED_RIGHT, BLUE_BED, BLUE_BED_RIGHT, PURPLE_BED, PURPLE_BED_RIGHT, CYAN_BED, CYAN_BED_RIGHT)
+BED_ITEMS = (BED, RED_BED, YELLOW_BED, ORANGE_BED, GREEN_BED, BLUE_BED, PURPLE_BED, CYAN_BED)
 COAL_BLOCK_ITEM = 73
 ENDER_PEARL = 74
 STRING_ITEM = 75
@@ -226,6 +287,25 @@ POTATO_ITEM = 165
 POISONOUS_POTATO = 166
 BEETROOT_ITEM = 167
 BEETROOT_SEEDS = 168
+APPLE = 169
+OAK_SAPLING = 170
+BUNDLE = 171
+EMERALD = 172
+DANDELION = 173
+GOLD_NUGGET = 174
+BOOK = 175
+POPPY = 176
+OBSIDIAN = 177
+GOLD_INGOT = 178
+COPPER_SPEAR = 179
+IRON_SPEAR = 180
+COPPER_HORSE_ARMOR = 181
+IRON_HORSE_ARMOR = 182
+GOLDEN_HORSE_ARMOR = 183
+DIAMOND_HORSE_ARMOR = 184
+LEATHER = 185
+LEATHER_HORSE_ARMOR = 186
+BIRCH_SAPLING = 187
 
 # Tool IDs
 W_PICK = 100; S_PICK = 101; I_PICK = 110
@@ -247,12 +327,14 @@ ROCKET_LAUNCHER = 143
 BLOCK_HARDNESS = {
     GRASS_BLOCK: 0.1, DIRT_BLOCK: 0.5, STONE_BLOCK: 1.5, 
     COAL_BLOCK: 3.0, IRON_BLOCK: 3.0, DIAMOND_ORE: 4.0, OAK_LOG: 2.0, BIRCH_LOG: 2.0,
-    OAK_LEAVES: 0.2, BIRCH_LEAVES: 0.2, PLANKS: 2.0, CRAFTING_TABLE: 2.5,
+    OAK_LEAVES: 0.2, BIRCH_LEAVES: 0.2, OAK_SAPLING: 0.1, BIRCH_SAPLING: 0.1,
+    PLANKS: 2.0, CRAFTING_TABLE: 2.5,
     FURNACE: 3.5, SMOKER: 3.5, BLAST_FURNACE: 3.5, COBBLESTONE: 2.0, SMOOTH_STONE: 2.0, IRON_BLOCK_PROD: 5.0,
     CHEST: 2.5, HAY_BALE: 0.5, FARMLAND: 0.6, FENCE: 2.0, FENCE_GATE: 2.0,
     DOOR: 3.0, TRAPDOOR: 3.0, W_STAIRS: 2.0, C_STAIRS: 2.0, SS_STAIRS: 2.0,
     W_SLAB: 2.0, C_SLAB: 2.0, SS_SLAB: 2.0, LADDER: 0.4, TORCH: 0.1,
-    SAND_BLOCK: 0.5, CACTUS: 0.4, DEAD_BUSH: 0.1,
+    SAND_BLOCK: 0.5, CACTUS: 0.4, DEAD_BUSH: 0.1, FIRE: 0.1,
+    POPPY: 0.1, DANDELION: 0.1, CORNFLOWER: 0.1,
     DIORITE: 1.5, GRANITE: 1.5, GRAVEL: 0.6, ANDESITE: 1.5,
     DEEPSLATE: 3.0, COPPER_ORE: 3.0, GLASS: 0.3, GLASS_PANE: 0.3
 }
@@ -286,10 +368,21 @@ BLOCK_NAMES = {
     FENCE: "Fence", FENCE_GATE: "Fence Gate",
     FENCE_GATE_OPEN: "Open Fence Gate", DOOR_OPEN: "Open Door",
     TRAPDOOR_OPEN: "Open Trapdoor",
-    WOOL: "Wool", BED: "Bed", RAW_MUTTON: "Raw Mutton", COOKED_MUTTON: "Cooked Mutton",
+    WOOL: "Wool", BED: "Bed", BED_RIGHT: "Bed",
+    RED_DYE: "Red Dye", YELLOW_DYE: "Yellow Dye", ORANGE_DYE: "Orange Dye",
+    GREEN_DYE: "Green Dye", BLUE_DYE: "Blue Dye", PURPLE_DYE: "Purple Dye",
+    CYAN_DYE: "Cyan Dye",
+    RED_BED: "Red Bed", RED_BED_RIGHT: "Red Bed",
+    YELLOW_BED: "Yellow Bed", YELLOW_BED_RIGHT: "Yellow Bed",
+    ORANGE_BED: "Orange Bed", ORANGE_BED_RIGHT: "Orange Bed",
+    GREEN_BED: "Green Bed", GREEN_BED_RIGHT: "Green Bed",
+    BLUE_BED: "Blue Bed", BLUE_BED_RIGHT: "Blue Bed",
+    PURPLE_BED: "Purple Bed", PURPLE_BED_RIGHT: "Purple Bed",
+    CYAN_BED: "Cyan Bed", CYAN_BED_RIGHT: "Cyan Bed",
+    RAW_MUTTON: "Raw Mutton", COOKED_MUTTON: "Cooked Mutton",
     SMOKER: "Smoker", BLAST_FURNACE: "Blast Furnace",
     BUCKET: "Bucket", MILK_BUCKET: "Milk Bucket",
-    WATER: "Water", BOAT: "Boat",
+    WATER: "Water", BOAT: "Boat", FIRE: "Fire",
     I_PICK: "Iron Pickaxe", I_AXE: "Iron Axe", I_SHOVEL: "Iron Shovel",
     I_SWORD: "Iron Sword", I_HOE: "Iron Hoe",
     D_PICK: "Diamond Pickaxe", D_AXE: "Diamond Axe", D_SHOVEL: "Diamond Shovel",
@@ -329,6 +422,26 @@ BLOCK_NAMES = {
     CARROT_ITEM: "Carrot", POTATO_ITEM: "Potato",
     POISONOUS_POTATO: "Poisonous Potato", BEETROOT_ITEM: "Beetroot",
     BEETROOT_SEEDS: "Beetroot Seeds",
+    APPLE: "Apple",
+    OAK_SAPLING: "Oak Sapling",
+    BUNDLE: "Bundle",
+    EMERALD: "Emerald",
+    DANDELION: "Dandelion",
+    GOLD_NUGGET: "Gold Nugget",
+    BOOK: "Book",
+    POPPY: "Poppy",
+    CORNFLOWER: "Cornflower",
+    OBSIDIAN: "Obsidian",
+    GOLD_INGOT: "Gold Ingot",
+    COPPER_SPEAR: "Copper Spear",
+    IRON_SPEAR: "Iron Spear",
+    COPPER_HORSE_ARMOR: "Copper Horse Armor",
+    IRON_HORSE_ARMOR: "Iron Horse Armor",
+    GOLDEN_HORSE_ARMOR: "Golden Horse Armor",
+    DIAMOND_HORSE_ARMOR: "Diamond Horse Armor",
+    LEATHER: "Leather",
+    LEATHER_HORSE_ARMOR: "Leather Horse Armor",
+    BIRCH_SAPLING: "Birch Sapling",
     WATER_BUCKET: "Water Bucket", ROCKET_LAUNCHER: "Rocket Launcher"
 }
 
@@ -342,6 +455,11 @@ CROP_STAGE_TO_KIND = {
     block_type: kind
     for kind, stages in CROP_STAGES.items()
     for block_type in stages
+}
+FIRE_NON_SOLID_BLOCKS = {
+    AIR, WATER, TALL_GRASS, POPPY, DANDELION, CORNFLOWER, LADDER, TORCH, FIRE,
+    OAK_SAPLING, BIRCH_SAPLING, FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP,
+    TRAPDOOR_OPEN, *CROP_STAGE_TO_KIND,
 }
 CROP_PLANT_ITEMS = {
     SEEDS: "wheat",
@@ -371,6 +489,25 @@ def get_crop_drops(block_type):
         return drops
     return [(BEETROOT_ITEM, random.randint(1, 3)), (BEETROOT_SEEDS, random.randint(1, 2))]
 
+def ignite_fire(world, tx, ty):
+    clicked_block = world.get_block(tx, ty)
+    if clicked_block is None:
+        fire_pos = (tx, ty)
+        support_pos = (tx, ty + 1)
+    elif clicked_block not in FIRE_NON_SOLID_BLOCKS and ty > 0:
+        fire_pos = (tx, ty - 1)
+        support_pos = (tx, ty)
+    else:
+        return None
+
+    if world.get_block(*fire_pos) is not None:
+        return None
+    if world.get_block(*support_pos) in FIRE_NON_SOLID_BLOCKS:
+        return None
+
+    world.set_block(*fire_pos, FIRE)
+    return fire_pos
+
 MAX_DURABILITY = {
     W_PICK: 60, W_AXE: 60, W_SHOVEL: 60, W_SWORD: 60, W_HOE: 60,
     S_PICK: 132, S_AXE: 132, S_SHOVEL: 132, S_SWORD: 132, S_HOE: 132,
@@ -378,6 +515,7 @@ MAX_DURABILITY = {
     D_PICK: 1561, D_AXE: 1561, D_SHOVEL: 1561, D_SWORD: 1561, D_HOE: 1561,
     I_HELMET: 165, I_CHEST: 240, I_LEGS: 225, I_BOOTS: 195,
     D_HELMET: 363, D_CHEST: 528, D_LEGS: 495, D_BOOTS: 429,
+    COPPER_SPEAR: 180, IRON_SPEAR: 250,
     BOW: 384,
     FISHING_ROD: 64,
     SHIELD: 336,
@@ -403,9 +541,11 @@ PLACEABLE_BLOCKS = {
     IRON_BLOCK_PROD, DOOR, TRAPDOOR, PRESSURE_PLATE, BUTTON,
     LEVER, CHAIN, W_STAIRS, C_STAIRS, SS_STAIRS,
     W_SLAB, C_SLAB, SS_SLAB, FARMLAND, HAY_BALE, CHEST,
-    FENCE, FENCE_GATE, WOOL, BED, LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK,
+    FENCE, FENCE_GATE, WOOL, BED, RED_BED, YELLOW_BED, ORANGE_BED, GREEN_BED,
+    BLUE_BED, PURPLE_BED, CYAN_BED, POPPY, DANDELION, CORNFLOWER,
+    LADDER, COAL_BLOCK_ITEM, BOAT, TORCH, SAND_BLOCK,
     CACTUS, BEDROCK, DIORITE, GRANITE, GRAVEL, ANDESITE, DEEPSLATE, COPPER_ORE,
-    GLASS, GLASS_PANE
+    GLASS, GLASS_PANE, OAK_SAPLING, BIRCH_SAPLING
 }
 
 def unlock_achievement(world, achievement_id):
@@ -545,6 +685,8 @@ class Player:
         self.show_inventory = False # Ensure movement isn't locked on start
 
     def update(self, world):
+        if self.flying:
+            self.health = self.max_health
         if self.jump_attack_timer > 0:
             self.jump_attack_timer -= 1
 
@@ -784,6 +926,10 @@ class Player:
                     self.vel_y = 0
 
     def calculate_fall_damage(self):
+        if self.flying:
+            self.health = self.max_health
+            self.highest_y = self.rect.y
+            return
         if pygame.time.get_ticks() < self.invincible_until:
             return
         fall_distance = (self.rect.y - self.highest_y) / TILE_SIZE
@@ -844,6 +990,9 @@ class Player:
         self.respawn()
 
     def take_damage(self, amount, cause=None):
+        if self.flying:
+            self.health = self.max_health
+            return
         if pygame.time.get_ticks() < self.invincible_until: return
         # Armor reduction
         reduction = 0
@@ -1199,6 +1348,114 @@ class World:
 
         self.falling_sand = next_falling
 
+    def is_farmland_watered(self, tx, ty):
+        for dx in range(-4, 5):
+            for dy in (-1, 0):
+                if self.get_block(tx + dx, ty + dy) == WATER:
+                    return True
+        return False
+
+    def update_farmland_moisture(self):
+        changes = []
+        for (tx, ty), block_type in list(self.data.items()):
+            if block_type != FARMLAND:
+                continue
+
+            pos = (tx, ty)
+            moisture = self.block_meta.get(pos, {}).get("moisture", 7)
+            moisture = 7 if self.is_farmland_watered(tx, ty) else moisture - 1
+            if moisture <= 0:
+                self.set_block(tx, ty, DIRT_BLOCK)
+                changes.append((pos, DIRT_BLOCK, None))
+                crop_pos = (tx, ty - 1)
+                if self.get_block(*crop_pos) in CROP_STAGE_TO_KIND:
+                    self.set_block(*crop_pos, None)
+                    changes.append((crop_pos, None, None))
+            else:
+                metadata = dict(self.block_meta.get(pos, {}))
+                metadata["moisture"] = moisture
+                self.block_meta[pos] = metadata
+                changes.append((pos, FARMLAND, metadata))
+        return changes
+
+    def grow_sapling(self, tx, ty, sapling_type):
+        is_birch = sapling_type == BIRCH_SAPLING
+        tree_height = self.rng.randint(5, 7) if is_birch else self.rng.randint(4, 6)
+        if ty < tree_height + 2:
+            return []
+        for dx in range(-2, 3):
+            for dy in range(-tree_height - 2, 0):
+                block_type = self.get_block(tx + dx, ty + dy)
+                if block_type is not None:
+                    return []
+        if self.get_block(tx, ty + 1) not in (GRASS_BLOCK, DIRT_BLOCK):
+            return []
+
+        log_type = BIRCH_LOG if is_birch else OAK_LOG
+        leaves_type = BIRCH_LEAVES if is_birch else OAK_LEAVES
+        changes = []
+        base_pos = (tx % WORLD_WIDTH, ty)
+        self.set_block(*base_pos, log_type)
+        changes.append((base_pos, log_type, None))
+        for height in range(1, tree_height + 1):
+            pos = ((tx + WORLD_WIDTH) % WORLD_WIDTH, ty - height)
+            self.set_block(*pos, log_type)
+            changes.append((pos, log_type, None))
+
+        for dx in range(-2, 3):
+            for dy in range(-2, 1):
+                pos = ((tx + dx) % WORLD_WIDTH, ty - tree_height + dy)
+                if self.get_block(*pos) is None:
+                    self.set_block(*pos, leaves_type)
+                    changes.append((pos, leaves_type, None))
+        return changes
+
+    def update_natural_growth(self):
+        changes = []
+        crops = []
+        saplings = []
+        grass_candidates = []
+        for (tx, ty), block_type in self.data.items():
+            if (
+                block_type in CROP_STAGE_TO_KIND
+                and block_type != CROP_STAGES[CROP_STAGE_TO_KIND[block_type]][-1]
+            ):
+                crops.append((tx, ty, block_type))
+            elif block_type in (OAK_SAPLING, BIRCH_SAPLING):
+                saplings.append((tx, ty, block_type))
+            elif block_type == DIRT_BLOCK and self.get_block(tx, ty - 1) is None:
+                if any(
+                    self.get_block(tx + dx, ty) == GRASS_BLOCK
+                    for dx in (-1, 1)
+                ):
+                    grass_candidates.append((tx, ty))
+
+        if crops:
+            tx, ty, block_type = self.rng.choice(crops)
+            crop_kind = CROP_STAGE_TO_KIND[block_type]
+            farmland_pos = (tx, ty + 1)
+            if (
+                block_type != CROP_STAGES[crop_kind][-1]
+                and self.get_block(*farmland_pos) == FARMLAND
+                and self.is_farmland_watered(*farmland_pos)
+            ):
+                next_stage = block_type + 1
+                self.set_block(tx, ty, next_stage)
+                changes.append(((tx, ty), next_stage, None))
+
+        if saplings:
+            tx, ty, sapling_type = self.rng.choice(saplings)
+            growth_chance = 1 / 360 if sapling_type == BIRCH_SAPLING else 1 / 180
+            if self.rng.random() < growth_chance:
+                changes.extend(self.grow_sapling(tx, ty, sapling_type))
+
+        if grass_candidates and self.rng.random() < 0.02:
+            tx, ty = self.rng.choice(grass_candidates)
+            self.set_block(tx, ty, GRASS_BLOCK)
+            changes.append(((tx, ty), GRASS_BLOCK, None))
+
+        return changes
+
     @property
     def data(self):
         # This proxy allows existing code to use world.data[(x,y)] while storing in chunks internally
@@ -1539,7 +1796,7 @@ class World:
             for house_index in range(house_count):
                 house_x = village_x + house_index * house_spacing
                 is_blacksmith = house_index == blacksmith_index
-                house_width = 8
+                house_width = 6
                 house_surfaces = [
                     surface_y(x) for x in range(house_x, house_x + house_width)
                 ]
@@ -1554,10 +1811,10 @@ class World:
                     self.set_block(x, house_ground_y, PLANKS)
 
                 if is_blacksmith:
-                    for roof_row in range(4):
-                        roof_width = 2 + roof_row * 2
+                    for roof_row in range(3):
+                        roof_width = min(house_width, 2 + roof_row * 2)
                         left = house_x + (house_width - roof_width) // 2
-                        roof_y = house_ground_y - 8 + roof_row
+                        roof_y = house_ground_y - 7 + roof_row
                         for x in range(left, left + roof_width):
                             if x == left or x == left + roof_width - 1:
                                 self.set_block(x, roof_y, W_STAIRS)
@@ -1577,10 +1834,10 @@ class World:
                         for y in range(house_ground_y - 4, support_bottom + 1):
                             self.set_block(x, y, OAK_LOG)
                 else:
-                    for roof_row in range(4):
-                        roof_width = 2 + roof_row * 2
+                    for roof_row in range(3):
+                        roof_width = min(house_width, 2 + roof_row * 2)
                         left = house_x + (house_width - roof_width) // 2
-                        roof_y = house_ground_y - 7 + roof_row
+                        roof_y = house_ground_y - 6 + roof_row
                         for x in range(left, left + roof_width):
                             if x == left or x == left + roof_width - 1:
                                 self.set_block(x, roof_y, W_STAIRS)
@@ -1592,16 +1849,19 @@ class World:
                     for y in range(house_ground_y - 3, house_ground_y):
                         self.set_block(house_x, y, OAK_LOG)
                         self.set_block(house_x + house_width - 1, y, OAK_LOG)
-                    for x in range(house_x + 1, house_x + house_width - 1):
-                        self.set_block(x, house_ground_y - 3, PLANKS)
                     self.set_block(house_x, house_ground_y - 2, GLASS_PANE)
 
                 door_x = house_x + house_width - 1
                 self.set_block(door_x, house_ground_y - 1, DOOR)
                 self.set_block(door_x, house_ground_y - 2, DOOR_TOP)
-                bed_x = house_x + (2 if is_blacksmith else 1)
+                bed_x = house_x + (3 if is_blacksmith else 2)
                 self.set_block(bed_x, house_ground_y - 1, BED)
                 self.set_block(bed_x + 1, house_ground_y - 1, BED_RIGHT)
+                chest_pos = (house_x + 1, house_ground_y - 1)
+                self.set_block(*chest_pos, CHEST)
+                self.chest_data[chest_pos] = self._generate_village_chest_loot(
+                    is_blacksmith
+                )
                 if is_blacksmith:
                     forge_start = house_x - 12
                     for x in range(forge_start, house_x):
@@ -1615,7 +1875,7 @@ class World:
                     for x in (house_x - 9, house_x - 8):
                         self.set_block(x, house_ground_y, None)
                         self.set_block(x, house_ground_y - 1, FURNACE)
-                villager_x = house_x + 3 if is_blacksmith else house_x + house_width
+                villager_x = house_x + 2 if is_blacksmith else house_x + house_width
                 villager_ground_y = (
                     house_ground_y if is_blacksmith else surface_y(villager_x)
                 )
@@ -1654,10 +1914,193 @@ class World:
                 else:
                     self.set_block(x, farm_ground_y, WATER)
                     self.block_meta[(x, farm_ground_y)] = {"level": 7, "source": True}
+            self._generate_village_hay_bales(farm_x)
+            self._spawn_village_golem(village_x, farm_x)
 
         self.village_locations = generated_locations
         self.village_generation_version = VILLAGE_GENERATION_VERSION
         self.villages_generated = True
+        self._generate_natural_flowers()
+
+    def _generate_village_hay_bales(self, farm_x):
+        for offset, height in ((-4, 1), (-3, 2), (-2, 2), (-1, 1)):
+            x = farm_x + offset
+            ground_y = next(
+                (y for y in range(40) if self.get_block(x, y) == GRASS_BLOCK),
+                None,
+            )
+            if ground_y is None:
+                continue
+            for stack_index in range(height):
+                y = ground_y - 1 - stack_index
+                if y < 0:
+                    break
+                block = self.get_block(x, y)
+                if block == TALL_GRASS:
+                    self.set_block(x, y, None)
+                elif block is not None:
+                    break
+                self.set_block(x, y, HAY_BALE)
+
+    def _generate_hay_bales_for_existing_villages(self):
+        for village_x, _ in self.village_locations:
+            farm_found = False
+            for farm_y in range(1, 40):
+                for farm_x in range(village_x, village_x + VILLAGE_FOOTPRINT_WIDTH - 8):
+                    if (
+                        self.get_block(farm_x, farm_y) == OAK_LOG
+                        and self.get_block(farm_x + 8, farm_y) == OAK_LOG
+                        and any(
+                            self.get_block(farm_x + offset, farm_y) in (FARMLAND, WATER)
+                            for offset in range(1, 8)
+                        )
+                    ):
+                        self._generate_village_hay_bales(farm_x)
+                        farm_found = True
+                        break
+                if farm_found:
+                    break
+
+    def _generate_natural_flowers(self):
+        surface_columns = []
+        for x in range(WORLD_WIDTH):
+            if 200 <= x < 400:
+                continue
+            for ground_y in range(40):
+                if self.get_block(x, ground_y) == GRASS_BLOCK:
+                    if self.get_block(x, ground_y - 1) in (None, TALL_GRASS):
+                        surface_columns.append((x, ground_y))
+                    break
+
+        if not surface_columns:
+            return
+
+        patch_count = min(max(1, WORLD_WIDTH // 128), len(surface_columns))
+        for flower_type in (POPPY, DANDELION, CORNFLOWER):
+            centers = self.rng.sample(surface_columns, patch_count)
+            placed_flower = False
+            for center_x, _ in centers:
+                for _ in range(self.rng.randint(3, 5)):
+                    x = (center_x + self.rng.randint(-2, 2)) % WORLD_WIDTH
+                    if 200 <= x < 400:
+                        continue
+                    ground_y = next(
+                        (y for y in range(40) if self.get_block(x, y) == GRASS_BLOCK),
+                        None,
+                    )
+                    if ground_y is None:
+                        continue
+                    flower_y = ground_y - 1
+                    if self.get_block(x, flower_y) in (None, TALL_GRASS):
+                        self.set_block(x, flower_y, flower_type)
+                        placed_flower = True
+
+            if not placed_flower:
+                for x, ground_y in self.rng.sample(
+                    surface_columns, min(len(surface_columns), 32)
+                ):
+                    if self.get_block(x, ground_y - 1) in (None, TALL_GRASS):
+                        self.set_block(x, ground_y - 1, flower_type)
+                        break
+
+    def _spawn_village_golem(self, village_x, farm_x=None):
+        for mob in self.mobs:
+            if mob.m_type != "iron_golem":
+                continue
+            golem_tile_x = mob.rect.centerx // TILE_SIZE
+            offset = (golem_tile_x - village_x + WORLD_WIDTH // 2) % WORLD_WIDTH - WORLD_WIDTH // 2
+            if 0 <= offset < VILLAGE_FOOTPRINT_WIDTH:
+                return mob
+
+        spawn_x = (farm_x + 10) % WORLD_WIDTH if farm_x is not None else (village_x + 64) % WORLD_WIDTH
+        ground_y = next(
+            (y for y in range(40) if self.get_block(spawn_x, y) == GRASS_BLOCK),
+            None,
+        )
+        if ground_y is None:
+            return None
+
+        golem = Mob(
+            spawn_x * TILE_SIZE,
+            ground_y * TILE_SIZE - (TILE_SIZE * 3 - 4),
+            "iron_golem",
+        )
+        self.mobs.append(golem)
+        return golem
+
+    def _spawn_golems_for_existing_villages(self):
+        for village_x, _ in self.village_locations:
+            farm_x = None
+            for farm_y in range(1, 40):
+                for candidate_x in range(village_x, village_x + VILLAGE_FOOTPRINT_WIDTH - 8):
+                    if (
+                        self.get_block(candidate_x, farm_y) == OAK_LOG
+                        and self.get_block(candidate_x + 8, farm_y) == OAK_LOG
+                        and any(
+                            self.get_block(candidate_x + offset, farm_y) in (FARMLAND, WATER)
+                            for offset in range(1, 8)
+                        )
+                    ):
+                        farm_x = candidate_x
+                        break
+                if farm_x is not None:
+                    break
+            self._spawn_village_golem(village_x, farm_x)
+
+    def _generate_village_chest_loot(self, is_blacksmith):
+        if is_blacksmith:
+            loot_table = (
+                (APPLE, 1, 3, 15),
+                (BREAD, 1, 3, 15),
+                (IRON_INGOT, 1, 5, 10),
+                (COPPER_SPEAR, 1, 1, 7),
+                (OAK_SAPLING, 3, 7, 5),
+                (OBSIDIAN, 3, 7, 5),
+                (GOLD_INGOT, 1, 3, 5),
+                (I_PICK, 1, 1, 5),
+                (IRON_SPEAR, 1, 1, 5),
+                (I_SWORD, 1, 1, 5),
+                (I_HELMET, 1, 1, 5),
+                (I_CHEST, 1, 1, 5),
+                (I_LEGS, 1, 1, 5),
+                (I_BOOTS, 1, 1, 5),
+                (DIAMOND, 1, 3, 3),
+                (SADDLE, 1, 1, 3),
+                (COPPER_HORSE_ARMOR, 1, 1, 1),
+                (IRON_HORSE_ARMOR, 1, 1, 1),
+                (GOLDEN_HORSE_ARMOR, 1, 1, 1),
+                (DIAMOND_HORSE_ARMOR, 1, 1, 1),
+            )
+        else:
+            loot_table = (
+                (POTATO_ITEM, 1, 7, 10),
+                (APPLE, 1, 5, 10),
+                (BREAD, 1, 4, 10),
+                (OAK_SAPLING, 1, 2, 5),
+                (EMERALD, 1, 4, 2),
+                (DANDELION, 1, 1, 2),
+                (GOLD_NUGGET, 1, 3, 1),
+                (BOOK, 1, 1, 1),
+                (FEATHER, 1, 1, 1),
+                (POPPY, 1, 1, 1),
+            )
+
+        chest_slots = [None] * 27
+        roll_count = self.rng.randint(3, 8)
+        for index in range(roll_count):
+            item_type, minimum, maximum, _ = self.rng.choices(
+                loot_table,
+                weights=[entry[3] for entry in loot_table],
+                k=1,
+            )[0]
+            item = {"type": item_type, "count": self.rng.randint(minimum, maximum)}
+            if item_type in MAX_DURABILITY:
+                item["durability"] = MAX_DURABILITY[item_type]
+            chest_slots[index] = item
+
+        if not is_blacksmith and self.rng.randrange(3) == 0:
+            chest_slots[roll_count] = {"type": BUNDLE, "count": 1}
+        return chest_slots
 
     def find_safe_spawn(self, player):
         """Finds a safe Y level for the player at their current X to prevent getting stuck."""
@@ -1685,10 +2128,12 @@ class World:
                     b_type = self.data[(tx, ty)]
                     if (
                         b_type == TALL_GRASS
+                        or b_type in (POPPY, DANDELION, CORNFLOWER)
+                        or b_type in (OAK_SAPLING, BIRCH_SAPLING)
                         or b_type in CROP_STAGE_TO_KIND
                         or b_type in (
                             FENCE_GATE_OPEN, DOOR_OPEN, DOOR_OPEN_TOP,
-                            TRAPDOOR_OPEN, WATER, LADDER, BOAT, TORCH,
+                            TRAPDOOR_OPEN, WATER, LADDER, BOAT, TORCH, FIRE,
                         )
                     ):
                         continue
@@ -1838,9 +2283,18 @@ class World:
                                 pygame.draw.line(surface, COLOR_GRASS, (draw_x + 8, draw_y + TILE_SIZE), (draw_x + 6, draw_y + 16), 2)
                                 pygame.draw.line(surface, COLOR_GRASS, (draw_x + 16, draw_y + TILE_SIZE), (draw_x + 16, draw_y + 12), 2)
                                 pygame.draw.line(surface, COLOR_GRASS, (draw_x + 24, draw_y + TILE_SIZE), (draw_x + 26, draw_y + 16), 2)
+                            elif b_type in (OAK_SAPLING, BIRCH_SAPLING):
+                                leaf_color = COLOR_LEAVES_B if b_type == BIRCH_SAPLING else COLOR_LEAVES_G
+                                pygame.draw.line(surface, (105, 75, 40), (draw_x + 16, draw_y + TILE_SIZE), (draw_x + 16, draw_y + 13), 3)
+                                pygame.draw.circle(surface, leaf_color, (draw_x + 16, draw_y + 13), 7)
+                                pygame.draw.circle(surface, leaf_color, (draw_x + 10, draw_y + 18), 4)
+                                pygame.draw.circle(surface, leaf_color, (draw_x + 22, draw_y + 18), 4)
                             elif b_type == FARMLAND:
-                                pygame.draw.rect(surface, (80, 50, 30), (draw_x, draw_y + 4, TILE_SIZE, TILE_SIZE - 4))
-                                pygame.draw.rect(surface, (60, 40, 20), (draw_x, draw_y + 4, TILE_SIZE, 4)) # Tilled top
+                                wet = self.is_farmland_watered(tx, ty)
+                                soil_color = (80, 50, 30) if wet else (126, 91, 58)
+                                top_color = (60, 40, 20) if wet else (95, 66, 40)
+                                pygame.draw.rect(surface, soil_color, (draw_x, draw_y + 4, TILE_SIZE, TILE_SIZE - 4))
+                                pygame.draw.rect(surface, top_color, (draw_x, draw_y + 4, TILE_SIZE, 4))
                             elif b_type in CROP_STAGE_TO_KIND:
                                 crop_kind = CROP_STAGE_TO_KIND[b_type]
                                 stage = CROP_STAGES[crop_kind].index(b_type)
@@ -1917,13 +2371,38 @@ class World:
                                         (draw_x + 13, draw_y + 11)
                                     ])
                                     pygame.draw.circle(surface, (255, 245, 200), (draw_x + 9, draw_y + 6), 2)
-                            elif b_type == BED:
-                                pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                                pygame.draw.rect(surface, COLOR_WHITE, (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE // 4))
-                                pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
-                            elif b_type == BED_RIGHT:
-                                pygame.draw.rect(surface, COLOR_RED, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
-                                pygame.draw.rect(surface, (180, 60, 60), (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
+                            elif b_type == FIRE:
+                                torch_glows.append((draw_x + TILE_SIZE // 2, draw_y + TILE_SIZE // 2))
+                                pygame.draw.polygon(surface, (245, 75, 15), [
+                                    (draw_x + 4, draw_y + TILE_SIZE),
+                                    (draw_x + 7, draw_y + 15),
+                                    (draw_x + 13, draw_y + 20),
+                                    (draw_x + 16, draw_y + 4),
+                                    (draw_x + 24, draw_y + 17),
+                                    (draw_x + 28, draw_y + TILE_SIZE),
+                                ])
+                                pygame.draw.polygon(surface, (255, 195, 35), [
+                                    (draw_x + 10, draw_y + TILE_SIZE),
+                                    (draw_x + 13, draw_y + 19),
+                                    (draw_x + 17, draw_y + 24),
+                                    (draw_x + 20, draw_y + 14),
+                                    (draw_x + 24, draw_y + TILE_SIZE),
+                                ])
+                            elif b_type in BED_BLOCKS:
+                                is_red_bed = b_type in (RED_BED, RED_BED_RIGHT)
+                                is_yellow_bed = b_type in (YELLOW_BED, YELLOW_BED_RIGHT)
+                                is_orange_bed = b_type in (ORANGE_BED, ORANGE_BED_RIGHT)
+                                is_green_bed = b_type in (GREEN_BED, GREEN_BED_RIGHT)
+                                is_blue_bed = b_type in (BLUE_BED, BLUE_BED_RIGHT)
+                                is_purple_bed = b_type in (PURPLE_BED, PURPLE_BED_RIGHT)
+                                is_cyan_bed = b_type in (CYAN_BED, CYAN_BED_RIGHT)
+                                is_bed_head = b_type in (BED, RED_BED, YELLOW_BED, ORANGE_BED, GREEN_BED, BLUE_BED, PURPLE_BED, CYAN_BED)
+                                mattress_color = COLOR_RED if is_red_bed else (245, 215, 65) if is_yellow_bed else (245, 135, 35) if is_orange_bed else (60, 170, 65) if is_green_bed else (55, 105, 210) if is_blue_bed else (145, 65, 185) if is_purple_bed else (45, 190, 195) if is_cyan_bed else COLOR_WHITE
+                                outline_color = (180, 60, 60) if is_red_bed else (180, 150, 35) if is_yellow_bed else (185, 85, 20) if is_orange_bed else (35, 115, 40) if is_green_bed else (35, 65, 145) if is_blue_bed else (90, 35, 125) if is_purple_bed else (20, 115, 125) if is_cyan_bed else (170, 170, 170)
+                                pygame.draw.rect(surface, mattress_color, (draw_x, draw_y, TILE_SIZE, TILE_SIZE))
+                                if is_bed_head:
+                                    pygame.draw.rect(surface, COLOR_WHITE, (draw_x + 2, draw_y + 2, TILE_SIZE - 4, TILE_SIZE // 4))
+                                pygame.draw.rect(surface, outline_color, (draw_x, draw_y + TILE_SIZE // 2, TILE_SIZE, TILE_SIZE // 2), 2)
                             elif b_type in (FENCE, FENCE_GATE, FENCE_GATE_OPEN):
                                 pygame.draw.rect(surface, (120, 80, 40), (draw_x + 12, draw_y, 8, TILE_SIZE)) # Post
                                 if b_type == FENCE_GATE:
@@ -2022,6 +2501,12 @@ class World:
                                 pygame.draw.line(surface, bush_c, (cx, cy), (cx + 4, cy - 16), 1)
                                 pygame.draw.line(surface, bush_c, (cx - 6, cy - 8), (cx - 12, cy - 6), 1)
                                 pygame.draw.line(surface, bush_c, (cx + 6, cy - 8), (cx + 12, cy - 6), 1)
+                            elif b_type in (POPPY, DANDELION, CORNFLOWER):
+                                pygame.draw.line(surface, (55, 125, 45), (draw_x + 16, draw_y + TILE_SIZE), (draw_x + 16, draw_y + 13), 2)
+                                flower_color = (245, 215, 45) if b_type == DANDELION else (55, 105, 220) if b_type == CORNFLOWER else (205, 35, 45)
+                                flower_highlight = (255, 245, 120) if b_type == DANDELION else (145, 185, 255) if b_type == CORNFLOWER else (245, 90, 85)
+                                pygame.draw.circle(surface, flower_color, (draw_x + 16, draw_y + 11), 5)
+                                pygame.draw.circle(surface, flower_highlight, (draw_x + 16, draw_y + 11), 2)
                             else:
                                 block_colors = {
                                     GRASS_BLOCK: COLOR_GRASS, DIRT_BLOCK: COLOR_DIRT, STONE_BLOCK: COLOR_STONE,
@@ -2093,7 +2578,7 @@ class DroppedItem:
         
         # Collision (simple)
         bx, by = int(self.rect.centerx // TILE_SIZE) % WORLD_WIDTH, int(self.rect.bottom // TILE_SIZE)
-        if (bx, by) in world.data and world.data[(bx, by)] not in (AIR, WATER, TALL_GRASS, LADDER, TORCH):
+        if (bx, by) in world.data and world.data[(bx, by)] not in (AIR, WATER, TALL_GRASS, POPPY, DANDELION, CORNFLOWER, LADDER, TORCH, FIRE):
             self.rect.bottom = by * TILE_SIZE
             self.vel_y = 0
             self.vel_x *= 0.9
@@ -2219,6 +2704,9 @@ class RocketShot:
                 mob.hurt_timer = 10
                 mob.vel_x += 3.0 if push_dx >= 0 else -3.0
                 mob.vel_y = min(mob.vel_y, -5)
+                anger_village_golem_for_villager(world, mob)
+                if mob.m_type == "iron_golem":
+                    mob.angry = True
                 if mob.m_type == "enderman":
                     mob.angry = True
                     mob.teleport_timer = 0
@@ -2303,6 +2791,9 @@ class ArrowShot:
                     mob.hurt_timer = 10
                     mob.vel_x += 2.0 if self.vel_x > 0 else -2.0
                     mob.vel_y = min(mob.vel_y, -4)
+                    anger_village_golem_for_villager(world, mob)
+                    if mob.m_type == "iron_golem":
+                        mob.angry = True
                     if mob.m_type == "enderman":
                         mob.angry = True
                         mob.teleport_timer = 0
@@ -2539,6 +3030,10 @@ class Mob:
             self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 2 - 4)
             self.speed = 0.45
             self.health = 20
+        elif m_type == "iron_golem":
+            self.rect = pygame.Rect(x, y, 36, TILE_SIZE * 3 - 4)
+            self.speed = 0.55
+            self.health = 100
         else:
             self.rect = pygame.Rect(x, y, 24, TILE_SIZE * 2 - 2)
             self.speed = 2
@@ -2556,13 +3051,73 @@ class Mob:
         self.saddled = False
         self.teleport_timer = 0
         self.angry = False
+        self.last_attack = 0
 
     def update(self, world, player):
         if self.hurt_timer > 0: self.hurt_timer -= 1
         t = world.time % 24000
         is_night = (t > 14000 or t < 1000)
         # AI Logic
-        if self.m_type == "zombie":
+        if self.m_type == "iron_golem":
+            target_mob = None
+            target_distance = float("inf")
+            if not self.angry:
+                hostile_types = ("zombie", "husk", "spider", "enderman")
+                for candidate in world.mobs:
+                    if candidate is self or candidate.m_type not in hostile_types or candidate.health <= 0:
+                        continue
+                    dx = candidate.rect.centerx - self.rect.centerx
+                    if dx > WORLD_PIXELS / 2:
+                        dx -= WORLD_PIXELS
+                    elif dx < -WORLD_PIXELS / 2:
+                        dx += WORLD_PIXELS
+                    dy = candidate.rect.centery - self.rect.centery
+                    distance = math.hypot(dx, dy)
+                    if distance < 12 * TILE_SIZE and distance < target_distance:
+                        target_mob = candidate
+                        target_distance = distance
+
+            if self.angry:
+                dx = player.rect.centerx - self.rect.centerx
+                if dx > WORLD_PIXELS / 2:
+                    dx -= WORLD_PIXELS
+                elif dx < -WORLD_PIXELS / 2:
+                    dx += WORLD_PIXELS
+                dy = player.rect.centery - self.rect.centery
+                target_distance = math.hypot(dx, dy)
+                self.vel_x = self.speed if dx > 0 else -self.speed if dx < 0 else 0
+            elif target_mob is not None:
+                dx = target_mob.rect.centerx - self.rect.centerx
+                if dx > WORLD_PIXELS / 2:
+                    dx -= WORLD_PIXELS
+                elif dx < -WORLD_PIXELS / 2:
+                    dx += WORLD_PIXELS
+                dy = target_mob.rect.centery - self.rect.centery
+                target_distance = math.hypot(dx, dy)
+                self.vel_x = self.speed if dx > 0 else -self.speed if dx < 0 else 0
+            else:
+                self.wander_timer -= 1
+                if self.wander_timer <= 0:
+                    self.wander_timer = random.randint(120, 300)
+                    self.vel_x = random.choice([-self.speed, 0, 0, self.speed])
+
+            if self.angry and target_distance <= 42 and abs(dy) <= TILE_SIZE * 2:
+                if pygame.time.get_ticks() - self.last_attack > 1000:
+                    player.take_damage(10, cause="iron_golem")
+                    player.vel_y = min(player.vel_y, -8)
+                    player.rect.x = (player.rect.x + (3 if dx >= 0 else -3) * TILE_SIZE) % WORLD_PIXELS
+                    self.last_attack = pygame.time.get_ticks()
+            elif not self.angry and target_mob is not None and abs(dx) <= 42 and abs(dy) <= TILE_SIZE * 2:
+                if pygame.time.get_ticks() - self.last_attack > 1000:
+                    target_mob.health -= 14
+                    target_mob.hurt_timer = 10
+                    target_mob.vel_y = min(target_mob.vel_y, -9)
+                    target_mob.vel_x += 5 if dx >= 0 else -5
+                    if target_mob.m_type == "enderman":
+                        target_mob.angry = True
+                        target_mob.teleport_timer = 0
+                    self.last_attack = pygame.time.get_ticks()
+        elif self.m_type == "zombie":
             # Chase player
             dist_x = player.rect.x - self.rect.x
             if abs(dist_x) < 400: # Detection range
@@ -2964,6 +3519,35 @@ class Mob:
                         (dx + 17, dy + 18), (dx + 12, dy + 17),
                     ]
                 pygame.draw.polygon(surface, (155, 110, 75) if not is_hurt else skin, nose)
+            elif self.m_type == "iron_golem":
+                body = (210, 145, 145) if is_hurt else (190, 190, 180)
+                body_dark = (135, 140, 135) if is_hurt else (115, 125, 120)
+                body_light = (235, 230, 215) if is_hurt else (225, 220, 200)
+                vine = (65, 125, 65)
+                pygame.draw.rect(surface, body_dark, (dx + 4, dy + 27, 28, 43), 0, 5)
+                pygame.draw.rect(surface, body, (dx + 7, dy + 24, 22, 43), 0, 4)
+                pygame.draw.rect(surface, body_light, (dx + 10, dy + 28, 5, 28))
+                pygame.draw.rect(surface, body_dark, (dx + 8, dy + 7, 20, 20), 0, 4)
+                pygame.draw.rect(surface, body, (dx + 10, dy + 8, 16, 17), 0, 3)
+                pygame.draw.rect(surface, body_light, (dx + 12, dy + 9, 4, 9))
+                eye_color = (100, 25, 20) if not is_hurt else (255, 230, 220)
+                pygame.draw.rect(surface, eye_color, (dx + 12, dy + 15, 3, 3))
+                pygame.draw.rect(surface, eye_color, (dx + 21, dy + 15, 3, 3))
+                pygame.draw.polygon(surface, body_dark, [(dx + 16, dy + 17), (dx + 21, dy + 17), (dx + 20, dy + 23), (dx + 16, dy + 23)])
+                pygame.draw.rect(surface, body_dark, (dx, dy + 29, 8, 35), 0, 3)
+                pygame.draw.rect(surface, body, (dx + 1, dy + 30, 6, 30), 0, 2)
+                pygame.draw.rect(surface, body_dark, (dx + 28, dy + 29, 8, 35), 0, 3)
+                pygame.draw.rect(surface, body, (dx + 29, dy + 30, 6, 30), 0, 2)
+                pygame.draw.rect(surface, body_dark, (dx + 8, dy + 65, 8, 23), 0, 2)
+                pygame.draw.rect(surface, body_dark, (dx + 20, dy + 65, 8, 23), 0, 2)
+                pygame.draw.rect(surface, body_light, (dx + 9, dy + 68, 3, 14))
+                pygame.draw.rect(surface, body_light, (dx + 21, dy + 68, 3, 14))
+                pygame.draw.line(surface, vine, (dx + 9, dy + 30), (dx + 15, dy + 38), 2)
+                pygame.draw.line(surface, vine, (dx + 15, dy + 38), (dx + 10, dy + 48), 2)
+                pygame.draw.line(surface, vine, (dx + 26, dy + 34), (dx + 21, dy + 42), 2)
+                pygame.draw.line(surface, vine, (dx + 21, dy + 42), (dx + 27, dy + 53), 2)
+                pygame.draw.line(surface, vine, (dx + 4, dy + 44), (dx + 8, dy + 49), 2)
+                pygame.draw.line(surface, vine, (dx + 29, dy + 50), (dx + 34, dy + 45), 2)
             elif self.m_type == "camel":
                 # Camel body
                 body_c = (255, 150, 150) if is_hurt else (205, 160, 80)
@@ -2995,6 +3579,60 @@ def draw_block_icon(screen, b_type, x, y, size, font):
         pane_rect = pygame.Rect(x + inset, y + inset, size - inset * 2, size - inset * 2)
         pygame.draw.rect(screen, (175, 225, 240), pane_rect)
         pygame.draw.rect(screen, (220, 245, 250), pane_rect, 2)
+    elif b_type == APPLE:
+        pygame.draw.ellipse(screen, (190, 35, 30), (x + 4, y + 6, size - 8, size - 8))
+        pygame.draw.line(screen, (90, 60, 30), (x + size // 2, y + 7), (x + size // 2 + 2, y + 2), 2)
+        pygame.draw.ellipse(screen, (55, 145, 45), (x + size // 2, y + 2, 8, 4))
+    elif b_type in (OAK_SAPLING, BIRCH_SAPLING):
+        leaf_color = COLOR_LEAVES_B if b_type == BIRCH_SAPLING else (65, 145, 55)
+        pygame.draw.line(screen, (110, 75, 35), (x + size // 2, y + size - 4), (x + size // 2, y + size // 2), 3)
+        pygame.draw.circle(screen, leaf_color, (x + size // 2, y + size // 3), size // 4)
+        pygame.draw.circle(screen, leaf_color, (x + size // 3, y + size // 2), size // 5)
+    elif b_type == BUNDLE:
+        pygame.draw.polygon(screen, (155, 115, 65), ((x + 5, y + 8), (x + size - 5, y + 8), (x + size - 3, y + size - 4), (x + 3, y + size - 4)))
+        pygame.draw.line(screen, (95, 65, 35), (x + 5, y + size // 2), (x + size - 5, y + size // 2), 2)
+    elif b_type == EMERALD:
+        pygame.draw.polygon(screen, (35, 190, 125), ((x + size // 2, y + 3), (x + size - 4, y + size // 2), (x + size // 2, y + size - 3), (x + 4, y + size // 2)))
+        pygame.draw.line(screen, (135, 245, 195), (x + size // 2, y + 4), (x + size // 2, y + size - 4), 2)
+    elif b_type in (DANDELION, POPPY, CORNFLOWER):
+        flower_color = (245, 215, 45) if b_type == DANDELION else (55, 105, 220) if b_type == CORNFLOWER else (200, 35, 35)
+        pygame.draw.line(screen, (55, 130, 45), (x + size // 2, y + size - 3), (x + size // 2, y + size // 2), 2)
+        pygame.draw.circle(screen, flower_color, (x + size // 2, y + size // 3), size // 5)
+    elif b_type in (RED_DYE, YELLOW_DYE, ORANGE_DYE, GREEN_DYE, BLUE_DYE, PURPLE_DYE, CYAN_DYE):
+        dye_color = (190, 25, 35) if b_type == RED_DYE else (235, 195, 35) if b_type == YELLOW_DYE else (230, 115, 25) if b_type == ORANGE_DYE else (45, 150, 55) if b_type == GREEN_DYE else (45, 95, 205) if b_type == BLUE_DYE else (130, 55, 170) if b_type == PURPLE_DYE else (45, 175, 185)
+        highlight_color = (235, 75, 75) if b_type == RED_DYE else (255, 235, 100) if b_type == YELLOW_DYE else (255, 170, 65) if b_type == ORANGE_DYE else (110, 210, 95) if b_type == GREEN_DYE else (125, 165, 255) if b_type == BLUE_DYE else (190, 125, 225) if b_type == PURPLE_DYE else (115, 225, 230)
+        pygame.draw.polygon(screen, dye_color, ((x + 7, y + 9), (x + 16, y + 4), (x + 25, y + 10), (x + 22, y + 23), (x + 10, y + 25)))
+        pygame.draw.circle(screen, highlight_color, (x + 14, y + 12), 3)
+    elif b_type == GOLD_NUGGET:
+        pygame.draw.ellipse(screen, (235, 185, 35), (x + 5, y + 8, size - 10, size - 12))
+        pygame.draw.line(screen, (255, 230, 110), (x + 8, y + size // 2), (x + size - 8, y + size // 2), 2)
+    elif b_type == BOOK:
+        pygame.draw.rect(screen, (120, 55, 40), (x + 4, y + 3, size - 8, size - 6))
+        pygame.draw.rect(screen, (235, 220, 175), (x + 7, y + 5, size - 13, size - 10))
+        pygame.draw.line(screen, (120, 55, 40), (x + size // 2, y + 5), (x + size // 2, y + size - 5), 2)
+    elif b_type == OBSIDIAN:
+        pygame.draw.rect(screen, (50, 35, 75), (x + 3, y + 3, size - 6, size - 6))
+        pygame.draw.line(screen, (105, 80, 145), (x + 6, y + 7), (x + size - 7, y + 7), 2)
+    elif b_type == GOLD_INGOT:
+        pygame.draw.polygon(screen, (235, 185, 35), ((x + 4, y + 8), (x + size - 4, y + 8), (x + size - 7, y + size - 5), (x + 7, y + size - 5)))
+        pygame.draw.line(screen, (255, 230, 110), (x + 7, y + 11), (x + size - 7, y + 11), 2)
+    elif b_type in (COPPER_SPEAR, IRON_SPEAR):
+        spear_color = (190, 110, 55) if b_type == COPPER_SPEAR else (195, 200, 210)
+        pygame.draw.line(screen, (110, 75, 40), (x + 5, y + size - 5), (x + size - 7, y + 7), 3)
+        pygame.draw.polygon(screen, spear_color, ((x + size - 5, y + 3), (x + size - 2, y + 13), (x + size - 12, y + 8)))
+    elif b_type == LEATHER:
+        pygame.draw.polygon(screen, (155, 105, 55), ((x + 5, y + 6), (x + size - 5, y + 4), (x + size - 4, y + size - 7), (x + 7, y + size - 4)))
+        pygame.draw.line(screen, (195, 145, 85), (x + 8, y + size // 2), (x + size - 8, y + size // 2 - 2), 2)
+    elif b_type in (COPPER_HORSE_ARMOR, IRON_HORSE_ARMOR, GOLDEN_HORSE_ARMOR, DIAMOND_HORSE_ARMOR, LEATHER_HORSE_ARMOR):
+        armor_color = {
+            COPPER_HORSE_ARMOR: (190, 110, 55),
+            IRON_HORSE_ARMOR: (195, 200, 210),
+            GOLDEN_HORSE_ARMOR: (235, 185, 35),
+            DIAMOND_HORSE_ARMOR: COLOR_DIAMOND,
+            LEATHER_HORSE_ARMOR: (155, 105, 55),
+        }[b_type]
+        pygame.draw.arc(screen, armor_color, (x + 4, y + 3, size - 8, size - 6), 0.2, 2.9, 4)
+        pygame.draw.line(screen, armor_color, (x + 5, y + size // 2), (x + size - 5, y + size // 2), 3)
     elif b_type == STICK:
         pygame.draw.line(screen, (101, 67, 33), (x + size//4, y + size - 4), (x + size - 4, y + size//4), 3)
     elif b_type in (COAL_BLOCK, IRON_BLOCK, DIAMOND_ORE, COPPER_ORE):
@@ -3162,7 +3800,12 @@ def draw_block_icon(screen, b_type, x, y, size, font):
             pygame.draw.ellipse(screen, (235, 115, 35), (x + 8, y + 5, size // 3, size - 10))
             pygame.draw.line(screen, (55, 165, 45), (x + size // 2, y + 8), (x + size // 2 + 5, y + 2), 2)
         elif crop_kind == "potato" or b_type in (POTATO_ITEM, POISONOUS_POTATO):
-            color = (110, 150, 70) if crop_kind else ((125, 160, 80) if b_type == POTATO_ITEM else (100, 150, 55))
+            if crop_kind:
+                color = (110, 150, 70)
+            elif b_type == POTATO_ITEM:
+                color = (174, 138, 92)
+            else:
+                color = (100, 150, 55)
             pygame.draw.ellipse(screen, color, (x + 5, y + 8, size - 10, size - 16))
             if b_type == POISONOUS_POTATO:
                 pygame.draw.circle(screen, (90, 60, 35), (x + size // 2, y + size // 2), 2)
@@ -3176,6 +3819,20 @@ def draw_block_icon(screen, b_type, x, y, size, font):
         else:
             for dx in (8, 16, 24):
                 pygame.draw.line(screen, (220, 200, 50), (x + dx, y + size - 4), (x + dx, y + 5), 2)
+    elif b_type in (RED_BED, RED_BED_RIGHT, YELLOW_BED, YELLOW_BED_RIGHT, ORANGE_BED, ORANGE_BED_RIGHT, GREEN_BED, GREEN_BED_RIGHT, BLUE_BED, BLUE_BED_RIGHT, PURPLE_BED, PURPLE_BED_RIGHT, CYAN_BED, CYAN_BED_RIGHT):
+        is_red_bed = b_type in (RED_BED, RED_BED_RIGHT)
+        is_yellow_bed = b_type in (YELLOW_BED, YELLOW_BED_RIGHT)
+        is_orange_bed = b_type in (ORANGE_BED, ORANGE_BED_RIGHT)
+        is_green_bed = b_type in (GREEN_BED, GREEN_BED_RIGHT)
+        is_blue_bed = b_type in (BLUE_BED, BLUE_BED_RIGHT)
+        is_purple_bed = b_type in (PURPLE_BED, PURPLE_BED_RIGHT)
+        is_cyan_bed = b_type in (CYAN_BED, CYAN_BED_RIGHT)
+        bed_color = COLOR_RED if is_red_bed else (245, 215, 65) if is_yellow_bed else (245, 135, 35) if is_orange_bed else (60, 170, 65) if is_green_bed else (55, 105, 210) if is_blue_bed else (145, 65, 185) if is_purple_bed else (45, 190, 195)
+        outline_color = (180, 60, 60) if is_red_bed else (180, 150, 35) if is_yellow_bed else (185, 85, 20) if is_orange_bed else (35, 115, 40) if is_green_bed else (35, 65, 145) if is_blue_bed else (90, 35, 125) if is_purple_bed else (20, 115, 125)
+        pygame.draw.rect(screen, bed_color, (x, y, size, size))
+        if b_type in (RED_BED, YELLOW_BED, ORANGE_BED, GREEN_BED, BLUE_BED, PURPLE_BED, CYAN_BED):
+            pygame.draw.rect(screen, COLOR_WHITE, (x + 2, y + 2, size - 4, size//4))
+        pygame.draw.rect(screen, outline_color, (x, y + size//2, size, size//2), 2)
     elif b_type >= 100: # Tools
         mat_c = (150, 110, 60) if b_type in (W_PICK, W_AXE, W_SHOVEL, W_SWORD, W_HOE) else (128, 128, 128)
         if b_type in (I_PICK, I_AXE, I_SHOVEL, I_SWORD, I_HOE, I_HELMET, I_CHEST, I_LEGS, I_BOOTS): mat_c = (200, 200, 220)
@@ -3272,13 +3929,11 @@ def draw_block_icon(screen, b_type, x, y, size, font):
     elif b_type == WOOL:
         pygame.draw.rect(screen, (240, 240, 240), (x, y, size, size), 0, 4)
         pygame.draw.rect(screen, (200, 200, 200), (x, y, size, size), 1, 4)
-    elif b_type == BED:
-        pygame.draw.rect(screen, COLOR_RED, (x, y, size, size))
-        pygame.draw.rect(screen, COLOR_WHITE, (x + 2, y + 2, size - 4, size//4)) # Pillow
-        pygame.draw.rect(screen, (180, 60, 60), (x, y + size//2, size, size//2), 2)
-    elif b_type == BED_RIGHT:
-        pygame.draw.rect(screen, COLOR_RED, (x, y, size, size))
-        pygame.draw.rect(screen, (180, 60, 60), (x, y + size//2, size, size//2), 2)
+    elif b_type in (BED, BED_RIGHT):
+        pygame.draw.rect(screen, COLOR_WHITE, (x, y, size, size))
+        if b_type == BED:
+            pygame.draw.rect(screen, COLOR_WHITE, (x + 2, y + 2, size - 4, size//4))
+        pygame.draw.rect(screen, (170, 170, 170), (x, y + size//2, size, size//2), 2)
     elif b_type == RAW_MUTTON:
         pygame.draw.ellipse(screen, (255, 150, 150), (x + 4, y + 8, size - 8, size - 16))
     elif b_type == COOKED_MUTTON:
@@ -3392,6 +4047,38 @@ def update_crafting(player):
     # 1 Iron Block -> 9 Iron Ingots
     if grid.count(IRON_BLOCK_PROD) == 1 and grid.count(None) == 3:
         res = {"type": IRON_INGOT, "count": 9}
+    if grid.count(HAY_BALE) == 1 and grid.count(None) == 3:
+        res = {"type": WHEAT_ITEM, "count": 9}
+    if grid.count(BEETROOT_ITEM) == 1 and grid.count(None) == 3:
+        res = {"type": RED_DYE, "count": 1}
+    if grid.count(POPPY) == 1 and grid.count(None) == 3:
+        res = {"type": RED_DYE, "count": 1}
+    if grid.count(DANDELION) == 1 and grid.count(None) == 3:
+        res = {"type": YELLOW_DYE, "count": 1}
+    if grid.count(CORNFLOWER) == 1 and grid.count(None) == 3:
+        res = {"type": BLUE_DYE, "count": 1}
+    if grid.count(IRON_INGOT) == 1 and grid.count(FLINT) == 1 and grid.count(None) == 2:
+        res = {"type": FLINT_STEEL, "count": 1, "durability": MAX_DURABILITY[FLINT_STEEL]}
+    if grid.count(RED_DYE) == 1 and grid.count(YELLOW_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": ORANGE_DYE, "count": 1}
+    if grid.count(RED_DYE) == 1 and grid.count(BLUE_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": PURPLE_DYE, "count": 1}
+    if grid.count(BLUE_DYE) == 1 and grid.count(GREEN_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": CYAN_DYE, "count": 1}
+    if grid.count(BED) == 1 and grid.count(RED_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": RED_BED, "count": 1}
+    if grid.count(BED) == 1 and grid.count(YELLOW_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": YELLOW_BED, "count": 1}
+    if grid.count(BED) == 1 and grid.count(ORANGE_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": ORANGE_BED, "count": 1}
+    if grid.count(BED) == 1 and grid.count(GREEN_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": GREEN_BED, "count": 1}
+    if grid.count(BED) == 1 and grid.count(BLUE_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": BLUE_BED, "count": 1}
+    if grid.count(BED) == 1 and grid.count(PURPLE_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": PURPLE_BED, "count": 1}
+    if grid.count(BED) == 1 and grid.count(CYAN_DYE) == 1 and grid.count(None) == 2:
+        res = {"type": CYAN_BED, "count": 1}
         
     player.crafting_output = res
     
@@ -3426,6 +4113,38 @@ def update_crafting(player):
     # 1 Iron Block -> 9 Iron Ingots
     if grid3.count(IRON_BLOCK_PROD) == 1 and grid3.count(None) == 8:
         res3 = {"type": IRON_INGOT, "count": 9}
+    if grid3.count(HAY_BALE) == 1 and grid3.count(None) == 8:
+        res3 = {"type": WHEAT_ITEM, "count": 9}
+    if grid3.count(BEETROOT_ITEM) == 1 and grid3.count(None) == 8:
+        res3 = {"type": RED_DYE, "count": 1}
+    if grid3.count(POPPY) == 1 and grid3.count(None) == 8:
+        res3 = {"type": RED_DYE, "count": 1}
+    if grid3.count(DANDELION) == 1 and grid3.count(None) == 8:
+        res3 = {"type": YELLOW_DYE, "count": 1}
+    if grid3.count(CORNFLOWER) == 1 and grid3.count(None) == 8:
+        res3 = {"type": BLUE_DYE, "count": 1}
+    if grid3.count(IRON_INGOT) == 1 and grid3.count(FLINT) == 1 and grid3.count(None) == 7:
+        res3 = {"type": FLINT_STEEL, "count": 1, "durability": MAX_DURABILITY[FLINT_STEEL]}
+    if grid3.count(RED_DYE) == 1 and grid3.count(YELLOW_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": ORANGE_DYE, "count": 1}
+    if grid3.count(RED_DYE) == 1 and grid3.count(BLUE_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": PURPLE_DYE, "count": 1}
+    if grid3.count(BLUE_DYE) == 1 and grid3.count(GREEN_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": CYAN_DYE, "count": 1}
+    if grid3.count(BED) == 1 and grid3.count(RED_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": RED_BED, "count": 1}
+    if grid3.count(BED) == 1 and grid3.count(YELLOW_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": YELLOW_BED, "count": 1}
+    if grid3.count(BED) == 1 and grid3.count(ORANGE_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": ORANGE_BED, "count": 1}
+    if grid3.count(BED) == 1 and grid3.count(GREEN_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": GREEN_BED, "count": 1}
+    if grid3.count(BED) == 1 and grid3.count(BLUE_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": BLUE_BED, "count": 1}
+    if grid3.count(BED) == 1 and grid3.count(PURPLE_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": PURPLE_BED, "count": 1}
+    if grid3.count(BED) == 1 and grid3.count(CYAN_DYE) == 1 and grid3.count(None) == 7:
+        res3 = {"type": CYAN_BED, "count": 1}
 
     if grid3 == [PLANKS] * 9:
         res3 = {"type": ROCKET_LAUNCHER, "count": 1}
@@ -3465,6 +4184,11 @@ def update_crafting(player):
     match([N,S,N, N,S,N, N,T,N], {"type": S_SWORD, "count": 1, "durability": 132})
     match([N,I,N, N,I,N, N,T,N], {"type": I_SWORD, "count": 1, "durability": 250})
     match([N,D,N, N,D,N, N,T,N], {"type": D_SWORD, "count": 1, "durability": 1561})
+    # Spears use a diagonal pair of sticks with the material at the top end.
+    match([N,N,COPPER_INGOT, N,T,N, T,N,N], {"type": COPPER_SPEAR, "count": 1, "durability": 180})
+    match([N,N,I, N,T,N, T,N,N], {"type": IRON_SPEAR, "count": 1, "durability": 250})
+    # Leather horse armor uses an H, leaving the top and bottom center slots empty.
+    match([LEATHER,N,LEATHER, LEATHER,LEATHER,LEATHER, LEATHER,N,LEATHER], {"type": LEATHER_HORSE_ARMOR, "count": 1})
     # Hoes
     match([W,W,N, N,T,N, N,T,N], {"type": W_HOE, "count": 1, "durability": 60})
     match([S,S,N, N,T,N, N,T,N], {"type": S_HOE, "count": 1, "durability": 132})
@@ -3544,8 +4268,6 @@ def update_crafting(player):
     
     # Bucket (3 Iron in V shape)
     match([N,N,N, I,N,I, N,I,N], {"type": BUCKET, "count": 1})
-    # Flint and Steel
-    match([I,N,N, N,FLINT,N, N,N,N], {"type": FLINT_STEEL, "count": 1, "durability": 64})
     # Shears
     match([I,N,N, N,I,N, N,N,N], {"type": SHEARS, "count": 1, "durability": 238})
     
@@ -3580,6 +4302,12 @@ for material, pick, axe, shovel, sword, hoe in (
         (hoe, 1, f"2 {material} + 2 Sticks", "3x3"),
     ))
 
+RECIPE_BOOK_ENTRIES.extend((
+        (COPPER_SPEAR, 1, "1 Copper Ingot + 2 Sticks, diagonal", "3x3"),
+        (IRON_SPEAR, 1, "1 Iron Ingot + 2 Sticks, diagonal", "3x3"),
+        (LEATHER_HORSE_ARMOR, 1, "7 Leather, H pattern", "3x3"),
+))
+
 for material, helmet, chest, legs, boots in (
     ("Iron Ingots", I_HELMET, I_CHEST, I_LEGS, I_BOOTS),
     ("Diamonds", D_HELMET, D_CHEST, D_LEGS, D_BOOTS),
@@ -3595,6 +4323,21 @@ RECIPE_BOOK_ENTRIES.extend((
     (SHIELD, 1, "6 Planks + 1 Iron Ingot", "3x3"),
     (BOW, 1, "3 Strings + 3 Sticks", "3x3"),
     (FISHING_ROD, 1, "3 Sticks + 2 Strings", "3x3"),
+    (RED_DYE, 1, "1 Poppy", "2x2/3x3"),
+    (RED_DYE, 1, "1 Beetroot", "2x2/3x3"),
+    (YELLOW_DYE, 1, "1 Dandelion", "2x2/3x3"),
+    (BLUE_DYE, 1, "1 Cornflower", "2x2/3x3"),
+    (ORANGE_DYE, 1, "1 Red Dye + 1 Yellow Dye", "2x2/3x3"),
+    (PURPLE_DYE, 1, "1 Red Dye + 1 Blue Dye", "2x2/3x3"),
+    (CYAN_DYE, 1, "1 Blue Dye + 1 Green Dye", "2x2/3x3"),
+    (RED_BED, 1, "1 Bed + 1 Red Dye", "2x2/3x3"),
+    (YELLOW_BED, 1, "1 Bed + 1 Yellow Dye", "2x2/3x3"),
+    (ORANGE_BED, 1, "1 Bed + 1 Orange Dye", "2x2/3x3"),
+    (GREEN_DYE, 1, "Smelt 1 Cactus", "Furnace"),
+    (GREEN_BED, 1, "1 Bed + 1 Green Dye", "2x2/3x3"),
+    (BLUE_BED, 1, "1 Bed + 1 Blue Dye", "2x2/3x3"),
+    (PURPLE_BED, 1, "1 Bed + 1 Purple Dye", "2x2/3x3"),
+    (CYAN_BED, 1, "1 Bed + 1 Cyan Dye", "2x2/3x3"),
     (FURNACE, 1, "8 Cobblestone", "3x3"),
     (GLASS_PANE, 16, "6 Glass", "3x3"),
     (IRON_BLOCK_PROD, 1, "9 Iron Ingots", "3x3"),
@@ -3610,6 +4353,7 @@ RECIPE_BOOK_ENTRIES.extend((
     (SS_SLAB, 6, "3 Smooth Stone", "3x3"),
     (BREAD, 1, "3 Wheat", "3x3"),
     (HAY_BALE, 1, "9 Wheat", "3x3"),
+    (WHEAT_ITEM, 9, "1 Hay Bale", "2x2/3x3"),
     (COAL_BLOCK_ITEM, 1, "9 Coal", "3x3"),
     (CHEST, 1, "8 Planks", "3x3"),
     (DOOR, 3, "6 Planks", "3x3"),
@@ -3623,7 +4367,7 @@ RECIPE_BOOK_ENTRIES.extend((
     (SMOKER, 1, "4 Oak or Birch Logs + 1 Furnace", "3x3"),
     (BLAST_FURNACE, 1, "5 Iron Ingots + 1 Furnace + 3 Smooth Stone", "3x3"),
     (BUCKET, 1, "3 Iron Ingots", "3x3"),
-    (FLINT_STEEL, 1, "1 Iron Ingot + 1 Flint", "3x3"),
+    (FLINT_STEEL, 1, "1 Iron Ingot + 1 Flint (any order)", "2x2/3x3"),
     (SHEARS, 1, "2 Iron Ingots", "3x3"),
     (BOAT, 1, "5 Planks", "3x3"),
     (LADDER, 3, "7 Sticks", "3x3"),
@@ -3877,6 +4621,7 @@ def update_furnaces(world):
             elif i_type == IRON_BLOCK: result_type = IRON_INGOT
             elif i_type == COPPER_ORE: result_type = COPPER_INGOT
             elif i_type == SAND_BLOCK: result_type = GLASS
+            elif i_type == CACTUS: result_type = GREEN_DYE
             elif i_type == RAW_BEEF: result_type = STEAK
             elif i_type == RAW_MUTTON: result_type = COOKED_MUTTON
             elif i_type == RAW_CHICKEN: result_type = COOKED_CHICKEN
@@ -3961,6 +4706,7 @@ def save_game(world, player, filename):
                 "hp": m.health,
                 "sheared": m.sheared,
                 "saddled": getattr(m, "saddled", False),
+                "golem_angry": m.angry if m.m_type == "iron_golem" else False,
             }
             for m in world.mobs
         ]
@@ -4060,10 +4806,25 @@ def load_game(world, player, filename):
                 m.health = m_data["hp"]
                 m.sheared = m_data.get("sheared", False)
                 m.saddled = m_data.get("saddled", False)
+                if m.m_type == "iron_golem":
+                    m.angry = m_data.get("golem_angry", False)
                 world.mobs.append(m)
-            if world.village_generation_version < VILLAGE_GENERATION_VERSION:
+            if world.village_generation_version in (9, 10, 11):
+                if world.villages_generated:
+                    if world.village_generation_version == 9:
+                        world._generate_hay_bales_for_existing_villages()
+                    world._spawn_golems_for_existing_villages()
+                    world._generate_natural_flowers()
+                else:
+                    world.generate_villages()
+                world.village_generation_version = VILLAGE_GENERATION_VERSION
+            elif world.village_generation_version < VILLAGE_GENERATION_VERSION:
                 legacy_houses = {}
-                if world.village_generation_version >= 6:
+                if world.village_generation_version >= 8:
+                    door_offset = 5
+                    house_spacing = 16
+                    bed_offsets = (2, 3)
+                elif world.village_generation_version >= 6:
                     door_offset = 7
                     house_spacing = 16
                     bed_offsets = (1, 2)
@@ -4132,13 +4893,15 @@ def load_game(world, player, filename):
                 if legacy_locations:
                     old_house_blocks = {
                         PLANKS, GLASS_PANE, DOOR, DOOR_TOP, BED, BED_RIGHT,
-                        OAK_LOG, W_STAIRS,
+                        OAK_LOG, W_STAIRS, CHEST,
                     }
                     for house_x in houses_to_clear:
                         floor_y = legacy_houses[house_x]
                         for x in range(house_x, house_x + 16):
                             for y in range(max(0, floor_y - 20), floor_y + 1):
                                 if world.get_block(x, y) in old_house_blocks:
+                                    if world.get_block(x, y) == CHEST:
+                                        world.chest_data.pop((x, y), None)
                                     world.set_block(x, y, None)
                         for x in (
                             house_x, house_x + 1, house_x + 7, house_x + 10,
@@ -4159,6 +4922,7 @@ def load_game(world, player, filename):
                     world.generate_villages()
                 else:
                     world.village_generation_version = VILLAGE_GENERATION_VERSION
+                    world._generate_natural_flowers()
             elif not world.villages_generated:
                 world.generate_villages()
     except Exception as e:
@@ -4182,6 +4946,7 @@ def drop_mob_loot(world, mob):
 
     if mob.m_type == "cow":
         spawn_drop(RAW_BEEF, random.randint(2, 4))
+        spawn_drop(LEATHER, random.randint(1, 2))
     elif mob.m_type in ("zombie", "husk"):
         spawn_drop(ROTTEN_FLESH, random.randint(1, 2))
         spawn_drop(BONE, random.randint(1, 2))
@@ -4200,6 +4965,31 @@ def drop_mob_loot(world, mob):
             spawn_drop(FEATHER, random.randint(1, 2))
     elif mob.m_type == "spider":
         spawn_drop(STRING_ITEM, random.randint(1, 3))
+    elif mob.m_type == "iron_golem":
+        spawn_drop(IRON_INGOT, random.randint(3, 5))
+        spawn_drop(POPPY, random.randint(0, 2))
+
+def anger_village_golem_for_villager(world, mob):
+    if mob.m_type != "villager":
+        return
+
+    villager_x = mob.rect.centerx
+    golems = []
+    for candidate in world.mobs:
+        if candidate.m_type != "iron_golem":
+            continue
+        dx = candidate.rect.centerx - villager_x
+        if dx > WORLD_PIXELS / 2:
+            dx -= WORLD_PIXELS
+        elif dx < -WORLD_PIXELS / 2:
+            dx += WORLD_PIXELS
+        dy = candidate.rect.centery - mob.rect.centery
+        distance = math.hypot(dx, dy)
+        if distance <= VILLAGE_FOOTPRINT_WIDTH * TILE_SIZE:
+            golems.append((distance, candidate))
+
+    if golems:
+        min(golems, key=lambda entry: entry[0])[1].angry = True
 
 def add_item_to_inventory(player, item_type, count=1, durability=None):
     for slot in player.inventory:
@@ -4238,7 +5028,24 @@ def drop_selected_item(player, world):
     return True
 
 def get_bed_partner(world, tx, ty, block_type):
-    partner_type = BED_RIGHT if block_type == BED else BED
+    partner_type = {
+        BED: BED_RIGHT,
+        BED_RIGHT: BED,
+        RED_BED: RED_BED_RIGHT,
+        RED_BED_RIGHT: RED_BED,
+        YELLOW_BED: YELLOW_BED_RIGHT,
+        YELLOW_BED_RIGHT: YELLOW_BED,
+        ORANGE_BED: ORANGE_BED_RIGHT,
+        ORANGE_BED_RIGHT: ORANGE_BED,
+        GREEN_BED: GREEN_BED_RIGHT,
+        GREEN_BED_RIGHT: GREEN_BED,
+        BLUE_BED: BLUE_BED_RIGHT,
+        BLUE_BED_RIGHT: BLUE_BED,
+        PURPLE_BED: PURPLE_BED_RIGHT,
+        PURPLE_BED_RIGHT: PURPLE_BED,
+        CYAN_BED: CYAN_BED_RIGHT,
+        CYAN_BED_RIGHT: CYAN_BED,
+    }[block_type]
     for neighbor_x in ((tx + 1) % WORLD_WIDTH, (tx - 1) % WORLD_WIDTH):
         if world.data.get((neighbor_x, ty)) == partner_type:
             return neighbor_x, ty
@@ -4246,7 +5053,7 @@ def get_bed_partner(world, tx, ty, block_type):
 
 def _can_smelt_in_furnace(item_type):
     return item_type in (
-        COBBLESTONE, IRON_BLOCK, COPPER_ORE, RAW_BEEF, RAW_MUTTON, RAW_CHICKEN, RAW_COD,
+        COBBLESTONE, IRON_BLOCK, COPPER_ORE, CACTUS, RAW_BEEF, RAW_MUTTON, RAW_CHICKEN, RAW_COD,
         RAW_SALMON, OAK_LOG, BIRCH_LOG, SAND_BLOCK
     )
 
@@ -4447,6 +5254,7 @@ def main():
         return
     
     world_name = "default"
+    world_seed = None
     if mode != "join":
         # List existing worlds
         saves = [f.name for f in WORLDS_DIR.iterdir() if f.is_file() and f.name.startswith("savegame") and f.name.endswith(".json")]
@@ -4458,10 +5266,23 @@ def main():
                 else: name = s[8:-5]
                 print(f" - {name}")
         
-        print("\n(Type a world name to load, or 'create' for a new world)")
-        world_name = input("Enter world name [default]: ").strip() or "default"
+        print("\n(Type a world name to load, 'create' for a new world, or enter a numeric seed)")
+        world_name = input("Enter world name, 'create', or numeric seed [default]: ").strip() or "default"
         if world_name.lower() == "create":
             world_name = input("Enter name for new world: ").strip() or f"world_{int(time.time())}"
+            seed_text = input("Enter world seed (leave blank for a random seed): ").strip()
+            if seed_text:
+                try:
+                    world_seed = int(seed_text)
+                except ValueError:
+                    world_seed = seed_text
+        else:
+            try:
+                world_seed = int(world_name)
+            except ValueError:
+                pass
+            else:
+                world_name = f"seed_{world_seed}"
     else:
         world_name = input("\nEnter World Name OR Host IP Address to Join: ").strip()
         if not world_name: return
@@ -4484,7 +5305,11 @@ def main():
     font = pygame.font.SysFont(None, 24)
     recipe_font = pygame.font.SysFont(None, 18)
 
-    world, player = World(), Player(player_name)
+    if not play_loading_screens(screen):
+        pygame.quit()
+        return
+
+    world, player = World(seed=world_seed), Player(player_name)
     
     net = None
     discovery_service = None
@@ -4794,6 +5619,8 @@ def main():
                     player.flying = not player.flying
                     player.vel_y = 0
                     player.highest_y = player.rect.y
+                    if player.flying:
+                        player.health = player.max_health
                 if event.key == pygame.K_e and sleep_anim_timer == 0 and sleep_wake_timer == 0: 
                     player.show_inventory = not player.show_inventory
                     if not player.show_inventory: 
@@ -4973,14 +5800,25 @@ def main():
                                 if top_pos in world.data:
                                     to_remove.append(top_pos)
                                 drop_type = DOOR
-                            elif drop_type in (BED, BED_RIGHT):
+                            elif drop_type in BED_BLOCKS:
                                 bed_partner = get_bed_partner(world, bx, by, drop_type)
                                 if bed_partner is not None:
                                     to_remove.append(bed_partner)
-                                drop_type = BED
+                                drop_type = (
+                                    RED_BED if drop_type in (RED_BED, RED_BED_RIGHT)
+                                    else YELLOW_BED if drop_type in (YELLOW_BED, YELLOW_BED_RIGHT)
+                                    else ORANGE_BED if drop_type in (ORANGE_BED, ORANGE_BED_RIGHT)
+                                    else GREEN_BED if drop_type in (GREEN_BED, GREEN_BED_RIGHT)
+                                    else BLUE_BED if drop_type in (BLUE_BED, BLUE_BED_RIGHT)
+                                    else PURPLE_BED if drop_type in (PURPLE_BED, PURPLE_BED_RIGHT)
+                                    else CYAN_BED if drop_type in (CYAN_BED, CYAN_BED_RIGHT)
+                                    else BED
+                                )
                             if drop_type == TALL_GRASS:
                                 if random.random() < 0.15: drop_type = SEEDS
                                 else: drop_type = None # Usually nothing drops
+                            elif drop_type == FIRE:
+                                drop_type = None
                             elif drop_type == DEAD_BUSH:
                                 drop_type = STICK
                                 if random.random() < 0.5:
@@ -5008,6 +5846,16 @@ def main():
                             
                             if drop_type in (OAK_LEAVES, BIRCH_LEAVES) and tool and tool["type"] == SHEARS:
                                 world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, drop_type))
+                            elif drop_type in (OAK_LEAVES, BIRCH_LEAVES):
+                                leaf_x = bx * TILE_SIZE + 8
+                                leaf_y = by * TILE_SIZE + 8
+                                if random.random() < 0.05:
+                                    sapling = OAK_SAPLING if drop_type == OAK_LEAVES else BIRCH_SAPLING
+                                    world.dropped_items.append(DroppedItem(leaf_x, leaf_y, sapling))
+                                elif random.random() < 0.03:
+                                    world.dropped_items.append(DroppedItem(leaf_x, leaf_y, STICK))
+                                if drop_type == OAK_LEAVES and random.randrange(200) == 0:
+                                    world.dropped_items.append(DroppedItem(leaf_x, leaf_y, APPLE))
                             elif drop_type and drop_type not in (OAK_LEAVES, BIRCH_LEAVES):
                                 world.dropped_items.append(DroppedItem(bx * TILE_SIZE + 8, by * TILE_SIZE + 8, drop_type))
                             for item_type, count in extra_drops:
@@ -5053,6 +5901,20 @@ def main():
                     unlock_achievement(world, "collect_water")
                     if net:
                         net.send({"type": "BLOCK", "pos": f"{mouse_target[0]},{mouse_target[1]}", "b_type": None})
+                    action_taken = True
+
+            if not action_taken and slot and slot["type"] == FLINT_STEEL and mouse_target is not None:
+                fire_pos = ignite_fire(world, *mouse_target)
+                if fire_pos is not None:
+                    if net:
+                        net.send({
+                            "type": "BLOCK",
+                            "pos": f"{fire_pos[0]},{fire_pos[1]}",
+                            "b_type": FIRE,
+                        })
+                    slot["durability"] = slot.get("durability", MAX_DURABILITY[FLINT_STEEL]) - 1
+                    if slot["durability"] <= 0:
+                        player.inventory[player.selected_slot] = None
                     action_taken = True
 
             # Ender Pearl: throw toward the mouse cursor and teleport on landing.
@@ -5204,13 +6066,13 @@ def main():
 
                 # Eating / Drinking
                 if slot and slot["type"] in (
-                    BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON,
+                    APPLE, BREAD, RAW_BEEF, STEAK, ROTTEN_FLESH, RAW_MUTTON, COOKED_MUTTON,
                     RAW_COD, COOKED_COD, RAW_SALMON, COOKED_SALMON, MILK_BUCKET,
                     CARROT_ITEM, POTATO_ITEM, POISONOUS_POTATO, BEETROOT_ITEM,
                 ):
                     if slot["type"] == MILK_BUCKET or player.hunger < player.max_hunger:
                         fill = {
-                            BREAD: 5, RAW_BEEF: 3, STEAK: 8, ROTTEN_FLESH: 4,
+                            APPLE: 4, BREAD: 5, RAW_BEEF: 3, STEAK: 8, ROTTEN_FLESH: 4,
                             RAW_MUTTON: 3, COOKED_MUTTON: 7, RAW_COD: 2,
                             COOKED_COD: 5, RAW_SALMON: 2, COOKED_SALMON: 6,
                             MILK_BUCKET: 2, CARROT_ITEM: 3, POTATO_ITEM: 2,
@@ -5237,6 +6099,14 @@ def main():
                 if slot and slot["type"] in (W_HOE, S_HOE, I_HOE):
                     if (tx, ty) in world.data and world.data[(tx, ty)] in (GRASS_BLOCK, DIRT_BLOCK):
                         world.data[(tx, ty)] = FARMLAND
+                        world.block_meta[(tx, ty)] = {"moisture": 7}
+                        if net:
+                            net.send({
+                                "type": "BLOCK",
+                                "pos": f"{tx},{ty}",
+                                "b_type": FARMLAND,
+                                "meta": world.block_meta[(tx, ty)],
+                            })
                         slot["durability"] -= 1
                         if slot["durability"] <= 0: player.inventory[player.selected_slot] = None
                         action_taken = True
@@ -5323,7 +6193,7 @@ def main():
                         world.chest_data[master_pos] = [None] * size
                     action_taken = True
                     break
-                elif (tx, ty) in world.data and world.data[(tx, ty)] in (DOOR, DOOR_TOP, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR, TRAPDOOR_OPEN, FENCE_GATE, FENCE_GATE_OPEN, BED, BED_RIGHT):
+                elif (tx, ty) in world.data and world.data[(tx, ty)] in (DOOR, DOOR_TOP, DOOR_OPEN, DOOR_OPEN_TOP, TRAPDOOR, TRAPDOOR_OPEN, FENCE_GATE, FENCE_GATE_OPEN, *BED_BLOCKS):
                     b_type = world.data[(tx, ty)]
                     if b_type in (DOOR, DOOR_TOP):
                         base = (tx, ty) if b_type == DOOR else (tx, ty + 1)
@@ -5339,7 +6209,7 @@ def main():
                     elif b_type == TRAPDOOR_OPEN: world.data[(tx, ty)] = TRAPDOOR
                     elif b_type == FENCE_GATE: world.data[(tx, ty)] = FENCE_GATE_OPEN
                     elif b_type == FENCE_GATE_OPEN: world.data[(tx, ty)] = FENCE_GATE
-                    elif b_type in (BED, BED_RIGHT):
+                    elif b_type in BED_BLOCKS:
                         sleep_anim_timer = sleep_anim_total
                         sleep_bed_pos = (tx, ty)
                         action_taken = True
@@ -5365,7 +6235,7 @@ def main():
                                 if slot["count"] <= 0:
                                     player.inventory[player.selected_slot] = None
                                     break
-                    elif slot is not None and slot["type"] == BED:
+                    elif slot is not None and slot["type"] in BED_ITEMS:
                         bed_dx = 1 if player.direction > 0 else -1
                         tx2 = (tx + bed_dx) % WORLD_WIDTH
                         if (tx2, ty) not in world.data or world.data.get((tx2, ty)) == WATER:
@@ -5374,11 +6244,22 @@ def main():
                             p_placement_rect = player.rect.inflate(-6, -6)
                             p_placement_rect.x %= WORLD_PIXELS
                             if not p_placement_rect.colliderect(bed_rect_1) and not p_placement_rect.colliderect(bed_rect_2):
-                                world.data[(tx, ty)] = BED
-                                world.data[(tx2, ty)] = BED_RIGHT
+                                bed_head = slot["type"]
+                                bed_foot = {
+                                    BED: BED_RIGHT,
+                                    RED_BED: RED_BED_RIGHT,
+                                    YELLOW_BED: YELLOW_BED_RIGHT,
+                                    ORANGE_BED: ORANGE_BED_RIGHT,
+                                    GREEN_BED: GREEN_BED_RIGHT,
+                                    BLUE_BED: BLUE_BED_RIGHT,
+                                    PURPLE_BED: PURPLE_BED_RIGHT,
+                                    CYAN_BED: CYAN_BED_RIGHT,
+                                }[bed_head]
+                                world.data[(tx, ty)] = bed_head
+                                world.data[(tx2, ty)] = bed_foot
                                 if net:
-                                    net.send({"type": "BLOCK", "pos": f"{tx},{ty}", "b_type": BED})
-                                    net.send({"type": "BLOCK", "pos": f"{tx2},{ty}", "b_type": BED_RIGHT})
+                                    net.send({"type": "BLOCK", "pos": f"{tx},{ty}", "b_type": bed_head})
+                                    net.send({"type": "BLOCK", "pos": f"{tx2},{ty}", "b_type": bed_foot})
                                 slot["count"] -= 1
                                 action_taken = True
                                 if slot["count"] <= 0:
@@ -5388,7 +6269,11 @@ def main():
                         tr = pygame.Rect(tx * TILE_SIZE, ty * TILE_SIZE, TILE_SIZE, TILE_SIZE)
                         p_placement_rect = player.rect.inflate(-6, -6)
                         p_placement_rect.x %= WORLD_PIXELS
-                        if not p_placement_rect.colliderect(tr): 
+                        can_place_plant = (
+                            slot["type"] not in (OAK_SAPLING, BIRCH_SAPLING, POPPY, DANDELION, CORNFLOWER)
+                            or world.get_block(tx, ty + 1) in (GRASS_BLOCK, DIRT_BLOCK)
+                        )
+                        if can_place_plant and not p_placement_rect.colliderect(tr):
                             world.data[(tx, ty)] = slot["type"]
                             unlock_achievement(world, "first_build")
                             if slot["type"] in (W_STAIRS, C_STAIRS, SS_STAIRS):
@@ -5447,6 +6332,7 @@ def main():
             # Base damage for hand
             dmg = 1
             if t_type in (W_SWORD, S_SWORD, I_SWORD, D_SWORD): dmg = 4 if t_type == W_SWORD else (5 if t_type == S_SWORD else (7 if t_type == I_SWORD else 8))
+            elif t_type in (COPPER_SPEAR, IRON_SPEAR): dmg = 5 if t_type == COPPER_SPEAR else 6
             elif t_type in (W_AXE, S_AXE, I_AXE, D_AXE): dmg = 3 if t_type == W_AXE else (4 if t_type == S_AXE else (6 if t_type == I_AXE else 7))
             elif t_type in (W_PICK, S_PICK, I_PICK, D_PICK): dmg = 2 if t_type == W_PICK else (3 if t_type == S_PICK else (5 if t_type == I_PICK else 6))
             elif t_type in (W_SHOVEL, S_SHOVEL, I_SHOVEL, D_SHOVEL): dmg = 1 if t_type == W_SHOVEL else (2 if t_type == S_SHOVEL else (4 if t_type == I_SHOVEL else 5))
@@ -5475,6 +6361,9 @@ def main():
                             mob.hurt_timer = 10
                             mob.vel_y = -6 # Knockback
                             mob.rect.x = (mob.rect.x + player.direction * 25) % WORLD_PIXELS
+                            anger_village_golem_for_villager(world, mob)
+                            if mob.m_type == "iron_golem":
+                                mob.angry = True
                             if mob.m_type == "enderman":
                                 mob.angry = True
                                 mob.teleport_timer = 0
@@ -5513,6 +6402,15 @@ def main():
             if world.time % 3 == 0:
                 world.update_falling_sand()
             world.time = (world.time + 1) % 24000
+            if world.time % 600 == 0:
+                for pos, block_type, metadata in world.update_farmland_moisture():
+                    if net:
+                        net.send({
+                            "type": "BLOCK",
+                            "pos": f"{pos[0]},{pos[1]}",
+                            "b_type": block_type,
+                            "meta": metadata,
+                        })
             world.update_weather()
             
             # Mob Spawning
@@ -5558,16 +6456,16 @@ def main():
                     drop_mob_loot(world, mob)
                     world.mobs.remove(mob)
                     
-            # --- Farming Growth ---
-            if random.random() < 0.01: # Growth tick
-                crops = [
-                    pos for pos, block_type in world.data.items()
-                    if block_type in CROP_STAGE_TO_KIND
-                    and block_type != CROP_STAGES[CROP_STAGE_TO_KIND[block_type]][-1]
-                ]
-                if crops:
-                    cp = random.choice(crops)
-                    world.data[cp] += 1
+            # --- Natural growth ---
+            if random.random() < 0.01:
+                for pos, block_type, metadata in world.update_natural_growth():
+                    if net:
+                        net.send({
+                            "type": "BLOCK",
+                            "pos": f"{pos[0]},{pos[1]}",
+                            "b_type": block_type,
+                            "meta": metadata,
+                        })
                     
             # Auto-Save
             auto_save_timer += 1

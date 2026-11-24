@@ -645,6 +645,20 @@ def spawn_damage_number(target_pos, amount, is_crit=False):
     destroy(dmg_txt, delay=0.50)
 
 
+def safe_blink(entity, blink_color=color.red, duration=0.12):
+    """Safely flash visual 3D model parts without crashing on Text, HUD, or non-mesh children."""
+    if entity is None or not hasattr(entity, 'children'):
+        return
+    for child in entity.children:
+        if isinstance(child, Text):
+            continue
+        if hasattr(child, 'model') and child.model and hasattr(child, 'blink'):
+            try:
+                child.blink(blink_color, duration=duration)
+            except Exception:
+                pass
+
+
 # =============================================================================
 # ENEMY BOT CLASS (Puss Bots)
 # =============================================================================
@@ -668,6 +682,7 @@ class PussBot:
         self.walk_time  = random.uniform(0.0, 3.0)
         self.is_dead    = False
         self.training_dummy = training_dummy
+        self.fear_label = None
 
         # Floating 3D Health Bar
         self.hp_bar_bg = Entity(parent=self.root, model='cube', color=color.black,
@@ -687,12 +702,120 @@ class PussBot:
                 self.die()
             return
 
-        if self.cooldown_timer > 0:
-            self.cooldown_timer -= dt
-
         diff = target_pos - self.root.position
         diff.y = 0
         dist = diff.length()
+
+        # Check if Death is whistling within Terror Radius!
+        is_fear = (selected_char == 'death' and _whistle_remaining > 0 and dist < WHISTLE_TERROR_RADIUS)
+
+        if is_fear:
+            # 1. Proximity Slowdown gradient:
+            #    - Far from Death (> 60% radius): bot slows down approaching Death
+            #    - Close to Death (< 60% radius): full FEAR - bot panics and flees
+            proximity_factor = clamp(dist / WHISTLE_TERROR_RADIUS, 0.0, 1.0)
+            inner_fear_zone = WHISTLE_TERROR_RADIUS * 0.60   # within this -> full flee
+            outer_slow_zone = WHISTLE_TERROR_RADIUS           # between this and inner -> slow
+
+            if dist <= inner_fear_zone:
+                # --- Full Fear / Panic Flee ---
+                flee_dir = -diff.normalized() if dist > 0.01 else Vec3(0, 0, 1)
+
+                # Keep fleeing bot within platform bounds
+                next_x = self.root.x + flee_dir.x * 2.0
+                next_z = self.root.z + flee_dir.z * 2.0
+                if abs(next_x) > (PLATFORM_HALF - 2.0):
+                    flee_dir.x = -flee_dir.x
+                if abs(next_z) > (PLATFORM_HALF - 2.0):
+                    flee_dir.z = -flee_dir.z
+                if flee_dir.length() > 0.01:
+                    flee_dir = flee_dir.normalized()
+
+                # Face directly away from Death
+                target_rot_y = math.degrees(math.atan2(flee_dir.x, flee_dir.z))
+                angle_diff = (target_rot_y - self.root.rotation_y + 180) % 360 - 180
+                self.root.rotation_y += angle_diff * min(1.0, 14.0 * dt)
+
+                # Panic sprint away from Death (1.65x speed, faster the closer they are)
+                panic_mult = lerp(1.65, 2.3, 1.0 - (dist / inner_fear_zone))
+                self.root.position += flee_dir * self.speed * panic_mult * dt
+
+                # Panic leg swing animation
+                self.walk_time += dt * 22.0
+                swing = math.sin(self.walk_time) * 32.0
+                if self.leg_l: self.leg_l.rotation_x = swing
+                if self.leg_r: self.leg_r.rotation_x = -swing
+
+                # Shiver & Tremble with terror
+                shiver = math.sin(time.time() * 45.0) * 0.03
+                self.root.x += shiver
+
+                # Floating animated FEAR indicator above bot
+                if not self.fear_label:
+                    self.fear_label = Text(
+                        text="FEAR!",
+                        parent=self.root,
+                        position=(0, 2.9, 0),
+                        color=color.rgb(210/255, 60/255, 255/255),
+                        scale=1.6,
+                        billboard=True,
+                        origin=(0, 0)
+                    )
+                else:
+                    self.fear_label.visible = True
+                    self.fear_label.y = 2.9 + math.sin(time.time() * 18.0) * 0.08
+
+                # Terrified enemy cannot attack while in full fear
+                self.is_attacking = False
+                return
+            else:
+                # --- Outer Slow Zone: approach speed is reduced the closer to Death ---
+                # proximity_factor goes from 1.0 at edge of radius to ~0.0 near inner zone
+                outer_range = outer_slow_zone - inner_fear_zone
+                dist_into_slow = dist - inner_fear_zone
+                slow_norm = clamp(dist_into_slow / outer_range, 0.0, 1.0)
+                # Speed multiplier: 0.3x at the inner edge, 1.0x at the outer edge
+                slow_mult = lerp(0.30, 1.0, slow_norm)
+
+                # Bot still tries to approach but is sluggish - jittery nervous movement
+                if dist > 0.01:
+                    target_rot_y = math.degrees(math.atan2(diff.x, diff.z))
+                    angle_diff = (target_rot_y - self.root.rotation_y + 180) % 360 - 180
+                    self.root.rotation_y += angle_diff * min(1.0, 10.0 * dt)
+                if dist > self.attack_range:
+                    move_dir = diff.normalized()
+                    self.root.position += move_dir * self.speed * slow_mult * dt
+                    self.walk_time += dt * 13.0 * slow_mult
+                    swing = math.sin(self.walk_time) * 22.0
+                    if self.leg_l: self.leg_l.rotation_x = swing
+                    if self.leg_r: self.leg_r.rotation_x = -swing
+
+                # Nervous label (lighter version)
+                if not self.fear_label:
+                    self.fear_label = Text(
+                        text="...",
+                        parent=self.root,
+                        position=(0, 2.9, 0),
+                        color=color.rgb(200/255, 100/255, 255/255),
+                        scale=1.2,
+                        billboard=True,
+                        origin=(0, 0)
+                    )
+                else:
+                    self.fear_label.visible = True
+                    self.fear_label.text = "..."
+                    self.fear_label.color = color.rgb(200/255, 100/255, 255/255)
+                # Cooldown timer still ticks
+                if self.cooldown_timer > 0:
+                    self.cooldown_timer -= dt
+                return
+        else:
+            # Clear fear label when whistle effect is not active
+            if self.fear_label:
+                self.fear_label.visible = False
+
+        if self.cooldown_timer > 0:
+            self.cooldown_timer -= dt
 
         if dist > 0.01:
             target_rot_y = math.degrees(math.atan2(diff.x, diff.z))
@@ -735,6 +858,8 @@ class PussBot:
         global player_hp
         if self.is_dead or not self.root or player is None or game_state != 'playing':
             return
+        if _ring_of_fire_active and self != _ring_of_fire_target:
+            return  # Outsider bots cannot strike Death through the fire ring
 
         diff = player.position - self.root.position
         diff.y = 0
@@ -745,16 +870,12 @@ class PussBot:
         if self.is_dead or not self.root:
             return
         if self.training_dummy:
-            for child in self.root.children:
-                if hasattr(child, 'color'):
-                    child.blink(color.yellow, duration=0.12)
+            safe_blink(self.root, color.yellow, duration=0.12)
             return
         self.hp -= amount
 
         # Flash red on hit
-        for child in self.root.children:
-            if hasattr(child, 'color'):
-                child.blink(color.red, duration=0.12)
+        safe_blink(self.root, color.red, duration=0.12)
 
         pct = max(0.0, self.hp / self.max_hp)
         if hasattr(self, 'hp_bar_fill') and self.hp_bar_fill:
@@ -1396,6 +1517,7 @@ def process_network_events():
 def _create_remote_player(char_key='puss'):
     global remote_player, remote_player_data, remote_player_char
     global remote_player_walk_time, remote_hp_bar_fill, remote_name_tag
+    global remote_fear_label
 
     if not network_connected or game_state != 'playing':
         return
@@ -1411,6 +1533,9 @@ def _create_remote_player(char_key='puss'):
         remote_player_data = None
         remote_hp_bar_fill = None
         remote_name_tag = None
+        if remote_fear_label:
+            deep_destroy(remote_fear_label)
+        remote_fear_label = None
 
     builders = {'puss': build_puss, 'kitty': build_kitty, 'death': build_death, 'perrito': build_perrito}
     builder = builders.get(char_key, build_puss)
@@ -1454,6 +1579,18 @@ def _create_remote_player(char_key='puss'):
 
     if network_remote_snapshot:
         _apply_remote_snapshot(1.0)
+
+    # Create floating FEAR label for whistle effect
+    remote_fear_label = Text(
+        parent=remote_player,
+        text="FEAR!",
+        position=(0, y_bar + 0.52, 0),
+        origin=(0, 0),
+        scale=1.5,
+        color=color.rgb(210/255, 60/255, 255/255),
+        billboard=True,
+        visible=False,
+    )
 
 
 def trigger_remote_player_attack():
@@ -2405,9 +2542,7 @@ def apply_damage_to_player(amount):
     player_hp -= amount
     update_hud()
 
-    for child in player.children:
-        if hasattr(child, 'color'):
-            child.blink(color.red, duration=0.15)
+    safe_blink(player, color.red, duration=0.15)
 
     if player_hp <= 0:
         player_hp = 0
@@ -2445,6 +2580,7 @@ def show_block_spark():
 def trigger_game_over():
     """Display Game Over screen and unlock mouse for clean interaction."""
     global game_state, game_over_ui_elems, _whistle_remaining, _whistle_bgm_paused
+    global _ult_bgm_paused, _ult_audio_remaining
     game_state = 'game_over'
     mouse.locked  = False
     mouse.visible = True
@@ -2457,12 +2593,21 @@ def trigger_game_over():
         except Exception:
             pass
     _whistle_remaining = 0.0
-    if bg_music and _whistle_bgm_paused:
+
+    if _deathult_audio:
+        try:
+            _deathult_audio.stop()
+        except Exception:
+            pass
+    _ult_audio_remaining = 0.0
+
+    if bg_music and (_whistle_bgm_paused or _ult_bgm_paused):
         try:
             bg_music.resume()
         except Exception:
             pass
         _whistle_bgm_paused = False
+        _ult_bgm_paused = False
 
     t1 = Text(
         text   = "YOU FELL IN BATTLE!",
@@ -2618,9 +2763,7 @@ def check_player_attack_hits():
                 else:
                     final_damage = damage
                 spawn_damage_number(remote_player.position, final_damage, is_crit=is_crit)
-                for child in remote_player.children:
-                    if hasattr(child, 'color'):
-                        child.blink(color.red, duration=0.12)
+                safe_blink(remote_player, color.red, duration=0.12)
                 if dist > 0.01:
                     knockback = 0.95 if is_airborne else (0.75 if is_crit else 0.5)
                     remote_player.position += diff.normalized() * knockback
@@ -2793,6 +2936,7 @@ def teardown_gameplay():
     global remote_player_data, remote_player_char, remote_hp_bar_fill, remote_name_tag
     global _whistle_remaining, _whistle_bgm_paused
     global cam_zoom_delta, cam_fov_delta
+    global remote_fear_label
 
     cam_zoom_delta = 0.0
     cam_fov_delta  = 0.0
@@ -2805,12 +2949,13 @@ def teardown_gameplay():
         except Exception:
             pass
     _whistle_remaining = 0.0
-    if bg_music and _whistle_bgm_paused:
+    if bg_music and (_whistle_bgm_paused or _ult_bgm_paused):
         try:
             bg_music.resume()
         except Exception:
             pass
         _whistle_bgm_paused = False
+        _ult_bgm_paused = False
 
     # 1. Clear game over overlay if present
     for elem in game_over_ui_elems:
@@ -2838,6 +2983,9 @@ def teardown_gameplay():
     remote_player_char = None
     remote_hp_bar_fill = None
     remote_name_tag = None
+    if remote_fear_label:
+        deep_destroy(remote_fear_label)
+    remote_fear_label = None
     stop_network_session()
 
     # 4. Destroy active player model and all attached parts
@@ -2925,11 +3073,12 @@ def go_to_main_menu():
 # =============================================================================
 # DEATH'S WHISTLE ABILITY
 # =============================================================================
-_whistle_cooldown = 0.0
-_WHISTLE_COOLDOWN = 15.0          # seconds between whistles
-_whistle_label    = None          # on-screen flash text
-_whistle_remaining = 0.0          # time left in the whistle animation
-_whistle_bgm_paused = False       # whether battlesong is paused for the whistle
+_whistle_cooldown       = 0.0
+_WHISTLE_COOLDOWN       = 15.0          # seconds between whistles
+_whistle_label          = None          # on-screen flash text
+_whistle_remaining      = 0.0           # time left in the whistle animation
+_whistle_bgm_paused     = False         # whether battlesong is paused for the whistle
+WHISTLE_TERROR_RADIUS   = 20.0          # proximity slow & fear radius in meters
 
 # Load whistle with Ursina's audio system
 _whistle_audio = Audio('whistle.mp3', loop=False, autoplay=False)
@@ -2941,7 +3090,8 @@ def play_death_whistle():
     if _whistle_cooldown > 0 or _whistle_remaining > 0:
         return
     _whistle_cooldown = _WHISTLE_COOLDOWN
-    _whistle_remaining = max(0.1, getattr(_whistle_audio, 'length', 3.0))
+    audio_len = getattr(_whistle_audio, 'length', 0)
+    _whistle_remaining = audio_len if (audio_len and audio_len > 1.0) else 5.5
 
     # Pause battlesong background music while whistle plays
     if bg_music and not _whistle_bgm_paused:
@@ -2951,15 +3101,32 @@ def play_death_whistle():
         except Exception:
             pass
 
-    # Play audio when triggered with F
-    _whistle_audio.stop()
-    _whistle_audio.play()
+    # Play audio when triggered with E
+    try:
+        _whistle_audio.stop()
+        _whistle_audio.play()
+    except Exception:
+        pass
+
     # Death keeps both hands lowered while whistling.
     if arm_left:
         arm_left.animate_rotation(Vec3(0, 0, 0), duration=0.15)
     if weapon_arm:
         weapon_arm.animate_rotation(Vec3(0, 0, 0), duration=0.15)
     update_whistle_hud()
+
+    # Flash Fear announcement on screen
+    fear_banner = Text(
+        text="WHISTLE OF DEATH - FEAR EFFECT ACTIVE",
+        origin=(0, 0),
+        position=(0, 0.28),
+        scale=1.65,
+        color=color.rgb(210/255, 60/255, 255/255),
+        font=HUD_FONT,
+        parent=camera.ui
+    )
+    fear_banner.fade_out(duration=0.5, delay=1.8)
+    destroy(fear_banner, delay=2.4)
 
 
 def update_whistle_hud():
@@ -2972,18 +3139,27 @@ def update_whistle_hud():
 
 
 # =============================================================================
-# DEATH'S ULTIMATE ABILITY: RING OF FIRE (Climax 1v1 Arena from The Last Wish)
+# DEATH'S ULTIMATE ABILITY: RING OF FIRE (Lentil Seed Arena with Pink Outline)
 # =============================================================================
 _ult_cooldown           = 0.0
 _ULT_COOLDOWN           = 32.0          # cooldown in seconds
 _ring_of_fire_active    = False
 _ring_of_fire_center    = Vec3(0, 0, 0)
-_ring_of_fire_radius    = 8.5           # circular duel arena radius
+_ring_of_fire_len       = 26.0          # Major half-length: 52.0 units long (takes ~1/3 of the 80x80 map!)
+_ring_of_fire_wid       = 16.0          # Minor half-width: 32.0 units wide!
+_ring_of_fire_yaw       = 0.0           # Facing angle of the lentil axis
+_ring_of_fire_fwd       = Vec3(0, 0, 1) # Major axis unit vector
+_ring_of_fire_right     = Vec3(1, 0, 0) # Minor axis unit vector
 _ring_of_fire_remaining = 0.0
 _RING_OF_FIRE_DURATION  = 16.0          # duration of the fiery cage
 _ring_of_fire_target    = None          # target locked in the 1v1
 _ring_of_fire_entities  = []            # all 3D flame quads, decals, and embers
 _ring_of_fire_embers    = []            # floating spark particle definitions
+
+# Death Ultimate Audio (deathult.mp3)
+_deathult_audio         = Audio('deathult.mp3', loop=False, autoplay=False)
+_ult_bgm_paused         = False
+_ult_audio_remaining    = 0.0
 
 
 def update_ult_hud():
@@ -2997,12 +3173,14 @@ def update_ult_hud():
 def cast_death_ult():
     """
     Death's Ultimate: Ring of Fire (Puss in Boots: The Last Wish).
-    Death clashes his two sickles producing intense sparks, then summons a towering,
-    multi-colored ring of blazing magical fire around himself and his opponent,
-    locking them into an inescapable 1v1 duel to the death.
+    Death clashes his two sickles producing intense sparks, then summons a massive,
+    lentil-seed shaped arena of towering pink, magenta, and crimson fire around
+    himself and his opponent, locking them in a spacious 1v1 duel.
     """
     global _ult_cooldown, _ring_of_fire_active, _ring_of_fire_center, _ring_of_fire_remaining
     global _ring_of_fire_target, _ring_of_fire_entities, _ring_of_fire_embers
+    global _ring_of_fire_fwd, _ring_of_fire_right, _ring_of_fire_yaw
+    global _ult_bgm_paused, _ult_audio_remaining
 
     if _ult_cooldown > 0 or _ring_of_fire_active or player is None or game_state != 'playing':
         return
@@ -3010,6 +3188,24 @@ def cast_death_ult():
     _ult_cooldown = _ULT_COOLDOWN
     _ring_of_fire_active = True
     _ring_of_fire_remaining = _RING_OF_FIRE_DURATION
+
+    # Play Death's ultimate audio (deathult.mp3)
+    audio_dur = getattr(_deathult_audio, 'length', 0)
+    _ult_audio_remaining = audio_dur if (audio_dur and audio_dur > 1.0) else 10.0
+
+    if bg_music and not _ult_bgm_paused:
+        try:
+            bg_music.pause()
+            _ult_bgm_paused = True
+        except Exception:
+            pass
+
+    try:
+        if _deathult_audio:
+            _deathult_audio.stop()
+            _deathult_audio.play()
+    except Exception as _e:
+        print(f'[audio] Could not play deathult.mp3: {_e}')
 
     # Identify duel target (closest active bot or multiplayer remote player)
     closest_enemy = None
@@ -3029,16 +3225,29 @@ def cast_death_ult():
 
     _ring_of_fire_target = closest_enemy
 
-    # Position arena center between Death and his duel opponent if close, else around Death
-    if closest_enemy and closest_dist < 13.0:
+    # Position arena center and orient lentil seed axis along Death <-> Opponent line
+    if closest_enemy and closest_dist < 28.0:
         target_pos = closest_enemy.root.position if hasattr(closest_enemy, 'root') else closest_enemy.position
         _ring_of_fire_center = Vec3(
-            (player.x + target_pos.x) * 0.5,
+            clamp((player.x + target_pos.x) * 0.5, -7.0, 7.0),
             0.0,
-            (player.z + target_pos.z) * 0.5
+            clamp((player.z + target_pos.z) * 0.5, -7.0, 7.0)
         )
+        axis = target_pos - player.position
+        axis.y = 0
+        if axis.length() > 0.01:
+            _ring_of_fire_fwd = axis.normalized()
+        else:
+            _ring_of_fire_fwd = player.forward.normalized()
     else:
-        _ring_of_fire_center = Vec3(player.x, 0.0, player.z)
+        _ring_of_fire_fwd = player.forward.normalized()
+        _ring_of_fire_center = player.position + _ring_of_fire_fwd * 4.0
+        _ring_of_fire_center.x = clamp(_ring_of_fire_center.x, -7.0, 7.0)
+        _ring_of_fire_center.y = 0.0
+        _ring_of_fire_center.z = clamp(_ring_of_fire_center.z, -7.0, 7.0)
+
+    _ring_of_fire_right = Vec3(_ring_of_fire_fwd.z, 0, -_ring_of_fire_fwd.x)
+    _ring_of_fire_yaw = math.degrees(math.atan2(_ring_of_fire_fwd.x, _ring_of_fire_fwd.z))
 
     # 1. Death Sickle Clash Friction Animation
     if arm_left:
@@ -3054,7 +3263,7 @@ def cast_death_ult():
         spark = Entity(
             model='quad',
             texture='flame_ember.png',
-            color=color.rgb(255/255, random.uniform(200, 255)/255, random.uniform(80, 140)/255),
+            color=color.rgb(255/255, random.uniform(160, 255)/255, random.uniform(200, 255)/255),
             scale=random.uniform(0.12, 0.26),
             position=clash_point,
             double_sided=True
@@ -3071,7 +3280,7 @@ def cast_death_ult():
 
 
 def _ignite_ring_of_fire():
-    """Erupt the multi-chromatic 3D flame wall around the duel arena."""
+    """Erupt the massive lentil-seed shaped flame arena with bright glowing pink outline."""
     global _ring_of_fire_entities, _ring_of_fire_embers
 
     if not _ring_of_fire_active or player is None:
@@ -3086,140 +3295,167 @@ def _ignite_ring_of_fire():
         weapon_arm.animate_position(Vec3(0.70, 1.82, 0.0), duration=0.25)
     invoke(reset_attack_arm, delay=0.45)
 
-    # A) Fiery floor scorch and glowing ground rune decals
-    decal_size = _ring_of_fire_radius * 2.18
-    floor_ring = Entity(
+    L = _ring_of_fire_len   # 26.0
+    W = _ring_of_fire_wid   # 16.0
+    R = (L**2 + W**2) / (2.0 * W)  # Circular arc radius for the lentil seed
+
+    # A) Ground Floor Lentil Decal with glowing neon pink outline (matching screenshot!)
+    floor_decal = Entity(
         model='quad',
-        texture='flame_ring_decal.png',
+        texture='flame_lentil_decal.png',
         position=_ring_of_fire_center + Vec3(0, 0.03, 0),
-        rotation_x=90,
-        scale=(decal_size, decal_size),
-        color=color.rgb(255/255, 90/255, 20/255),
+        rotation=(90, -_ring_of_fire_yaw + 90, 0),
+        scale=(L * 2.27, W * 3.70),
+        color=color.white,
         double_sided=True
     )
-    _ring_of_fire_entities.append(floor_ring)
+    _ring_of_fire_entities.append(floor_decal)
 
     inner_glow = Entity(
         model='quad',
-        texture='flame_ring_decal.png',
+        texture='flame_lentil_decal.png',
         position=_ring_of_fire_center + Vec3(0, 0.04, 0),
-        rotation_x=90,
-        scale=(_ring_of_fire_radius * 2.06, _ring_of_fire_radius * 2.06),
-        color=color.rgb(255/255, 220/255, 50/255),
+        rotation=(90, -_ring_of_fire_yaw + 90, 0),
+        scale=(L * 2.20, W * 3.55),
+        color=color.rgb(255/255, 120/255, 230/255),
         double_sided=True
     )
     _ring_of_fire_entities.append(inner_glow)
 
-    # B) Detailed multi-layered flame wall pillars (36 clusters around circle)
-    NUM_PILLARS = 36
+    # B) 3D Flame Wall along the lentil seed perimeter (68 detailed towering pillars)
+    NUM_PILLARS = 68
     for i in range(NUM_PILLARS):
-        angle = i * (2.0 * math.pi / NUM_PILLARS)
-        dir_vec = Vec3(math.cos(angle), 0, math.sin(angle))
-        pillar_pos = _ring_of_fire_center + dir_vec * _ring_of_fire_radius
-        tangent_yaw = -math.degrees(angle) + 90.0
+        u = i * (2.0 * math.pi / NUM_PILLARS)
+        lx = L * math.cos(u)
+        val = max(0.0001, R**2 - lx**2)
+        if 0 <= u <= math.pi:
+            lz = math.sqrt(val) - (R - W)
+            dlz_dlx = -lx / math.sqrt(val)
+        else:
+            lz = -(math.sqrt(val) - (R - W))
+            dlz_dlx = lx / math.sqrt(val)
 
-        # Layer 1: Outer Mystical Crimson & Magenta Flame Tips (Iconic Wishing Star edges)
-        scale_y_1 = random.uniform(3.8, 5.0)
+        pillar_pos = _ring_of_fire_center + _ring_of_fire_fwd * lx + _ring_of_fire_right * lz
+        tangent_vec = _ring_of_fire_fwd + _ring_of_fire_right * dlz_dlx
+        tangent_yaw = math.degrees(math.atan2(tangent_vec.x, tangent_vec.z))
+
+        # Layer 0: Glowing Pink Outline Base Ribbon on the ground (The Movie Pink Outline!)
+        f0 = Entity(
+            model='quad',
+            texture='flame_ember.png',
+            color=color.rgb(255/255, 140/255, 240/255),
+            scale=(2.6, 1.1),
+            position=pillar_pos + Vec3(0, 0.55, 0),
+            rotation=(0, tangent_yaw, 0),
+            double_sided=True
+        )
+        f0.base_scale_y = 1.1
+        f0.base_rot_z = 0.0
+        f0.flicker_phase = u * 3.0
+        _ring_of_fire_entities.append(f0)
+
+        # Layer 1: Outer Towering Neon-Pink & Fiery Magenta Flames (From screenshot)
+        scale_y_1 = random.uniform(5.5, 7.5)
         c_layer1 = color.rgb(
-            random.uniform(205, 230) / 255,
-            random.uniform(20, 35) / 255,
-            random.uniform(70, 125) / 255
+            random.uniform(240, 255) / 255,
+            random.uniform(30, 65) / 255,
+            random.uniform(140, 220) / 255
         )
         f1 = Entity(
             model='quad',
             texture='flame_tongue.png',
             color=c_layer1,
-            scale=(1.45, scale_y_1),
+            scale=(2.2, scale_y_1),
             position=pillar_pos + Vec3(0, scale_y_1 * 0.48, 0),
             rotation=(0, tangent_yaw + random.uniform(-10, 10), random.uniform(-4, 4)),
             double_sided=True
         )
         f1.base_scale_y = scale_y_1
         f1.base_rot_z = f1.rotation_z
-        f1.flicker_phase = angle * 2.5
+        f1.flicker_phase = u * 3.0
         _ring_of_fire_entities.append(f1)
 
-        # Layer 2: Mid Blazing Scarlet & Fiery Orange Flames
-        scale_y_2 = random.uniform(3.0, 4.0)
+        # Layer 2: Mid Crimson-Ruby & Fiery Scarlet Flames
+        scale_y_2 = random.uniform(4.2, 5.8)
         c_layer2 = color.rgb(
             255 / 255,
-            random.uniform(75, 125) / 255,
-            random.uniform(10, 25) / 255
+            random.uniform(35, 75) / 255,
+            random.uniform(70, 120) / 255
         )
         f2 = Entity(
             model='quad',
             texture='flame_tongue.png',
             color=c_layer2,
-            scale=(1.25, scale_y_2),
+            scale=(1.9, scale_y_2),
             position=pillar_pos + Vec3(0, scale_y_2 * 0.48, 0),
             rotation=(0, tangent_yaw + random.uniform(-25, 25), 0),
             double_sided=True
         )
         f2.base_scale_y = scale_y_2
         f2.base_rot_z = 0.0
-        f2.flicker_phase = angle * 2.5 + 1.2
+        f2.flicker_phase = u * 3.0 + 1.2
         _ring_of_fire_entities.append(f2)
 
-        # Layer 3: Inner Golden Sun Incandescent Core Flames
-        scale_y_3 = random.uniform(2.0, 2.9)
+        # Layer 3: Inner White-Hot Pink Core Flames
+        scale_y_3 = random.uniform(3.0, 4.4)
         c_layer3 = color.rgb(
             255 / 255,
-            random.uniform(215, 245) / 255,
-            random.uniform(40, 90) / 255
+            random.uniform(210, 245) / 255,
+            random.uniform(230, 255) / 255
         )
         f3 = Entity(
             model='quad',
             texture='flame_tongue.png',
             color=c_layer3,
-            scale=(0.95, scale_y_3),
+            scale=(1.5, scale_y_3),
             position=pillar_pos + Vec3(0, scale_y_3 * 0.48, 0),
             rotation=(0, tangent_yaw + random.uniform(-15, 15), 0),
             double_sided=True
         )
         f3.base_scale_y = scale_y_3
         f3.base_rot_z = 0.0
-        f3.flicker_phase = angle * 2.5 + 2.4
+        f3.flicker_phase = u * 3.0 + 2.4
         _ring_of_fire_entities.append(f3)
 
-        # Layer 4: Volumetric Radial Cross-Quad (perpendicular for full 3D depth)
-        scale_y_4 = random.uniform(2.8, 3.8)
+        # Layer 4: Volumetric Radial Cross-Quad (perpendicular for 3D depth)
+        scale_y_4 = random.uniform(4.0, 5.5)
         f4 = Entity(
             model='quad',
             texture='flame_tongue.png',
-            color=color.rgb(255/255, 105/255, 18/255),
-            scale=(1.15, scale_y_4),
+            color=color.rgb(240/255, 25/255, 130/255),
+            scale=(1.8, scale_y_4),
             position=pillar_pos + Vec3(0, scale_y_4 * 0.48, 0),
             rotation=(0, tangent_yaw + 90.0, 0),
             double_sided=True
         )
         f4.base_scale_y = scale_y_4
         f4.base_rot_z = 0.0
-        f4.flicker_phase = angle * 2.5 + 0.6
+        f4.flicker_phase = u * 3.0 + 0.6
         _ring_of_fire_entities.append(f4)
 
-    # C) Floating Rising Ember Particles along the circle
+    # C) Floating Rising Pink Ember Sparks along the lentil seed outline
     _ring_of_fire_embers.clear()
-    for _ in range(28):
-        ember_angle = random.uniform(0, 2 * math.pi)
-        e_pos = _ring_of_fire_center + Vec3(
-            math.cos(ember_angle) * (_ring_of_fire_radius + random.uniform(-0.35, 0.35)),
-            random.uniform(0.2, 4.0),
-            math.sin(ember_angle) * (_ring_of_fire_radius + random.uniform(-0.35, 0.35))
-        )
+    for _ in range(48):
+        u_emb = random.uniform(0, 2 * math.pi)
+        emb_lx = L * math.cos(u_emb)
+        emb_val = max(0.0001, R**2 - emb_lx**2)
+        emb_lz = (math.sqrt(emb_val) - (R - W)) if 0 <= u_emb <= math.pi else -(math.sqrt(emb_val) - (R - W))
+        e_pos = _ring_of_fire_center + _ring_of_fire_fwd * (emb_lx + random.uniform(-0.4, 0.4)) + _ring_of_fire_right * (emb_lz + random.uniform(-0.4, 0.4)) + Vec3(0, random.uniform(0.2, 5.5), 0)
+
         ember = Entity(
             model='quad',
             texture='flame_ember.png',
-            color=color.rgb(255/255, random.uniform(150, 240)/255, 45/255),
-            scale=random.uniform(0.12, 0.22),
+            color=color.rgb(255/255, random.uniform(130, 220)/255, random.uniform(200, 255)/255),
+            scale=random.uniform(0.14, 0.30),
             position=e_pos,
             double_sided=True
         )
         _ring_of_fire_embers.append({
             'entity': ember,
-            'base_angle': ember_angle,
-            'speed': random.uniform(2.6, 4.4),
+            'u': u_emb,
+            'speed': random.uniform(2.8, 5.0),
             'sway_freq': random.uniform(3.5, 7.0),
-            'sway_amp': random.uniform(0.12, 0.28)
+            'sway_amp': random.uniform(0.15, 0.35)
         })
         _ring_of_fire_entities.append(ember)
 
@@ -3229,7 +3465,7 @@ def _ignite_ring_of_fire():
         origin=(0, 0),
         position=(0, 0.25),
         scale=2.7,
-        color=color.rgb(255/255, 140/255, 20/255),
+        color=color.rgb(255/255, 90/255, 210/255),
         font=HUD_FONT,
         parent=camera.ui
     )
@@ -3238,7 +3474,7 @@ def _ignite_ring_of_fire():
         origin=(0, 0),
         position=(0, 0.17),
         scale=1.35,
-        color=color.rgb(255/255, 40/255, 60/255),
+        color=color.rgb(255/255, 50/255, 120/255),
         font=HUD_FONT,
         parent=camera.ui
     )
@@ -3248,11 +3484,78 @@ def _ignite_ring_of_fire():
     destroy(banner_title, delay=2.5)
     destroy(banner_sub, delay=2.5)
 
+    # E) Massive Fiery Shockwave Blast: Forcefully push ALL bystander bots & players OUT!
+    for bot in list(active_bots):
+        if bot.is_dead or not hasattr(bot, 'root') or not bot.root:
+            continue
+        if bot == _ring_of_fire_target:
+            continue  # The locked 1v1 duel target stays inside with Death!
+
+        diff_b = bot.root.position - _ring_of_fire_center
+        diff_b.y = 0
+        lx_b = diff_b.dot(_ring_of_fire_fwd)
+        lz_b = diff_b.dot(_ring_of_fire_right)
+        abs_lxb = abs(lx_b)
+        max_lz_b = (math.sqrt(max(0.0001, R**2 - abs_lxb**2)) - (R - W)) if abs_lxb < L else 0.0
+
+        # Check if inside the arena or near the ring boundary
+        if abs_lxb < (L + 2.0) and abs(lz_b) < (max_lz_b + 2.5):
+            sign_z = 1.0 if lz_b >= 0 else -1.0
+            push_lz = sign_z * (max_lz_b + random.uniform(3.5, 6.0))
+            out_lx = lx_b
+            if abs_lxb >= L:
+                out_lx = math.copysign(L + 2.5, lx_b)
+            push_pos = _ring_of_fire_center + _ring_of_fire_fwd * out_lx + _ring_of_fire_right * push_lz
+            push_pos.x = clamp(push_pos.x, -PLATFORM_HALF + 2.0, PLATFORM_HALF - 2.0)
+            push_pos.z = clamp(push_pos.z, -PLATFORM_HALF + 2.0, PLATFORM_HALF - 2.0)
+
+            # Instantly propel them outward with fiery shockwave
+            bot.root.position = push_pos
+            bot.take_damage(25.0, is_crit=True)
+            safe_blink(bot.root, color.rgb(255/255, 60/255, 180/255), duration=0.25)
+
+            # Fiery burst particles radiating outward
+            for _ in range(8):
+                b_spark = Entity(
+                    model='quad',
+                    texture='flame_ember.png',
+                    color=color.rgb(255/255, random.uniform(60, 180)/255, random.uniform(160, 240)/255),
+                    scale=random.uniform(0.18, 0.38),
+                    position=bot.root.position + Vec3(0, 1.2, 0),
+                    double_sided=True
+                )
+                b_dir = Vec3(random.uniform(-1, 1), random.uniform(0.2, 1.2), random.uniform(-1, 1)).normalized()
+                b_spark.animate_position(b_spark.position + b_dir * random.uniform(2.0, 4.5), duration=0.4, curve=curve.out_quad)
+                b_spark.fade_out(duration=0.35, delay=0.08)
+                destroy(b_spark, delay=0.48)
+
+    # In multiplayer, blast bystander remote player outside if not the duel target
+    if remote_player and network_connected and remote_player != _ring_of_fire_target:
+        diff_r = remote_player.position - _ring_of_fire_center
+        diff_r.y = 0
+        lx_r = diff_r.dot(_ring_of_fire_fwd)
+        lz_r = diff_r.dot(_ring_of_fire_right)
+        abs_lxr = abs(lx_r)
+        max_lz_r = (math.sqrt(max(0.0001, R**2 - abs_lxr**2)) - (R - W)) if abs_lxr < L else 0.0
+
+        if abs_lxr < (L + 2.0) and abs(lz_r) < (max_lz_r + 2.5):
+            sign_zr = 1.0 if lz_r >= 0 else -1.0
+            push_lz_r = sign_zr * (max_lz_r + 4.5)
+            out_lx_r = lx_r
+            if abs_lxr >= L:
+                out_lx_r = math.copysign(L + 2.5, lx_r)
+            push_pos_r = _ring_of_fire_center + _ring_of_fire_fwd * out_lx_r + _ring_of_fire_right * push_lz_r
+            push_pos_r.x = clamp(push_pos_r.x, -PLATFORM_HALF + 2.0, PLATFORM_HALF - 2.0)
+            push_pos_r.z = clamp(push_pos_r.z, -PLATFORM_HALF + 2.0, PLATFORM_HALF - 2.0)
+            remote_player.position = push_pos_r
+            spawn_damage_number(remote_player.position, 25.0, is_crit=True)
+            safe_blink(remote_player, color.rgb(255/255, 60/255, 180/255), duration=0.25)
+
 
 def update_ring_of_fire(dt):
     """
     Tick ultimate timer, flicker the multi-colored flames, drift the sparks,
-    and enforce the 1v1 containment boundary with burn damage.
+    and enforce the spacious lentil-seed 1v1 containment boundary with burn damage.
     """
     global _ult_cooldown, _ring_of_fire_active, _ring_of_fire_remaining
     global _ring_of_fire_target, _ring_of_fire_entities, _ring_of_fire_embers
@@ -3274,6 +3577,9 @@ def update_ring_of_fire(dt):
         return
 
     t = time.time()
+    L = _ring_of_fire_len   # 26.0
+    W = _ring_of_fire_wid   # 16.0
+    R = (L**2 + W**2) / (2.0 * W)
 
     # 1. Animate multi-chromatic flame flickers and wind sway
     for ent in _ring_of_fire_entities:
@@ -3283,70 +3589,161 @@ def update_ring_of_fire(dt):
             if hasattr(ent, 'base_rot_z'):
                 ent.rotation_z = ent.base_rot_z + 3.8 * math.sin(t * 9.0 + ent.flicker_phase)
 
-    # 2. Animate floating rising embers
+    # 2. Animate floating rising embers along lentil outline
     for item in _ring_of_fire_embers:
         ember = item['entity']
         if ember and ember.enabled:
             ember.y += item['speed'] * dt
-            sway = math.sin(t * item['sway_freq'] + item['base_angle']) * item['sway_amp']
-            ang = item['base_angle']
-            ember.x = _ring_of_fire_center.x + math.cos(ang) * (_ring_of_fire_radius + sway)
-            ember.z = _ring_of_fire_center.z + math.sin(ang) * (_ring_of_fire_radius + sway)
-            if ember.y > 4.8:
-                ember.y = random.uniform(0.1, 0.4)
-                item['base_angle'] = random.uniform(0, 2 * math.pi)
+            sway = math.sin(t * item['sway_freq'] + item['u']) * item['sway_amp']
+            u_e = item['u']
+            emb_lx = L * math.cos(u_e)
+            emb_val = max(0.0001, R**2 - emb_lx**2)
+            emb_lz = (math.sqrt(emb_val) - (R - W)) if 0 <= u_e <= math.pi else -(math.sqrt(emb_val) - (R - W))
+            pos_e = _ring_of_fire_center + _ring_of_fire_fwd * (emb_lx + sway) + _ring_of_fire_right * (emb_lz + sway)
+            ember.x = pos_e.x
+            ember.z = pos_e.z
+            if ember.y > 6.5:
+                ember.y = random.uniform(0.1, 0.5)
+                item['u'] = random.uniform(0, 2 * math.pi)
 
-    # 3. 1v1 Arena Containment & Burn Barrier
-    # Player (Death) stays inside the ring of fire
+    # 3. Spacious Lentil-Seed 1v1 Arena Containment & Burn Barrier
+    # Player (Death) stays inside the lentil seed ring
     if player:
-        p_diff = player.position - _ring_of_fire_center
-        p_diff.y = 0
-        p_dist = p_diff.length()
-        if p_dist > _ring_of_fire_radius - 0.4 and p_dist > 0.01:
-            player.position = _ring_of_fire_center + p_diff.normalized() * (_ring_of_fire_radius - 0.4)
+        diff_p = player.position - _ring_of_fire_center
+        diff_p.y = 0
+        lx_p = diff_p.dot(_ring_of_fire_fwd)
+        lz_p = diff_p.dot(_ring_of_fire_right)
+        abs_lx = abs(lx_p)
 
-    # Bots: Target trapped inside; outsiders repelled outside
+        if abs_lx < L:
+            max_lz = math.sqrt(max(0.0001, R**2 - abs_lx**2)) - (R - W)
+        else:
+            max_lz = 0.0
+
+        clamped = False
+        if abs_lx > L - 0.7:
+            lx_p = math.copysign(L - 0.7, lx_p)
+            clamped = True
+        if max_lz > 0.6 and abs(lz_p) > max_lz - 0.6:
+            lz_p = math.copysign(max_lz - 0.7, lz_p)
+            clamped = True
+
+        if clamped:
+            player.position = _ring_of_fire_center + _ring_of_fire_fwd * lx_p + _ring_of_fire_right * lz_p
+
+    # Bots: Target trapped inside; all outsiders forcefully pushed and repelled outside!
     for bot in list(active_bots):
         if bot.is_dead or not hasattr(bot, 'root') or not bot.root:
             continue
-        b_diff = bot.root.position - _ring_of_fire_center
-        b_diff.y = 0
-        b_dist = b_diff.length()
+        diff_b = bot.root.position - _ring_of_fire_center
+        diff_b.y = 0
+        lx_b = diff_b.dot(_ring_of_fire_fwd)
+        lz_b = diff_b.dot(_ring_of_fire_right)
+        abs_lxb = abs(lx_b)
+
+        if abs_lxb < L:
+            max_lz_b = math.sqrt(max(0.0001, R**2 - abs_lxb**2)) - (R - W)
+        else:
+            max_lz_b = 0.0
 
         is_duel_target = (bot == _ring_of_fire_target)
-        if is_duel_target or b_dist < _ring_of_fire_radius:
-            # Trapped inside
-            if b_dist > _ring_of_fire_radius - 0.6 and b_dist > 0.01:
-                bot.root.position = _ring_of_fire_center + b_diff.normalized() * (_ring_of_fire_radius - 0.7)
+
+        if is_duel_target:
+            # Trapped inside the lentil seed arena with Death!
+            hit_wall = False
+            if abs_lxb > L - 0.7:
+                lx_b = math.copysign(L - 0.7, lx_b)
+                hit_wall = True
+            if max_lz_b > 0.6 and abs(lz_b) > max_lz_b - 0.6:
+                lz_b = math.copysign(max_lz_b - 0.7, lz_b)
+                hit_wall = True
+
+            if hit_wall:
+                bot.root.position = _ring_of_fire_center + _ring_of_fire_fwd * lx_b + _ring_of_fire_right * lz_b
                 bot.take_damage(28.0 * dt, is_crit=True)
-                for child in bot.root.children:
-                    if hasattr(child, 'color'):
-                        child.blink(color.rgb(255/255, 60/255, 10/255), duration=0.1)
+                safe_blink(bot.root, color.rgb(255/255, 60/255, 180/255), duration=0.1)
         else:
-            # Outsider bot: cannot enter the 1v1 ring
-            if b_dist < _ring_of_fire_radius + 0.8 and b_dist > 0.01:
-                bot.root.position = _ring_of_fire_center + b_diff.normalized() * (_ring_of_fire_radius + 1.1)
-                bot.take_damage(28.0 * dt, is_crit=True)
+            # Outsider bot: NEVER allowed inside the 1v1 ring!
+            # If inside or near the fire perimeter, forcefully repel and push them outside!
+            is_inside = (abs_lxb < L and abs(lz_b) < max_lz_b)
+            near_barrier = (abs_lxb < (L + 1.8) and abs(lz_b) < (max_lz_b + 2.2))
+
+            if is_inside or near_barrier:
+                sign_z = 1.0 if lz_b >= 0 else -1.0
+                out_lz = sign_z * (max_lz_b + 2.5)
+                out_lx = lx_b
+                if abs_lxb >= L:
+                    out_lx = math.copysign(L + 2.0, lx_b)
+                new_pos = _ring_of_fire_center + _ring_of_fire_fwd * out_lx + _ring_of_fire_right * out_lz
+                new_pos.x = clamp(new_pos.x, -PLATFORM_HALF + 1.5, PLATFORM_HALF - 1.5)
+                new_pos.z = clamp(new_pos.z, -PLATFORM_HALF + 1.5, PLATFORM_HALF - 1.5)
+                bot.root.position = new_pos
+                bot.take_damage(35.0 * dt, is_crit=True)
+                safe_blink(bot.root, color.rgb(255/255, 60/255, 180/255), duration=0.1)
 
     # Remote player in multiplayer
     if remote_player and network_connected:
-        r_diff = remote_player.position - _ring_of_fire_center
-        r_diff.y = 0
-        r_dist = r_diff.length()
-        if r_dist < _ring_of_fire_radius:
-            if r_dist > _ring_of_fire_radius - 0.6 and r_dist > 0.01:
-                remote_player.position = _ring_of_fire_center + r_diff.normalized() * (_ring_of_fire_radius - 0.7)
+        diff_r = remote_player.position - _ring_of_fire_center
+        diff_r.y = 0
+        lx_r = diff_r.dot(_ring_of_fire_fwd)
+        lz_r = diff_r.dot(_ring_of_fire_right)
+        abs_lxr = abs(lx_r)
+
+        if abs_lxr < L:
+            max_lz_r = math.sqrt(max(0.0001, R**2 - abs_lxr**2)) - (R - W)
+        else:
+            max_lz_r = 0.0
+
+        is_duel_target_r = (remote_player == _ring_of_fire_target)
+
+        if is_duel_target_r:
+            hit_wall = False
+            if abs_lxr > L - 0.7:
+                lx_r = math.copysign(L - 0.7, lx_r)
+                hit_wall = True
+            if max_lz_r > 0.6 and abs(lz_r) > max_lz_r - 0.6:
+                lz_r = math.copysign(max_lz_r - 0.7, lz_r)
+                hit_wall = True
+            if hit_wall:
+                remote_player.position = _ring_of_fire_center + _ring_of_fire_fwd * lx_r + _ring_of_fire_right * lz_r
                 spawn_damage_number(remote_player.position, 28.0 * dt, is_crit=True)
         else:
-            if r_dist < _ring_of_fire_radius + 0.8 and r_dist > 0.01:
-                remote_player.position = _ring_of_fire_center + r_diff.normalized() * (_ring_of_fire_radius + 1.1)
-                spawn_damage_number(remote_player.position, 28.0 * dt, is_crit=True)
+            # Outsider player: forcefully pushed outside!
+            is_inside_r = (abs_lxr < L and abs(lz_r) < max_lz_r)
+            near_barrier_r = (abs_lxr < (L + 1.8) and abs(lz_r) < (max_lz_r + 2.2))
+            if is_inside_r or near_barrier_r:
+                sign_zr = 1.0 if lz_r >= 0 else -1.0
+                out_lz_r = sign_zr * (max_lz_r + 2.5)
+                out_lx_r = lx_r
+                if abs_lxr >= L:
+                    out_lx_r = math.copysign(L + 2.0, lx_r)
+                new_pos_r = _ring_of_fire_center + _ring_of_fire_fwd * out_lx_r + _ring_of_fire_right * out_lz_r
+                new_pos_r.x = clamp(new_pos_r.x, -PLATFORM_HALF + 1.5, PLATFORM_HALF - 1.5)
+                new_pos_r.z = clamp(new_pos_r.z, -PLATFORM_HALF + 1.5, PLATFORM_HALF - 1.5)
+                remote_player.position = new_pos_r
+                spawn_damage_number(remote_player.position, 35.0 * dt, is_crit=True)
 
 
 def extinguish_ring_of_fire():
     """Dissolve the ring of fire into fading embers at the end of the duel."""
     global _ring_of_fire_active, _ring_of_fire_entities, _ring_of_fire_embers
+    global _ult_bgm_paused, _ult_audio_remaining
     _ring_of_fire_active = False
+
+    if _deathult_audio:
+        try:
+            _deathult_audio.stop()
+        except Exception:
+            pass
+    _ult_audio_remaining = 0.0
+
+    if bg_music and _ult_bgm_paused and not _whistle_bgm_paused:
+        try:
+            bg_music.resume()
+        except Exception:
+            pass
+        _ult_bgm_paused = False
+
     for ent in list(_ring_of_fire_entities):
         if ent and hasattr(ent, 'fade_out'):
             try:
@@ -3365,9 +3762,25 @@ def teardown_ring_of_fire():
     global _ring_of_fire_active, _ring_of_fire_entities, _ring_of_fire_embers
     global _ring_of_fire_remaining, _ring_of_fire_target, _ult_cooldown
     global hud_ult_icon, hud_ult_cooldown
+    global _ult_bgm_paused, _ult_audio_remaining
     _ring_of_fire_active = False
     _ring_of_fire_remaining = 0.0
     _ring_of_fire_target = None
+
+    if _deathult_audio:
+        try:
+            _deathult_audio.stop()
+        except Exception:
+            pass
+    _ult_audio_remaining = 0.0
+
+    if bg_music and _ult_bgm_paused and not _whistle_bgm_paused:
+        try:
+            bg_music.resume()
+        except Exception:
+            pass
+        _ult_bgm_paused = False
+
     for ent in list(_ring_of_fire_entities):
         deep_destroy(ent)
     _ring_of_fire_entities.clear()
@@ -3670,6 +4083,7 @@ camera_pitch = 3.0
 def update():
     global dash_cooldown, camera_yaw, camera_pitch, y_velocity, is_grounded, walk_time
     global bot_respawn_timer, _whistle_cooldown, _whistle_remaining, _whistle_bgm_paused
+    global _ult_audio_remaining, _ult_bgm_paused
     global network_local_snapshot
 
     dt = time.dt
@@ -3701,6 +4115,16 @@ def update():
     # Tick Death's Ultimate: Ring of Fire
     update_ring_of_fire(dt)
 
+    if _ult_audio_remaining > 0:
+        _ult_audio_remaining = max(0.0, _ult_audio_remaining - dt)
+        if _ult_audio_remaining <= 0 and _ult_bgm_paused:
+            if bg_music and not _whistle_bgm_paused:
+                try:
+                    bg_music.resume()
+                except Exception:
+                    pass
+            _ult_bgm_paused = False
+
     # 3D Turntable continuous rotation in selection menu
     if game_state == 'selection' and preview_pivot:
         preview_pivot.rotation_y += dt * 45.0
@@ -3713,6 +4137,30 @@ def update():
         if not remote_player:
             _create_remote_player(network_remote_snapshot.get('char', 'puss') if network_remote_snapshot else 'puss')
         _apply_remote_snapshot(dt)
+
+        # --- Whistle Fear / Slow effect on remote player in multiplayer ---
+        if remote_player and selected_char == 'death' and _whistle_remaining > 0:
+            rp_diff = remote_player.position - player.position
+            rp_diff.y = 0
+            rp_dist = rp_diff.length()
+            if rp_dist < WHISTLE_TERROR_RADIUS and rp_dist > 0.01:
+                inner_zone = WHISTLE_TERROR_RADIUS * 0.60
+                if rp_dist <= inner_zone:
+                    # Full fear: push remote player away from Death
+                    flee_dir_r = rp_diff.normalized()
+                    panic_mult_r = lerp(1.65, 2.3, 1.0 - (rp_dist / max(0.001, inner_zone)))
+                    remote_player.position += flee_dir_r * 4.5 * panic_mult_r * dt
+                    # Visual feedback
+                    if remote_fear_label and remote_player:
+                        remote_fear_label.world_position = remote_player.position + Vec3(0, 2.9, 0)
+                        remote_fear_label.visible = True
+                else:
+                    # Outer slow zone: show mild effect label
+                    if remote_fear_label:
+                        remote_fear_label.visible = False
+            else:
+                if remote_fear_label:
+                    remote_fear_label.visible = False
 
     # -------------------------------------------------------
     # CAMERA PIVOT FOLLOWS PLAYER
